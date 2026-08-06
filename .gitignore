@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+Vendor/Ghostty/
+Artifacts/
+*.log
+*.sock
+*.lock
