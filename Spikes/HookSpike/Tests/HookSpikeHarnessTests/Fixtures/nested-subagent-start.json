@@ -1,0 +1,11 @@
+{
+  "hookEventName": "subagent_start",
+  "sessionId": "00000000-0000-7000-8000-000000000002",
+  "cwd": "/tmp/coinor-project",
+  "workspaceRoot": "/tmp/coinor-project",
+  "timestamp": "2026-08-06T12:00:02Z",
+  "permissionMode": "default",
+  "subagentId": "00000000-0000-7000-8000-000000000003",
+  "subagentType": "explorer",
+  "description": "Inspect nested lifecycle"
+}

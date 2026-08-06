@@ -8,3 +8,5 @@ Artifacts/
 *.log
 *.sock
 *.lock
+__pycache__/
+*.pyc
