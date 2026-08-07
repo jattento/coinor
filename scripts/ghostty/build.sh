@@ -74,6 +74,8 @@ sentry=false
 xcframework_target=native
 header_sha256=$(sha256_file "$header")
 library_sha256=$(sha256_file "$library")
+xcframework_sha256=$(sha256_tree "$GHOSTTY_XCFRAMEWORK")
+resources_sha256=$(sha256_tree "$GHOSTTY_RESOURCES")
 EOF
 
 "$SCRIPT_DIR/verify.sh"
