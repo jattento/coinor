@@ -25,7 +25,6 @@ require_directory() {
 require_directory "$APP_BUNDLE"
 
 EXECUTABLE="$APP_BUNDLE/Contents/MacOS/Coinor"
-RELAY="$APP_BUNDLE/Contents/Resources/coinor-hook-relay"
 NOTICE="$APP_BUNDLE/Contents/Resources/ThirdPartyNotices.txt"
 MANIFEST="$APP_BUNDLE/Contents/Resources/GhosttyArtifactManifest.txt"
 SOURCE_MANIFEST="$REPO_ROOT/Vendor/Ghostty/manifest.txt"
@@ -33,7 +32,6 @@ GHOSTTY_RESOURCES="$APP_BUNDLE/Contents/Resources/ghostty"
 TERMINFO="$APP_BUNDLE/Contents/Resources/terminfo"
 
 require_file "$EXECUTABLE"
-require_file "$RELAY"
 require_file "$NOTICE"
 require_file "$MANIFEST"
 require_file "$SOURCE_MANIFEST"
@@ -41,7 +39,6 @@ require_directory "$GHOSTTY_RESOURCES"
 require_directory "$TERMINFO"
 
 [[ -x "$EXECUTABLE" ]] || die "Coinor executable is not runnable"
-[[ -x "$RELAY" ]] || die "bundled hook relay is not runnable"
 
 "$REPO_ROOT/scripts/ghostty/verify.sh" \
   --artifact-root "$REPO_ROOT/Vendor/Ghostty" >/dev/null
@@ -74,11 +71,8 @@ build_version="$(plutil -extract CFBundleVersion raw "$INFO_PLIST")"
   die "bundle version metadata is incomplete"
 
 app_architectures="$(lipo -archs "$EXECUTABLE")"
-relay_architectures="$(lipo -archs "$RELAY")"
 [[ "$app_architectures" == "arm64" ]] || \
   die "Coinor must be arm64-only, got: $app_architectures"
-[[ "$relay_architectures" == "arm64" ]] || \
-  die "hook relay must be arm64-only, got: $relay_architectures"
 
 if otool -L "$EXECUTABLE" | grep -Fq '/Applications/Ghostty.app'; then
   die "Coinor unexpectedly depends on /Applications/Ghostty.app"

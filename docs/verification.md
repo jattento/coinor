@@ -11,8 +11,9 @@ Date: August 7, 2026
 | Minimum supported macOS | 13.0 |
 | Xcode | 26.2 (17C52) |
 | Swift | 6.2.3 toolchain, Swift 6 language mode |
-| Zig | 0.16.0 |
-| Grok | `grok 0.2.117 (29189e7)` |
+| Zig | System 0.16.0; Ghostty build pinned to 0.15.2 |
+| Grok binary | `grok 0.2.117-overlay.2 (7e63adf)` |
+| Grok source worktree | `e9411ed`; the later commit changes delivery documentation only |
 | Grok executable | `~/bin/grok`, resolved to an absolute path |
 | Grok leader | Coinor-private socket, no global `use_leader` |
 | Ghostty | v1.3.1, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28` |
@@ -31,13 +32,13 @@ All commands below were run against the final source candidate on August 7,
 | --- | --- | --- |
 | Ghostty artifact | `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` | Pass. Verified tag, exact commit, header, static library, full XCFramework, resources, terminfo, and crash reporting disabled. |
 | Ghostty corruption suite | `scripts/ghostty/test-verification.sh` | Pass. Happy path plus header, framework, resources, and manifest corruption were all detected. |
-| Hook relay package | `swift test --package-path Tools/CoinorHookRelay` | Pass. 4 tests, 0 failures. |
 | Debug build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
-| Full Debug test | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData test` | `TEST SUCCEEDED`. 35 XCTest + 95 Swift Testing + 3 XCUITest = 133 tests, 0 failures. |
+| Full Debug test | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData test` | `TEST SUCCEEDED`. 30 XCTest + 99 Swift Testing + 3 XCUITest = 132 tests, 0 failures. |
 | Release build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
 | Release bundle contract | `scripts/release/verify-app.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Bundle ID, version, arm64 architecture, macOS 13 minimum, strict signature, Ghostty provenance, no sandbox, and no `get-task-allow` verified. |
-| Hook install and repair | `scripts/hooks/install.sh <Debug-or-Release-Coinor.app>` | Pass for the exact Debug and Release bundles. |
-| Hook installation contract | `scripts/hooks/verify.sh <Debug-or-Release-Coinor.app>` | Pass for the exact Debug and Release bundles. |
+| Public release security | `scripts/release/security-scan.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Git history, the exact publishable snapshot, and every regular file in the release bundle were free of detected secrets and the local home path. |
+| Native subagent lifecycle | ACP parsing, persisted recursive replay, lifecycle state tests, and real installed-app run | Pass. No hook registration, relay executable, or lifecycle socket is present. |
+| Grok binary/source boundary | `~/bin/grok --version`, runtime Git `HEAD`, and clean status | Pass. Installed binary remains release `overlay.2`; source `e9411ed` adds documentation only, so no Grok binary release was produced. |
 | Repository boundaries | `scripts/phase0/check-boundaries.sh` | Pass. Grok source and global config boundaries remained intact. |
 | English-owned UI scan | `rg` scan across `Coinor`, `CoinorTests`, and `CoinorUITests` | Pass. No Spanish Coinor-owned UI literals found. |
 | Whitespace errors | `git diff --check` | Pass. |
@@ -45,7 +46,7 @@ All commands below were run against the final source candidate on August 7,
 The final Xcode result bundle is:
 
 ```text
-.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_09-47-04--0300.xcresult
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_14-31-38--0300.xcresult
 ```
 
 ## Manual End-To-End Verification
@@ -60,13 +61,16 @@ Computer Use with embedded Ghostty and the real custom Grok binary.
 | Immediate selection and quit | A different conversation was selected and Coinor was quit immediately. `metadata.json` contained the new session ID before process exit. | Pass |
 | Private leader ownership | Normal quit terminated Coinor, root and child clients, and the private leader, then removed its socket and lock. | Pass |
 | Stale leader recovery | XCUITest intentionally left a live detached private leader. A later Coinor launch reattached successfully, restored the session, and a clean quit removed that leader. | Pass |
-| Single instance | A direct second executable remained outside the runtime: private leader PID, hook socket inode, and client count were unchanged. LaunchServices also has `LSMultipleInstancesProhibited=true`. | Pass |
+| Single instance | A direct second executable remained outside the runtime: private leader PID and client count were unchanged. LaunchServices also has `LSMultipleInstancesProhibited=true`. | Pass |
 | Main-checkout creation | A real conversation was created in the primary checkout and resumed durably. | Pass |
 | Remote-default worktree | A named worktree used the fetched remote default branch, remained flat under the original project, and did not mutate the primary checkout. | Pass |
 | Local-HEAD fallback | A repository without a usable remote used exact local `HEAD`, displayed a non-blocking English warning, and left the primary checkout unchanged. | Pass |
-| Rename, pin, and archive | Rename, pin, unpin, conversation archive/unarchive, and project archive/unarchive were exercised through the real UI. Pinned rows were not duplicated under projects. | Pass |
+| Rename, pin, and archive | Conversation rename, project display rename, project icon selection, pin/unpin, and conversation/project archive/unarchive were exercised through the real UI. Pinned rows were not duplicated under projects. | Pass |
+| Sidebar controls | Project `+` controls remained visible with adaptive label color. Right-click exposed `Rename Project`, `Change Icon`, and archive actions. | Pass |
+| Native Liquid Glass | On macOS 26, the standard `NavigationSplitView` sidebar refracted a subtle extension of the active terminal. No manual tint or second glass layer remains. | Pass |
 | Active archive continuity | Archiving a working root hid it without killing root or child processes. Unarchiving before idle preserved the same PIDs and final response. | Pass |
 | Simultaneous descendants | Three native subagents ran concurrently. One spawned a nested native subagent. All descendants appeared flat in the right column while the root retained the left 50 percent. | Pass |
+| Native lifecycle without hook noise | With `~/.grok/hooks` empty, a 20-second native subagent opened an interactive right pane, returned `NATIVE-PANEL-LIVE-OK`, closed its pane, and restored the root to full width. Neither that run nor the preceding `NATIVE-ACP-NO-HOOKS-OK` run emitted a new `[hooks: ...]` row. | Pass |
 | Pane cleanup | A and C closed independently, the nested pane closed, then B closed. The root reclaimed 100 percent after the last descendant ended. | Pass |
 | Heavy panel transcript | The durable outputs were `A-FINAL`, `B-FINAL`, `C-FINAL`, `NESTED-FINAL`, and final root response `COINOR-FINAL-PANELS-OK`. | Pass |
 | Needs-input routing | A real Grok `ask_user` interaction changed the project and root row to `Needs attention`, showed the orange attention indicator, accepted a fully interactive answer, and returned `COINOR-ATTENTION-OK`. | Pass |
@@ -117,12 +121,12 @@ was taken full-screen on a 3456 x 2234 Retina display.
 | Field | Final value |
 | --- | --- |
 | Debug build | Pass |
-| Full Debug test | 133 tests, 0 failures |
+| Full Debug test | 132 tests, 0 failures |
 | Release build | Pass |
 | Release verifier | Pass |
 | Screenshots | Compact, standard, and wide reviewed |
 | Final `grok-build` status | Exactly matches the Phase 0 baseline shown below |
-| Final `~/.grok/config.toml` SHA-256 | `a33ab461777d94cd9a5d40f2fc1c0323adbd11b2bd5f89a29e228fbe51c77300` |
+| Final `~/.grok/config.toml` SHA-256 | `ee006941501e78d4002495c0e799bbdd74d025555aa0e57d722ec15dc4e9fb86` |
 
 Required preserved `grok-build` status:
 

@@ -1,37 +1,12 @@
 import Foundation
 
 @MainActor
-final class HookCoordinator: ObservableObject {
-    @Published private(set) var lastError: String?
-    var onError: ((String) -> Void)?
-
-    private let listener: HookEventListener
+final class HookCoordinator {
     private let runtimes: ConversationRuntimeManager
     private var lifecycle = HookLifecycleState()
-    private var listeningTask: Task<Void, Never>?
 
-    init(
-        listener: HookEventListener,
-        runtimes: ConversationRuntimeManager
-    ) {
-        self.listener = listener
+    init(runtimes: ConversationRuntimeManager) {
         self.runtimes = runtimes
-    }
-
-    func start() {
-        guard listeningTask == nil else { return }
-        listeningTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await event in listener.events() {
-                    if Task.isCancelled { break }
-                    consume(event)
-                }
-            } catch {
-                lastError = error.localizedDescription
-                onError?(error.localizedDescription)
-            }
-        }
     }
 
     func activateRoot(sessionID: String) {
@@ -84,16 +59,6 @@ final class HookCoordinator: ObservableObject {
         }
     }
 
-    func stop() {
-        listeningTask?.cancel()
-        listeningTask = nil
-        listener.stop()
-    }
-
-    private func consume(_ event: GrokHookEvent) {
-        consume(lifecycle.apply(event))
-    }
-
     private func consume(_ action: HookLifecycleAction) {
         switch action {
         case .panesOpened(let panes):
@@ -103,7 +68,7 @@ final class HookCoordinator: ObservableObject {
         case let .panesChanged(opened, closed):
             runtimes.closeSubagents(sessionIDs: Set(closed))
             opened.forEach(runtimes.openSubagent)
-        case .rootObserved, .buffered, .ignored:
+        case .buffered, .ignored:
             break
         }
     }

@@ -37,6 +37,14 @@ func relaunchRestoresPersistedState() async throws {
                 checkoutPath: "/tmp/Project A"
             )
             document.setProjectExpanded("project-a", expanded: true)
+            document.setProjectDisplayName(
+                "project-a",
+                displayName: "Customer Portal"
+            )
+            document.setProjectIconName(
+                "project-a",
+                iconName: "terminal"
+            )
             document.setLastVisibleSession("session-a")
         }
     }
@@ -48,7 +56,28 @@ func relaunchRestoresPersistedState() async throws {
     #expect(document.isProjectManuallyRegistered("project-a"))
     #expect(document.isProjectExpanded("project-a"))
     #expect(document.projectCheckoutPath("project-a") == "/tmp/Project A")
+    #expect(document.projectDisplayName("project-a") == "Customer Portal")
+    #expect(document.projectIconName("project-a") == "terminal")
     #expect(document.lastVisibleSessionID == "session-a")
+}
+
+@Test
+func clearingProjectPresentationPrunesAnOtherwiseEmptyOverride() {
+    var document = MetadataDocument.empty
+
+    document.setProjectDisplayName(
+        "project-a",
+        displayName: "Customer Portal"
+    )
+    document.setProjectIconName(
+        "project-a",
+        iconName: "terminal"
+    )
+    #expect(document.projects["project-a"] != nil)
+
+    document.setProjectDisplayName("project-a", displayName: nil)
+    document.setProjectIconName("project-a", iconName: nil)
+    #expect(document.projects["project-a"] == nil)
 }
 
 @Test

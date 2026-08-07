@@ -136,7 +136,6 @@
 			buildPhases = (
 				CA0000000000000000000012 /* Sources */,
 				CA0000000000000000000013 /* Frameworks */,
-				CA0000000000000000000057 /* Build Bundled Hook Relay */,
 				CA0000000000000000000014 /* Resources */,
 			);
 			buildRules = (
@@ -268,36 +267,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		CA0000000000000000000057 /* Build Bundled Hook Relay */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Tools/CoinorHookRelay/Package.swift",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelay/main.swift",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayCore/FramedJSON.swift",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayCore/HookRelay.swift",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayPOSIX/CoinorHookRelayPOSIX.c",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayPOSIX/include/CoinorHookRelayPOSIX.h",
-				"$(SRCROOT)/Tools/CoinorHookRelay/Tests/CoinorHookRelayCoreTests/FramedJSONTests.swift",
-			);
-			name = "Build Bundled Hook Relay";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/coinor-hook-relay",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -eu\n\npackage_path=\"$SRCROOT/Tools/CoinorHookRelay\"\nrelay_build_root=\"$TEMP_DIR/CoinorHookRelay\"\nrelay_scratch=\"$relay_build_root/build\"\nrelay_home=\"$relay_build_root/home\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/coinor-hook-relay\"\n\nmkdir -p \"$relay_home\" \"$(dirname \"$destination\")\"\nexport HOME=\"$relay_home\"\n\n/usr/bin/xcrun --sdk macosx swift build \\\n  --disable-sandbox \\\n  --configuration release \\\n  --package-path \"$package_path\" \\\n  --scratch-path \"$relay_scratch\"\n\nrelay_bin=$(\n  /usr/bin/xcrun --sdk macosx swift build \\\n    --disable-sandbox \\\n    --configuration release \\\n    --package-path \"$package_path\" \\\n    --scratch-path \"$relay_scratch\" \\\n    --show-bin-path\n)/coinor-hook-relay\n\nif [ ! -x \"$relay_bin\" ]; then\n  printf 'Coinor hook relay build did not produce an executable: %s\\n' \"$relay_bin\" >&2\n  exit 1\nfi\n\n/usr/bin/install -m 755 \"$relay_bin\" \"$destination\"\n/usr/bin/cmp -s \"$relay_bin\" \"$destination\" || {\n  printf 'Coinor hook relay bundle copy does not match its Release build.\\n' >&2\n  exit 1\n}\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		CA0000000000000000000012 /* Sources */ = {
@@ -496,7 +465,9 @@
 				CODE_SIGN_ENTITLEMENTS = "Coinor/Coinor.entitlements";
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEPLOYMENT_POSTPROCESSING = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Coinor/Info.plist";
@@ -519,6 +490,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.Coinor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_INSTALLED_PRODUCT = YES;
+				STRIP_STYLE = all;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 			};

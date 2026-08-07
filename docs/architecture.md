@@ -40,7 +40,6 @@ flowchart LR
     LEADER["Coinor Grok leader"]
     ROOT["Root Ghostty surface"]
     CHILD["Subagent Ghostty surfaces"]
-    HOOK["Coinor hook relay"]
     GROK["Grok session persistence"]
 
     UI --> META
@@ -49,8 +48,7 @@ flowchart LR
     ROOT <--> LEADER
     CHILD <--> LEADER
     LEADER <--> GROK
-    LEADER --> HOOK
-    HOOK --> UI
+    CONTROL -->|"Native subagent lifecycle"| UI
 ```
 
 There are two separate integration planes:
@@ -66,8 +64,8 @@ Coinor never parses terminal output to infer application state.
 ### App coordinator
 
 `AppCoordinator` owns the application lifecycle and composes the control
-client, metadata store, project catalog, conversation runtimes, hook listener,
-and notification service.
+client, metadata store, project catalog, conversation runtimes, lifecycle
+coordinator, and notification service.
 
 It starts the isolated Grok leader before restoring the last visible
 conversation and shuts down Coinor-owned clients when the application exits.
@@ -177,54 +175,42 @@ indivisible build artifact. Coinor builds its copy with Ghostty crash reporting
 disabled. A Ghostty update is an explicit dependency update followed by
 terminal integration tests.
 
-### Grok hook bridge
+### Native Grok lifecycle
 
-Coinor installs a minimal Grok hook registration for `SessionStart`,
-`SubagentStart`, `SubagentStop`, and `SessionEnd`.
+Grok publishes `subagent_spawned`, `subagent_progress`, and
+`subagent_finished` updates through the same ACP connection Coinor already
+uses for its control plane. Coinor consumes those native notifications and
+recursively replays persisted lifecycle updates after reconnecting or opening
+an existing conversation. It does not install global hooks, run an auxiliary
+relay, or create a lifecycle socket.
 
-The hook invokes a small bundled `CoinorHookRelay` executable. Because Grok
-awaits hook processes inside the firing session's update loop, the relay reads
-the small stdin payload into memory, immediately forks a detached child, and
-lets the original hook process exit. The detached child performs a short
-non-blocking write to Coinor's Unix socket and exits. When Coinor is not
-running, the relay is inert and succeeds.
-
-The registration lives under `~/.grok/hooks/`. Interactive leader-connected
-Grok clients cannot carry `--plugin-dir`, so process-local plugin injection is
-not the hook transport for Coinor.
-
-Coinor ignores events whose root or parent session ID does not belong to a
-currently activated Coinor conversation. This permits the hook to coexist with
-Grok sessions opened outside Coinor.
-
-For `SubagentStart`, the envelope session ID identifies the immediate parent
-and `subagentId` identifies the child. Coinor maps every descendant back to the
-root conversation, opens a Ghostty surface, and runs:
+The lifecycle update identifies the immediate parent and child session IDs.
+Coinor maps every descendant back to the activated root conversation, opens a
+Ghostty surface, and runs:
 
 ```text
 grok --leader-socket <socket> --leader \
   --cwd <event-cwd> --resume <subagent-id>
 ```
 
-The start event can arrive before the new child has written its persisted
-summary. A small Coinor launcher retries only the exact "session does not
-exist" startup failure for a bounded period, then hands the successful Grok TUI
-to the same terminal. Other failures surface immediately.
+The native start update can arrive before the new child has written its
+persisted summary. A small Coinor launcher retries only the exact "session does
+not exist" startup failure for a bounded period, then hands the successful Grok
+TUI to the same terminal. Other failures surface immediately.
 
-For `SubagentStop`, Coinor closes and removes the matching pane immediately.
-
-Lifecycle handling is idempotent by subagent ID. Start/stop events are
-generation-checked so a delayed start cannot resurrect a pane after its stop.
-Events received before a root runtime is ready are buffered briefly. Closing a
+Lifecycle handling is idempotent by subagent ID. Start/finish events are
+generation-checked so a delayed start cannot resurrect a pane after its
+finish. Events received before a root runtime is ready are buffered. Closing a
 root runtime closes all of its descendant panes.
 
-`SubagentStop` is not guaranteed after cancellation, interruption, provider
-failure, or abrupt parent death. `SubagentReconciler` therefore also:
+The ACP stream can be interrupted by cancellation, provider failure, leader
+restart, or abrupt parent death. The lifecycle reconciler therefore also:
 
 - closes every descendant when the ultimate root terminal process exits
 - observes child persisted events for cancellation or terminal outcomes
 - keys liveness to the root session, never an intermediate nested subagent
-- periodically removes panes whose child session is no longer live
+- immediately restores the descendant tree when a pane opens
+- periodically replays lifecycle state while descendants remain active
 
 ### Pane layout
 
@@ -237,6 +223,20 @@ failure, or abrupt parent death. `SubagentReconciler` therefore also:
 All surfaces remain mounted while their conversation runtime is live, even
 when another conversation is selected. Hidden runtimes do not lose their PTY
 or in-flight work.
+
+### Sidebar presentation
+
+`NavigationSplitView` owns the sidebar structure and system material. On macOS
+26 or newer, `ConversationContentView` uses `backgroundExtensionEffect()` so
+the terminal edge continues subtly beneath the system Liquid Glass. Coinor
+does not stack `glassEffect`, `NSGlassEffectView`, `NSVisualEffectView`, custom
+tints, or opaque list backgrounds over the navigation sidebar. On earlier
+macOS versions, the same structure falls back to the platform's standard
+sidebar material.
+
+Sidebar action icons use adaptive label colors. Project and conversation row
+text uses a light system weight. Project-specific display names and SF Symbol
+choices come from Coinor metadata and do not alter the repository.
 
 ### Session and project catalog
 
@@ -283,6 +283,7 @@ volume and single-process writer.
 Stored metadata includes:
 
 - manually registered projects
+- optional project display names and SF Symbol icon choices
 - archived project identities
 - pinned and archived conversation IDs
 - pin ordering
@@ -319,7 +320,7 @@ Coinor is intentionally coupled to the custom Grok build. On startup it must:
 3. initialize the ACP control connection
 4. probe the required extension methods
 5. verify leader startup
-6. verify the hook relay registration
+6. verify native subagent lifecycle parsing and replay compatibility
 
 An unsupported binary produces one actionable English diagnostic instead of a
 partially working interface.
@@ -338,7 +339,7 @@ Grok integration targets the user's custom local fork.
 2. Ghostty framework resources, header, and AppKit lifecycle must remain on the
    exact same pinned revision.
 3. Grok extension methods are custom contracts and can change with the fork.
-4. Missed or reordered hook events can leave stale panes without reconciliation.
+4. Missed or reordered lifecycle updates can leave stale panes without replay.
 5. Leader mode is incompatible with restrictive Grok sandbox profiles.
 6. Several simultaneously mounted terminal surfaces can consume substantial
    memory and GPU resources.
@@ -346,7 +347,7 @@ Grok integration targets the user's custom local fork.
    connectivity, or unusual remote layouts.
 8. Finder-launched applications do not inherit the user's interactive shell
    environment, so relative command lookup is unreliable.
-9. A subagent start hook can race the child's first persistence write.
+9. A native subagent start can race the child's first persistence write.
 
 The implementation plan gates full product work behind prototypes for the
 highest integration and lifecycle risks above.

@@ -7,36 +7,11 @@ private let rootID = "00000000-0000-7000-8000-000000000001"
 private let childID = "00000000-0000-7000-8000-000000000002"
 private let nestedID = "00000000-0000-7000-8000-000000000003"
 
-private func event(
-    _ name: GrokHookEventName,
-    sessionID: String,
-    childID: String? = nil,
-    phase: String? = nil,
-    timestamp: String = "2026-08-06T20:00:00Z"
-) -> GrokHookEvent {
-    GrokHookEvent(
-        hookEventName: name,
-        sessionId: sessionID,
-        cwd: "/tmp/project",
-        workspaceRoot: "/tmp/project",
-        timestamp: timestamp,
-        transcriptPath: nil,
-        clientIdentifier: nil,
-        promptId: nil,
-        permissionMode: nil,
-        source: nil,
-        reason: nil,
-        subagentId: childID,
-        subagentType: nil,
-        description: nil,
-        phase: phase
-    )
-}
-
 private func observation(
     _ kind: GrokSubagentLifecycleObservation.Kind,
     child: String = childID,
-    parent: String = rootID
+    parent: String = rootID,
+    timestamp: String = "1786120000000"
 ) -> GrokSubagentLifecycleObservation {
     GrokSubagentLifecycleObservation(
         kind: kind,
@@ -45,8 +20,15 @@ private func observation(
         description: nil,
         subagentType: nil,
         status: kind == .finished ? "completed" : nil,
-        timestamp: "1786120000000"
+        timestamp: timestamp
     )
+}
+
+private func apply(
+    _ observation: GrokSubagentLifecycleObservation,
+    to state: inout HookLifecycleState
+) -> HookLifecycleAction {
+    state.apply(observation, workingDirectory: "/tmp/project")
 }
 
 @Test
@@ -54,14 +36,15 @@ func nestedStartsMapToUltimateRootAndRemainFlat() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
 
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-    _ = state.apply(
-        event(
-            .subagentStart,
-            sessionID: childID,
-            childID: nestedID,
-            timestamp: "2026-08-06T20:00:01Z"
-        )
+    _ = apply(observation(.started), to: &state)
+    _ = apply(
+        observation(
+            .started,
+            child: nestedID,
+            parent: childID,
+            timestamp: "1786120001000"
+        ),
+        to: &state
     )
 
     #expect(state.rootSessionID(for: nestedID) == rootID)
@@ -69,38 +52,24 @@ func nestedStartsMapToUltimateRootAndRemainFlat() {
 }
 
 @Test
-func stopBeforeStartCannotResurrectPane() {
+func finishBeforeStartCannotResurrectPane() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
 
-    _ = state.apply(
-        event(.subagentStop, sessionID: childID, childID: childID, phase: "gate")
-    )
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
+    _ = apply(observation(.finished), to: &state)
+    _ = apply(observation(.started), to: &state)
 
     #expect(state.orderedPanes.isEmpty)
-}
-
-@Test
-func observeStopDoesNotCloseRunningPane() {
-    var state = HookLifecycleState()
-    state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-
-    _ = state.apply(
-        event(.subagentStop, sessionID: childID, childID: childID, phase: "observe")
-    )
-
-    #expect(state.orderedPanes.map(\.childSessionID) == [childID])
 }
 
 @Test
 func rootDeathClosesEveryNestedDescendant() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-    _ = state.apply(
-        event(.subagentStart, sessionID: childID, childID: nestedID)
+    _ = apply(observation(.started), to: &state)
+    _ = apply(
+        observation(.started, child: nestedID, parent: childID),
+        to: &state
     )
 
     let closed = state.rootProcessExited(sessionID: rootID)
@@ -110,10 +79,10 @@ func rootDeathClosesEveryNestedDescendant() {
 }
 
 @Test
-func persistedCancellationClosesChildWithoutStopHook() {
+func persistedCancellationClosesChildWithoutLifecycleFinish() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
+    _ = apply(observation(.started), to: &state)
     let line = Data(
         #"{"type":"turn_ended","outcome":"cancelled","cancellation_category":"mid_turn_abort"}"#.utf8
     )
@@ -132,10 +101,7 @@ func nativeProgressRecoversAMissedStart() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
 
-    let action = state.apply(
-        observation(.progressed),
-        workingDirectory: "/tmp/project"
-    )
+    let action = apply(observation(.progressed), to: &state)
 
     guard case let .panesOpened(panes) = action else {
         Issue.record("progress should ensure the missing pane exists")
@@ -146,49 +112,30 @@ func nativeProgressRecoversAMissedStart() {
 }
 
 @Test
-func hookAndNativeStartOpenOnlyOnePane() {
+func duplicateNativeStartOpensOnlyOnePane() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
 
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-    let duplicate = state.apply(
-        observation(.started),
-        workingDirectory: "/tmp/project"
-    )
+    _ = apply(observation(.started), to: &state)
+    let duplicate = apply(observation(.started), to: &state)
 
     #expect(duplicate == .ignored)
     #expect(state.orderedPanes.map(\.childSessionID) == [childID])
 }
 
 @Test
-func nativeFinishBeforeStartLeavesATombstone() {
-    var state = HookLifecycleState()
-    state.activateRoot(sessionID: rootID)
-
-    _ = state.apply(
-        observation(.finished),
-        workingDirectory: "/tmp/project"
-    )
-    _ = state.apply(
-        observation(.started),
-        workingDirectory: "/tmp/project"
-    )
-
-    #expect(state.orderedPanes.isEmpty)
-}
-
-@Test
 func finishingAnIntermediateChildReparentsItsLiveDescendant() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-    _ = state.apply(
-        event(.subagentStart, sessionID: childID, childID: nestedID)
+    _ = apply(observation(.started), to: &state)
+    _ = apply(
+        observation(.started, child: nestedID, parent: childID),
+        to: &state
     )
 
-    let action = state.apply(
+    let action = apply(
         observation(.finished, child: childID, parent: rootID),
-        workingDirectory: "/tmp/project"
+        to: &state
     )
 
     #expect(action == .panesClosed([childID]))
@@ -201,7 +148,7 @@ func finishingAnIntermediateChildReparentsItsLiveDescendant() {
 func archivedUnloadCanDeactivateAndLaterReactivateARoot() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
+    _ = apply(observation(.started), to: &state)
 
     let closed = state.deactivateRoot(sessionID: rootID)
 
@@ -210,8 +157,9 @@ func archivedUnloadCanDeactivateAndLaterReactivateARoot() {
     #expect(state.rootSessionID(for: rootID) == nil)
 
     state.activateRoot(sessionID: rootID)
-    let action = state.apply(
-        event(.subagentStart, sessionID: rootID, childID: nestedID)
+    let action = apply(
+        observation(.started, child: nestedID),
+        to: &state
     )
     guard case let .panesOpened(panes) = action else {
         Issue.record("a non-terminal unload must allow later reactivation")
@@ -224,13 +172,14 @@ func archivedUnloadCanDeactivateAndLaterReactivateARoot() {
 func finishingAnUnobservedParentOpensItsBufferedLiveChild() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(
-        event(.subagentStart, sessionID: childID, childID: nestedID)
+    _ = apply(
+        observation(.started, child: nestedID, parent: childID),
+        to: &state
     )
 
-    let action = state.apply(
+    let action = apply(
         observation(.finished, child: childID, parent: rootID),
-        workingDirectory: "/tmp/project"
+        to: &state
     )
 
     guard case let .panesOpened(panes) = action else {
@@ -245,10 +194,10 @@ func finishingAnUnobservedParentOpensItsBufferedLiveChild() {
 func replayReparentsAChildDiscoveredAfterItsParentFinished() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(event(.subagentStart, sessionID: rootID, childID: childID))
-    _ = state.apply(
+    _ = apply(observation(.started), to: &state)
+    _ = apply(
         observation(.finished, child: childID, parent: rootID),
-        workingDirectory: "/tmp/project"
+        to: &state
     )
     let nestedStart = observation(
         .started,
@@ -262,10 +211,7 @@ func replayReparentsAChildDiscoveredAfterItsParentFinished() {
         rootSessionID: rootID
     )
 
-    let action = state.apply(
-        replayed,
-        workingDirectory: "/tmp/project"
-    )
+    let action = apply(replayed, to: &state)
 
     guard case let .panesOpened(panes) = action else {
         Issue.record("the replayed nested child should open under the root")
@@ -280,21 +226,21 @@ func replayReparentsAChildDiscoveredAfterItsParentFinished() {
 func panesUseStartTimeBeforeDeliveryOrder() {
     var state = HookLifecycleState()
     state.activateRoot(sessionID: rootID)
-    _ = state.apply(
-        event(
-            .subagentStart,
-            sessionID: rootID,
-            childID: nestedID,
-            timestamp: "2026-08-06T20:00:02Z"
-        )
+    _ = apply(
+        observation(
+            .started,
+            child: nestedID,
+            timestamp: "1786120002000"
+        ),
+        to: &state
     )
-    _ = state.apply(
-        event(
-            .subagentStart,
-            sessionID: rootID,
-            childID: childID,
-            timestamp: "2026-08-06T20:00:01Z"
-        )
+    _ = apply(
+        observation(
+            .started,
+            child: childID,
+            timestamp: "1786120001000"
+        ),
+        to: &state
     )
 
     #expect(state.orderedPanes.map(\.childSessionID) == [childID, nestedID])

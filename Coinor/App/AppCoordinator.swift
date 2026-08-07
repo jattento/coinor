@@ -13,6 +13,17 @@ private struct DetachedRuntimeState {
 
 @MainActor
 final class AppCoordinator: ObservableObject {
+    private static let supportedProjectIconNames: Set<String> = [
+        "app",
+        "chevron.left.forwardslash.chevron.right",
+        "cloud",
+        "cylinder",
+        "folder",
+        "server.rack",
+        "terminal",
+        "wrench.and.screwdriver",
+    ]
+
     enum Status: Equatable {
         case starting
         case ready
@@ -114,22 +125,11 @@ final class AppCoordinator: ObservableObject {
                 )
             }
 
-            let hookSocket = supportDirectory
-                .appendingPathComponent("hook.sock")
-                .path
-            let hook = HookCoordinator(
-                listener: try HookEventListener(socketPath: hookSocket),
-                runtimes: runtimes
-            )
+            let hook = HookCoordinator(runtimes: runtimes)
             hookCoordinator = hook
-            hook.onError = { [weak self] message in
-                self?.warningMessage =
-                    "Coinor's hook listener stopped: \(message)"
-            }
             runtimes.onRootProcessExit = { [weak self] sessionID in
                 self?.rootProcessExited(sessionID: sessionID)
             }
-            hook.start()
 
             listenForControlEvents(control, generation: generation)
             try await refresh(
@@ -512,7 +512,6 @@ final class AppCoordinator: ObservableObject {
         pendingMaterializationTasks.removeAll()
         pendingLifecycleCatchup.removeAll()
         completedLifecycleCatchup.removeAll()
-        hookCoordinator?.stop()
         hookCoordinator = nil
         runtimeManager?.shutdown()
         runtimeManager = nil
@@ -554,10 +553,59 @@ final class AppCoordinator: ObservableObject {
     }
 
     func projectDisplayName(_ projectID: String) -> String {
-        URL(
+        if let displayName = metadata.projectDisplayName(projectID) {
+            return displayName
+        }
+        return URL(
             fileURLWithPath: mainCheckout(for: projectID),
             isDirectory: true
         ).lastPathComponent
+    }
+
+    func projectIconName(_ projectID: String) -> String {
+        guard let iconName = metadata.projectIconName(projectID),
+              Self.supportedProjectIconNames.contains(iconName) else {
+            return "folder"
+        }
+        return iconName
+    }
+
+    func projectHasCustomDisplayName(_ projectID: String) -> Bool {
+        metadata.projectDisplayName(projectID) != nil
+    }
+
+    func renameProject(_ projectID: String, displayName: String) {
+        let trimmed = displayName.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !trimmed.isEmpty else { return }
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setProjectDisplayName(
+                    projectID,
+                    displayName: trimmed
+                )
+            }
+        }
+    }
+
+    func setProjectIcon(_ projectID: String, iconName: String?) {
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setProjectIconName(
+                    projectID,
+                    iconName: iconName
+                )
+            }
+        }
+    }
+
+    func useFolderName(for projectID: String) {
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setProjectDisplayName(projectID, displayName: nil)
+            }
+        }
     }
 
     func projectActivity(_ project: ProjectRow) -> RuntimeActivity {
@@ -1052,7 +1100,6 @@ final class AppCoordinator: ObservableObject {
         let generation = lifecycleGeneration
         lifecycleReconciliationTasks[rootSessionID] = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
                 guard let self,
                       !Task.isCancelled,
                       self.isCurrent(
@@ -1081,6 +1128,7 @@ final class AppCoordinator: ObservableObject {
                 } catch is CancellationError {
                     break
                 } catch {
+                    try? await Task.sleep(for: .seconds(3))
                     continue
                 }
                 guard self.isCurrent(
@@ -1090,6 +1138,7 @@ final class AppCoordinator: ObservableObject {
                     break
                 }
                 self.reconcileRuntimeActivity()
+                try? await Task.sleep(for: .seconds(3))
             }
             guard let self,
                   generation == self.lifecycleGeneration else {

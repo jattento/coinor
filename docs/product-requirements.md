@@ -17,6 +17,22 @@ Projects with no Grok conversations can be added manually. Conversations
 appear in one flat list beneath their project; worktree conversations do not
 create a second navigation level or display a worktree badge in the sidebar.
 
+Coinor can assign a local display name and icon to a project from its sidebar
+context menu. These presentation overrides do not rename, move, or otherwise
+modify the underlying repository.
+
+## Sidebar presentation
+
+Sidebar controls use adaptive system colors so icons remain visible in both
+Light and Dark appearances. Project and conversation rows use a lighter system
+font weight than terminal content.
+
+On macOS 26 or newer, Coinor uses the native Liquid Glass sidebar supplied by
+`NavigationSplitView` and subtly extends terminal content beneath it with
+`backgroundExtensionEffect()`. Coinor does not add a second glass layer, tint,
+or opaque background. Earlier macOS versions retain the standard system
+sidebar presentation.
+
 ## Conversation organization
 
 Coinor can pin and unpin conversations. Pinned conversations appear in a

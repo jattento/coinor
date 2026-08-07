@@ -58,7 +58,6 @@ struct SubagentStartOrder: Comparable, Equatable, Sendable {
 }
 
 enum HookLifecycleAction: Equatable, Sendable {
-    case rootObserved(String)
     case panesOpened([HookPaneRecord])
     case panesClosed([String])
     case panesChanged(opened: [HookPaneRecord], closed: [String])
@@ -80,7 +79,6 @@ struct HookLifecycleState: Sendable {
     private var panesByChild: [String: HookPaneRecord] = [:]
     private var pendingByChild: [String: PendingStart] = [:]
     private var terminalSessions: Set<String> = []
-    private var ignoredSessions: Set<String> = []
     private var nextSequence: UInt64 = 0
 
     var orderedPanes: [HookPaneRecord] {
@@ -98,61 +96,9 @@ struct HookLifecycleState: Sendable {
     @discardableResult
     mutating func activateRoot(sessionID: String) -> [HookPaneRecord] {
         guard !terminalSessions.contains(sessionID) else { return [] }
-        ignoredSessions.remove(sessionID)
         activatedRoots.insert(sessionID)
         rootBySession[sessionID] = sessionID
         return resolvePendingStarts()
-    }
-
-    mutating func apply(_ event: GrokHookEvent) -> HookLifecycleAction {
-        switch event.hookEventName {
-        case .sessionStart:
-            guard activatedRoots.contains(event.sessionId),
-                  !terminalSessions.contains(event.sessionId) else {
-                if rootBySession[event.sessionId] == nil {
-                    ignoreSubtree(rootedAt: event.sessionId)
-                }
-                return .ignored
-            }
-            rootBySession[event.sessionId] = event.sessionId
-            let opened = resolvePendingStarts()
-            if !opened.isEmpty {
-                return .panesOpened(opened)
-            }
-            return .rootObserved(event.sessionId)
-
-        case .subagentStart:
-            guard let childID = event.subagentId else { return .ignored }
-            return applyStart(
-                parentSessionID: event.sessionId,
-                childSessionID: childID,
-                workingDirectory: event.cwd,
-                timestamp: event.timestamp
-            )
-
-        case .subagentStop:
-            guard event.phase?.lowercased() != "observe",
-                  let childID = event.subagentId else {
-                return .ignored
-            }
-            let transition = terminateSessionPreservingDescendants(
-                sessionID: childID,
-                fallbackParentSessionID: event.sessionId
-            )
-            return action(for: transition)
-
-        case .sessionEnd:
-            if activatedRoots.contains(event.sessionId) {
-                let closed = rootProcessExited(sessionID: event.sessionId)
-                return closed.isEmpty ? .ignored : .panesClosed(closed)
-            }
-            guard rootBySession[event.sessionId] != nil else { return .ignored }
-            let transition = terminateSessionPreservingDescendants(
-                sessionID: event.sessionId,
-                fallbackParentSessionID: nil
-            )
-            return action(for: transition)
-        }
     }
 
     mutating func apply(
@@ -174,10 +120,6 @@ struct HookLifecycleState: Sendable {
             )
             return action(for: transition)
         }
-    }
-
-    mutating func apply(jsonData: Data) throws -> HookLifecycleAction {
-        apply(try GrokHookEvent.decode(jsonData))
     }
 
     mutating func rootProcessExited(sessionID: String) -> [String] {
@@ -205,7 +147,6 @@ struct HookLifecycleState: Sendable {
         rootBySession = rootBySession.filter {
             $0.value != sessionID
         }
-        ignoredSessions.remove(sessionID)
         return closed
     }
 
@@ -242,11 +183,6 @@ struct HookLifecycleState: Sendable {
             terminalSessions.insert(childSessionID)
             return .ignored
         }
-        if ignoredSessions.contains(parentSessionID) {
-            ignoreSubtree(rootedAt: childSessionID)
-            return .ignored
-        }
-
         nextSequence += 1
         let pending = PendingStart(
             parentSessionID: parentSessionID,
@@ -385,7 +321,6 @@ struct HookLifecycleState: Sendable {
             panesByChild.removeValue(forKey: id)
             pendingByChild.removeValue(forKey: id)
             rootBySession.removeValue(forKey: id)
-            ignoredSessions.remove(id)
             if markTerminal {
                 terminalSessions.insert(id)
             }
@@ -411,13 +346,6 @@ struct HookLifecycleState: Sendable {
                 opened: transition.opened,
                 closed: transition.closed
             )
-        }
-    }
-
-    private mutating func ignoreSubtree(rootedAt sessionID: String) {
-        ignoredSessions.insert(sessionID)
-        pendingByChild = pendingByChild.filter {
-            $0.value.parentSessionID != sessionID
         }
     }
 }

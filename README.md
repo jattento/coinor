@@ -54,27 +54,9 @@ Run the exact Debug application:
 open .build/DerivedData/Build/Products/Debug/Coinor.app
 ```
 
-## Hook Install And Repair
-
-Coinor uses a small global Grok hook registration to receive root and subagent
-lifecycle events. The relay is inert while Coinor is closed and does not
-replace unrelated hook files.
-
-Install or repair the hook from the application bundle, then verify it:
-
-```sh
-APP=.build/DerivedData/Build/Products/Debug/Coinor.app
-scripts/hooks/install.sh "$APP"
-scripts/hooks/verify.sh "$APP"
-```
-
-Run the same two commands after replacing Coinor with a newer build so the
-installed relay stays byte-for-byte aligned with the application.
-
 ## Test And Release
 
 ```sh
-swift test --package-path Tools/CoinorHookRelay
 scripts/ghostty/test-verification.sh
 scripts/phase0/check-boundaries.sh
 
@@ -105,8 +87,6 @@ After the Release bundle passes verification:
 APP=.build/DerivedData/Build/Products/Release/Coinor.app
 mkdir -p "$HOME/Applications"
 ditto "$APP" "$HOME/Applications/Coinor.app"
-scripts/hooks/install.sh "$HOME/Applications/Coinor.app"
-scripts/hooks/verify.sh "$HOME/Applications/Coinor.app"
 open "$HOME/Applications/Coinor.app"
 ```
 
@@ -116,10 +96,6 @@ open "$HOME/Applications/Coinor.app"
   and UI metadata
 - `~/Library/Application Support/Coinor/grok-leader.sock`: private Grok leader
   socket while Coinor is running
-- `~/Library/Application Support/Coinor/hook.sock`: lifecycle listener socket
-  while Coinor is running
-- `~/.grok/hooks/coinor.json`: Coinor-owned hook registration
-- `~/.grok/hooks/coinor-hook-relay`: installed relay copied from Coinor.app
 
 Grok's own storage remains authoritative for conversation content. Removing
 Coinor metadata does not delete Grok sessions.

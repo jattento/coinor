@@ -3,7 +3,7 @@
 set -eu
 
 coinor_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-grok_build_root=/Users/jattentokeyway/projects/github.com/jattento/grok-build
+grok_build_root=${GROK_BUILD_ROOT:-"$coinor_root/../grok-build"}
 expected_status="$coinor_root/docs/baselines/grok-build-status.txt"
 actual_status=$(mktemp)
 runtime_status=$(mktemp)
@@ -16,6 +16,9 @@ fail() {
 
 [ "$(git -C "$coinor_root" rev-parse --show-toplevel)" = "$coinor_root" ] ||
   fail "Coinor is not a standalone Git repository."
+
+[ -d "$grok_build_root/.git" ] ||
+  fail "The sibling grok-build checkout was not found; set GROK_BUILD_ROOT."
 
 [ -x "$HOME/bin/grok" ] ||
   fail "The configured Grok executable is not available at $HOME/bin/grok."

@@ -72,12 +72,16 @@ Acceptance criteria:
 Phase 0 is the go/no-go gate. Do not build the complete sidebar until all three
 spikes pass.
 
+This spike passed and established the lifecycle invariants, but the production
+relay was later retired after Grok's native ACP stream was verified to expose
+the same subagent lifecycle with replay. The spike remains historical evidence,
+not a runtime dependency.
+
 ## Phase 1: repository and application foundation
 
 Create the standalone Coinor repository with:
 
 - one macOS SwiftUI application target
-- one small hook-relay executable target
 - a pinned Ghostty framework build/install script
 - a non-sandboxed app entitlement/profile suitable for running local tools
 - `App`, `Domain`, `Grok`, `Terminal`, `Persistence`, and `Features` source
@@ -88,7 +92,7 @@ Create the standalone Coinor repository with:
 Initial application behavior:
 
 - one English-language window
-- startup diagnostics for Grok, Ghostty, hook registration, and leader socket
+- startup diagnostics for Grok, Ghostty, and the leader socket
 - an empty sidebar shell and terminal content region
 
 ## Phase 2: Grok control plane and catalog
@@ -134,15 +138,14 @@ Acceptance criteria:
 
 Implement:
 
-- permanent hook registration and bundled relay
-- Coinor Unix-socket listener
+- native ACP subagent lifecycle subscription and persisted replay
 - parent-to-root descendant mapping
 - interactive child terminal launch on the shared leader
 - bounded retry for the child-persistence startup race
 - fixed 50/50 root/right-column layout
 - flat nested-subagent ordering
 - immediate stop removal
-- duplicate, reorder, cancellation, root-exit, and missed-stop reconciliation
+- duplicate, reorder, cancellation, root-exit, and missed-update reconciliation
 
 Acceptance criteria:
 
@@ -205,7 +208,7 @@ Validate:
 - multiple simultaneous conversations and subagents
 - terminal memory and GPU behavior
 - app relaunch during idle, working, and needs-input states
-- stale hook socket and crashed leader recovery
+- native lifecycle replay and crashed leader recovery
 - Ghostty configuration errors
 - Ghostty resource/header/framework revision mismatch detection
 - missing or incompatible Grok binary
@@ -215,8 +218,6 @@ Package:
 
 - Coinor application bundle
 - pinned static Ghostty framework, header, and matching resources
-- hook relay
-- hook install/repair command
 - local release build and installation instructions
 
 ## Test shape
@@ -225,9 +226,9 @@ Use focused tests at each boundary:
 
 - pure unit tests for project identity, metadata migrations, state aggregation,
   pane ordering, and worktree fallback decisions
-- JSON fixtures for Grok ACP and hook payloads
-- process integration tests for JSON-RPC framing and hook delivery
-- retry tests for a child session whose summary appears after the start hook
+- JSON fixtures for Grok ACP lifecycle payloads
+- process integration tests for JSON-RPC framing and native lifecycle replay
+- retry tests for a child session whose summary appears after the native start
 - Git fixture repositories for worktree grouping and remote fallback
 - AppKit tests for surface lifecycle where practical
 - Playwright is not applicable to the native UI; use XCTest/XCUITest and

@@ -455,7 +455,10 @@ final class GhosttySurfaceView: NSView {
     ) {
         guard let surfaceHandle else { return }
         var key = makeKeyEvent(event, action: action)
-        if let characters = event.characters, !characters.isEmpty {
+        let characters = action.rawValue == GHOSTTY_ACTION_RELEASE.rawValue
+            ? nil
+            : GhosttyKeyEventText.sendableText(for: event)
+        if let characters {
             characters.withCString {
                 key.text = $0
                 _ = ghostty_surface_key(surfaceHandle, key)

@@ -7,13 +7,13 @@ Status: **PASS**
 Binary under test:
 
 ```text
-/Users/jattentokeyway/bin/grok
+~/bin/grok
 grok 0.2.117 (29189e7)
 ```
 
 ## Commands
 
-Run from `/Users/jattentokeyway/projects/github.com/jattento/coinor`:
+Run from the Coinor repository root:
 
 ```sh
 python3 -m py_compile Spikes/GrokSharedSession/run_spike.py
@@ -25,7 +25,7 @@ The passing run created two concurrent bridge clients with this concrete
 command:
 
 ```sh
-/Users/jattentokeyway/bin/grok \
+~/bin/grok \
   --leader-socket /tmp/coinor-grok-mahg98zk/grok-home/leader-coinor-phase0.sock \
   agent --leader stdio
 ```
@@ -33,14 +33,14 @@ command:
 The root and hidden-child TUI checks used:
 
 ```sh
-/Users/jattentokeyway/bin/grok \
+~/bin/grok \
   --leader-socket /tmp/coinor-grok-mahg98zk/grok-home/leader-coinor-phase0.sock \
   --leader \
   --cwd /tmp/coinor-grok-mahg98zk/unrelated-repo \
   --resume 5aec106f-0b25-49f5-b2cc-4f266a2d4ada \
   --no-alt-screen
 
-/Users/jattentokeyway/bin/grok \
+~/bin/grok \
   --leader-socket /tmp/coinor-grok-mahg98zk/grok-home/leader-coinor-phase0.sock \
   --leader \
   --cwd /tmp/coinor-grok-mahg98zk/unrelated-repo \
@@ -81,7 +81,7 @@ PASS native hidden subagent discovery
 PASS live hidden child TUI resume from unrelated cwd
 PASS inherited child driver preservation
 PASS no Herdr or global use_leader dependency
-RESULT {"attempts": {"childAcpLoad": 1, "childTuiResume": 1, "rootAcpLoad": 1, "rootTuiResume": 1}, "authMethods": {"childObserver": "cached_token", "driver": "cached_token", "observer": "cached_token"}, "bridgePids": [83370, 83369], "childObserverClientId": 6, "childSessionId": "019fd978-a961-7cd1-b23c-0eb4a271aaad", "childSessionKind": "subagent", "childTuiAttachedWhilePromptActive": true, "driverClientId": 3, "driverOnlyRequests": {"child": 1, "observer": 0, "root": 2}, "grok": "/Users/jattentokeyway/bin/grok", "grokVersion": "grok 0.2.117 (29189e7)", "isolation": {"globalConfigSha256After": "a33ab461777d94cd9a5d40f2fc1c0323adbd11b2bd5f89a29e228fbe51c77300", "globalConfigSha256Before": "a33ab461777d94cd9a5d40f2fc1c0323adbd11b2bd5f89a29e228fbe51c77300", "globalHooksLoaded": false, "globalUseLeaderRequired": false, "herdrAvailableOnChildPath": false, "temporaryGrokHome": "/tmp/coinor-grok-mahg98zk/grok-home"}, "leaderPid": 83398, "leaderSocket": "/tmp/coinor-grok-mahg98zk/grok-home/leader-coinor-phase0.sock", "markers": {"child": "COINOR_CHILD_LIVE_37bae4c095e74c1d9465a1acd9cda52b", "live": "COINOR_LIVE_STREAM_ca217a03e05e4608a1e57204cc7e3a34", "replay": "COINOR_REPLAY_f0042a130f2f45bbb8306d83d4448590", "rootAfterChild": "COINOR_ROOT_AFTER_CHILD_98aec0ffceb64f578b569e325fb8df25"}, "observerClientId": 4, "rootSessionId": "5aec106f-0b25-49f5-b2cc-4f266a2d4ada", "status": "passed", "temporaryRoot": "/tmp/coinor-grok-mahg98zk"}
+RESULT {"attempts": {"childAcpLoad": 1, "childTuiResume": 1, "rootAcpLoad": 1, "rootTuiResume": 1}, "authMethods": {"childObserver": "cached_token", "driver": "cached_token", "observer": "cached_token"}, "bridgePids": [83370, 83369], "childObserverClientId": 6, "childSessionId": "019fd978-a961-7cd1-b23c-0eb4a271aaad", "childSessionKind": "subagent", "childTuiAttachedWhilePromptActive": true, "driverClientId": 3, "driverOnlyRequests": {"child": 1, "observer": 0, "root": 2}, "grok": "~/bin/grok", "grokVersion": "grok 0.2.117 (29189e7)", "isolation": {"globalConfigSha256After": "a33ab461777d94cd9a5d40f2fc1c0323adbd11b2bd5f89a29e228fbe51c77300", "globalConfigSha256Before": "a33ab461777d94cd9a5d40f2fc1c0323adbd11b2bd5f89a29e228fbe51c77300", "globalHooksLoaded": false, "globalUseLeaderRequired": false, "herdrAvailableOnChildPath": false, "temporaryGrokHome": "/tmp/coinor-grok-mahg98zk/grok-home"}, "leaderPid": 83398, "leaderSocket": "/tmp/coinor-grok-mahg98zk/grok-home/leader-coinor-phase0.sock", "markers": {"child": "COINOR_CHILD_LIVE_37bae4c095e74c1d9465a1acd9cda52b", "live": "COINOR_LIVE_STREAM_ca217a03e05e4608a1e57204cc7e3a34", "replay": "COINOR_REPLAY_f0042a130f2f45bbb8306d83d4448590", "rootAfterChild": "COINOR_ROOT_AFTER_CHILD_98aec0ffceb64f578b569e325fb8df25"}, "observerClientId": 4, "rootSessionId": "5aec106f-0b25-49f5-b2cc-4f266a2d4ada", "status": "passed", "temporaryRoot": "/tmp/coinor-grok-mahg98zk"}
 ```
 
 ## Limitations

@@ -11,6 +11,7 @@ struct AppShellView: View {
         } detail: {
             VStack(spacing: 0) {
                 ConversationContentView(coordinator: coordinator)
+                    .coinorBackgroundExtension()
                 if model.unresolvedStartupCheckCount > 0 {
                     Divider()
                     StartupDiagnosticsPanel(
@@ -39,6 +40,17 @@ struct AppShellView: View {
                 }
                 .padding(.top, 8)
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func coinorBackgroundExtension() -> some View {
+        if #available(macOS 26.0, *) {
+            backgroundExtensionEffect()
+        } else {
+            self
         }
     }
 }

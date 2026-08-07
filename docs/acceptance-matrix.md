@@ -15,8 +15,8 @@ Status terms:
 | Section | Requirement | Source and automated evidence | Final manual evidence | Status |
 | --- | --- | --- | --- | --- |
 | 1. Interface language | Every Coinor-owned label, menu, tooltip, warning, empty state, diagnostic, and notification is English. | `Coinor/Features/AppShell`, `AttentionNotificationService.swift`, `AppFoundationTests`, notification tests, final Swift literal scan. | Sidebar, dialogs, warnings, archived view, activity text, and error states were reviewed. Grok-rendered content is outside Coinor-owned copy. | Pass |
-| 2. Projects and conversations | List persisted Grok sessions; group main checkout and worktrees by canonical Git project; keep clones separate; retain manually added empty projects; keep conversations flat. | `GrokControlClient`, `GitProjectResolver`, `SessionCatalog`; catalog pagination/malformed payload tests; resolver and catalog tests. | Real main, linked worktree, Grok worktree, and independent project rows were inspected in the sidebar. | Pass |
-| 3. Conversation organization | Pin/unpin, dedicated archives, metadata-only archive, active archive continuity, and Grok-owned rename. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/runtime tests. | Rename, pin/unpin, conversation/project archive/unarchive, idle unload, and active archive continuity were exercised. | Pass |
+| 2. Projects and conversations | List persisted Grok sessions; group main checkout and worktrees by canonical Git project; keep clones separate; retain manually added empty projects; keep conversations flat; allow local project display names and icons. | `GrokControlClient`, `GitProjectResolver`, `SessionCatalog`, `MetadataModels`; catalog, resolver, and project-presentation persistence tests. | Real project rows were inspected; the context menu exposed rename and SF Symbol choices without changing repository paths. | Pass |
+| 3. Conversation organization | Pin/unpin, dedicated archives, metadata-only archive, active archive continuity, and Grok-owned conversation rename. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/runtime tests. | Conversation rename, pin/unpin, conversation/project archive/unarchive, idle unload, and active archive continuity were exercised. | Pass |
 | 4. Creating conversations | `In Main Checkout`, named `In New Worktree`, remote default branch, exact local-HEAD fallback, and English warning. | `AppShellSidebar`, `AppCoordinator`, `WorktreeService`; 8 Git fixture tests. | Remote-default and no-remote fallback workflows completed without mutating the primary checkout. | Pass |
 | 5. Conversation lifetime | Activated roots remain live while Coinor is open; changing visible rows does not stop work. | `ConversationRuntimeManager`, `RuntimeHostView`, runtime tests. | Root and child PIDs stayed stable through selection changes and active archive/unarchive. | Pass |
 | 6. Relaunch behavior | Restore only the last visible session, exact resume, lazy resume for other rows, no blank shell, no promise after quit. | `AppCoordinator.start`, `TerminalLaunchRequest`, `MetadataStoreTests.relaunchRestoresPersistedState`. | Immediate selection-and-quit persisted the new session. Relaunch restored its transcript directly. | Pass |
@@ -50,6 +50,9 @@ Status terms:
 
 ### Hook Spike
 
+This is retained as Phase 0 historical evidence. Production Coinor now uses
+Grok's native ACP lifecycle and has no hook or relay runtime dependency.
+
 | Acceptance criterion | Evidence | Status |
 | --- | --- | --- |
 | Real start reaches listener | `Spikes/HookSpike/RESULTS.md` | Phase 0 pass |
@@ -63,9 +66,10 @@ Status terms:
 | Acceptance item | Evidence | Status |
 | --- | --- | --- |
 | Standalone native SwiftUI/AppKit macOS repository | `Coinor.xcodeproj`, `Coinor`, `CoinorTests`, `CoinorUITests` | Pass |
-| One app target, one bundled hook relay, unit and UI tests | Xcode project and `Tools/CoinorHookRelay` | Pass |
+| One app target with unit and UI tests | Xcode project, `CoinorTests`, and `CoinorUITests` | Pass |
 | Pinned Ghostty and non-sandboxed profile | `scripts/ghostty`, entitlements, release verifier | Pass |
 | English window, startup diagnostics, sidebar, terminal region | App shell source and 3 XCUITests | Pass |
+| Adaptive sidebar controls and native macOS 26 Liquid Glass | `AppShellSidebar`, `AppShellView`, Debug visual QA | Pass |
 
 ## Phase 2: Grok Control Plane And Catalog
 
@@ -99,7 +103,7 @@ Status terms:
 | Every pane accepts input | Real Ghostty child resumes and interactive QA | Pass |
 | Nested descendants remain flat in start order | Lifecycle tests and nested live run | Pass |
 | Root reclaims full width | Live child cleanup and standard screenshot | Pass |
-| Cancellation, reordering, missed stop, and abrupt root death leave no stale panes | Lifecycle suite and Phase 0 real cancellation/root death | Pass |
+| Cancellation, reordering, missed updates, and abrupt root death leave no stale panes | Native ACP lifecycle suite, persisted replay, and Phase 0 root-death evidence | Pass |
 | No Herdr process or UI | Source/runtime scan and native Coinor pane implementation | Pass |
 
 ## Phase 5: Creation And Worktrees
@@ -117,7 +121,8 @@ Status terms:
 | Acceptance criterion | Evidence | Status |
 | --- | --- | --- |
 | Pin, archive, and project registration survive relaunch | Atomic metadata tests and real relaunch QA | Pass |
-| Rename is stored by Grok, not a Coinor alias | ACP rename test and real rename | Pass |
+| Conversation rename is stored by Grok, not a Coinor alias | ACP rename test and real rename | Pass |
+| Project display name and icon remain local presentation metadata | Metadata round-trip/pruning tests and context-menu QA | Pass |
 | Archive never deletes Grok session | Metadata-only model and unarchive/resume QA | Pass |
 | Active archive does not interrupt work | Stable root/child PIDs and final response | Pass |
 | Attention reaches root/project and correct terminal | Activity/focus tests and real `ask_user` | Pass |
@@ -133,8 +138,9 @@ Status terms:
 | Multiple simultaneous descendants including nested work | 141-second real run and durable Grok outputs | Pass |
 | Terminal memory and GPU behavior | Nonblank sustained panes; observed Grok client RSS roughly 34-65 MB | Pass |
 | Relaunch during normal and needs-input work | Exact restore, attention runs, and stale leader recovery | Pass |
-| Stale hook socket and crashed leader recovery | Listener ownership plus real orphan leader reattach/cleanup | Pass |
+| Native lifecycle replay and crashed leader recovery | Recursive ACP replay plus real orphan leader reattach/cleanup | Pass |
 | Ghostty config/resource mismatch | Runtime diagnostics plus corruption suite | Pass |
+| Native Liquid Glass sidebar on macOS 26 | Automatic `NavigationSplitView` glass with a subtle terminal background extension; no stacked custom glass layer | Pass |
 | Missing or incompatible Grok | Startup diagnostics, version timeout, protocol, and extension tests | Pass |
 | No remote, several remotes, detached HEAD | Git fixture integration suite | Pass |
 | Moved repository directory | Manual re-add is supported; automatic relinking is not a product contract | Documented limitation |
@@ -145,8 +151,7 @@ Status terms:
 | --- | --- | --- |
 | Arm64 Coinor application bundle | Debug and Release builds | Pass |
 | Pinned static Ghostty unit | Manifest and release verifier | Pass |
-| Bundled and installed hook relay | Package tests plus Debug/Release install/verify | Pass |
-| Install/repair command | `scripts/hooks/install.sh`, ownership refusal, `verify.sh` | Pass |
+| No auxiliary lifecycle executable | Release bundle scan and native ACP lifecycle tests | Pass |
 | Release instructions and licensing | `README.md`, `docs/release.md`, bundled MIT notice | Pass |
 
 ## V1 Definition Of Done

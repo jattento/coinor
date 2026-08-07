@@ -8,7 +8,6 @@ struct StartupCheck: Identifiable, Equatable, Sendable {
     enum Kind: String, CaseIterable, Sendable {
         case grokExecutable
         case ghosttyRuntime
-        case hookRegistration
         case leaderSocket
 
         var title: String {
@@ -17,8 +16,6 @@ struct StartupCheck: Identifiable, Equatable, Sendable {
                 return "Grok Executable"
             case .ghosttyRuntime:
                 return "Ghostty Runtime"
-            case .hookRegistration:
-                return "Hook Registration"
             case .leaderSocket:
                 return "Leader Socket"
             }

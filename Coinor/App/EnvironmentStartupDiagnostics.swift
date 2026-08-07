@@ -9,15 +9,9 @@ struct StartupPaths: Sendable {
     var grokExecutable: URL
     var ghosttyShellIntegration: URL
     var ghosttyTerminfo: URL
-    var hookRegistration: URL
-    var hookRelay: URL
-    var bundledHookRelay: URL
     var leaderSocket: URL
 
     static func live(homeDirectory: URL, bundleResources: URL?) -> StartupPaths {
-        let grokHooks = homeDirectory
-            .appendingPathComponent(".grok", isDirectory: true)
-            .appendingPathComponent("hooks", isDirectory: true)
         let applicationSupport = homeDirectory
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
@@ -36,9 +30,6 @@ struct StartupPaths: Sendable {
                 .appendingPathComponent("terminfo", isDirectory: true)
                 .appendingPathComponent("78", isDirectory: true)
                 .appendingPathComponent("xterm-ghostty"),
-            hookRegistration: grokHooks.appendingPathComponent("coinor.json"),
-            hookRelay: grokHooks.appendingPathComponent("coinor-hook-relay"),
-            bundledHookRelay: resources.appendingPathComponent("coinor-hook-relay"),
             leaderSocket: applicationSupport.appendingPathComponent("grok-leader.sock")
         )
     }
@@ -61,12 +52,10 @@ struct StartupPaths: Sendable {
 struct StartupFileProbe: Sendable {
     var exists: @Sendable (URL) -> Bool
     var isExecutable: @Sendable (URL) -> Bool
-    var readData: @Sendable (URL) -> Data?
 
     static let live = StartupFileProbe(
         exists: { FileManager.default.fileExists(atPath: $0.path) },
-        isExecutable: { FileManager.default.isExecutableFile(atPath: $0.path) },
-        readData: { try? Data(contentsOf: $0) }
+        isExecutable: { FileManager.default.isExecutableFile(atPath: $0.path) }
     )
 }
 
@@ -91,8 +80,6 @@ struct EnvironmentStartupDiagnostics: StartupDiagnosticsProviding {
             return grokExecutableCheck()
         case .ghosttyRuntime:
             return ghosttyRuntimeCheck()
-        case .hookRegistration:
-            return hookRegistrationCheck()
         case .leaderSocket:
             return leaderSocketCheck()
         }
@@ -115,10 +102,6 @@ struct EnvironmentStartupDiagnostics: StartupDiagnosticsProviding {
             return StartupCheck(kind: .ghosttyRuntime, status: .passed, detail: "Bundled resources available")
         }
         return StartupCheck(kind: .ghosttyRuntime, status: .failed, detail: "Bundled resources missing")
-    }
-
-    private func hookRegistrationCheck() -> StartupCheck {
-        HookInstallationValidator(paths: paths, probe: probe).startupCheck()
     }
 
     private func leaderSocketCheck() -> StartupCheck {

@@ -22,6 +22,8 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var archived: Bool = false
     var expanded: Bool = false
     var checkoutPath: String?
+    var displayName: String?
+    var iconName: String?
 }
 
 /// The single JSON document Coinor persists.
@@ -71,6 +73,14 @@ extension MetadataDocument {
 
     func projectCheckoutPath(_ projectID: String) -> String? {
         projects[projectID]?.checkoutPath
+    }
+
+    func projectDisplayName(_ projectID: String) -> String? {
+        projects[projectID]?.displayName
+    }
+
+    func projectIconName(_ projectID: String) -> String? {
+        projects[projectID]?.iconName
     }
 }
 
@@ -128,6 +138,24 @@ extension MetadataDocument {
     mutating func setProjectExpanded(_ projectID: String, expanded: Bool) {
         var value = projects[projectID] ?? ProjectMetadata()
         value.expanded = expanded
+        storeProject(projectID, value)
+    }
+
+    mutating func setProjectDisplayName(
+        _ projectID: String,
+        displayName: String?
+    ) {
+        var value = projects[projectID] ?? ProjectMetadata()
+        value.displayName = displayName
+        storeProject(projectID, value)
+    }
+
+    mutating func setProjectIconName(
+        _ projectID: String,
+        iconName: String?
+    ) {
+        var value = projects[projectID] ?? ProjectMetadata()
+        value.iconName = iconName
         storeProject(projectID, value)
     }
 

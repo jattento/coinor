@@ -163,6 +163,10 @@ Detailed evidence: `Spikes/GrokSharedSession/RESULTS.md`.
 
 ## Hook relay spike
 
+Production status: **SUPERSEDED.** This spike remains valid historical evidence
+for lifecycle edge cases, but Coinor now consumes Grok's native ACP subagent
+lifecycle directly and does not install or bundle the relay.
+
 Status: **PASS**
 
 Commands:
@@ -210,13 +214,12 @@ Detailed evidence: `Spikes/HookSpike/RESULTS.md`.
   target.
 - Physical mixed-scale display movement and physical sleep/wake still require
   final app validation on suitable hardware.
-- A missed hook delivery has no hook-level replay. The product runtime must
-  reconcile pane creation against native Grok subagent events as a secondary
-  source while hooks remain the low-latency primary signal.
+- Native ACP lifecycle updates are the production source. Coinor recursively
+  replays persisted updates after reconnects and while descendants are active.
 - The Ghostty static archive emits two non-fatal missing-debug-symbol linker
   warnings from upstream `ext.o`.
-- Grok protocol and hook payload contracts are runtime integration contracts;
-  startup diagnostics and compatibility tests remain mandatory.
+- Grok protocol and native lifecycle payload contracts are runtime integration
+  contracts; startup diagnostics and compatibility tests remain mandatory.
 
 None of these residuals requires a forbidden dependency or a change to Grok,
 so they do not block Phase 1.

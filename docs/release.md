@@ -6,6 +6,13 @@ Coinor is a personal Apple Silicon application for macOS 13 or newer. Release
 builds are native Swift 6 SwiftUI/AppKit bundles, run outside App Sandbox, and
 are signed locally with an ad-hoc identity.
 
+The source repository and every GitHub Release are public. Every completed,
+validated change is committed and pushed. A change that modifies the
+distributable application also increments the build version and produces a new
+immutable release so another computer can install the same artifact and an
+earlier tag can be used for rollback. Documentation and policy-only changes do
+not require a new application release.
+
 The bundle is not Developer ID signed, notarized, or intended for the Mac App
 Store. A successful `codesign --verify --deep --strict` proves bundle
 integrity on the build machine; it does not make the application a notarized
@@ -17,10 +24,10 @@ Runtime dependencies are deliberately narrow:
 - Coinor's private Grok leader socket
 - statically linked Ghostty v1.3.1 at commit
   `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`
-- a Coinor-owned Grok lifecycle hook and bundled relay
 
 Herdr, Paseo, `/Applications/Ghostty.app`, and global `use_leader` are not
-runtime dependencies.
+runtime dependencies. Coinor receives subagent lifecycle through Grok's native
+ACP stream and does not install files in `~/.grok/hooks`.
 
 ## Prerequisites
 
@@ -59,7 +66,6 @@ match the recorded baseline:
 
 ```sh
 scripts/phase0/check-boundaries.sh
-swift test --package-path Tools/CoinorHookRelay
 ```
 
 The boundary check must not modify `grok-build`, `~/.grok/config.toml`, or the
@@ -121,7 +127,6 @@ scripts/release/verify-app.sh "$APP"
 The verifier requires:
 
 - the arm64 Coinor executable
-- the arm64 bundled `coinor-hook-relay`
 - macOS 13 minimum deployment metadata
 - a strict valid ad-hoc signature
 - App Sandbox disabled and `get-task-allow` absent
@@ -130,11 +135,9 @@ The verifier requires:
 - the Ghostty v1.3.1 MIT notice and exact source commit
 - no dynamic dependency on `/Applications/Ghostty.app`
 
-The final release record must also contain the results of:
+The final release record must also contain the result of:
 
 ```sh
-scripts/hooks/install.sh "$APP"
-scripts/hooks/verify.sh "$APP"
 scripts/phase0/check-boundaries.sh
 ```
 
@@ -151,22 +154,11 @@ mkdir -p "$HOME/Applications"
 ditto "$APP" "$HOME/Applications/Coinor.app"
 ```
 
-Install or repair the Coinor hook from the installed application:
-
-```sh
-scripts/hooks/install.sh "$HOME/Applications/Coinor.app"
-scripts/hooks/verify.sh "$HOME/Applications/Coinor.app"
-```
-
 Launch it:
 
 ```sh
 open "$HOME/Applications/Coinor.app"
 ```
-
-The hook installer refuses to overwrite an unowned registration or relay. If
-that happens, inspect `~/.grok/hooks/coinor.json` and
-`~/.grok/hooks/coinor-hook-relay`; do not delete or replace unrelated hooks.
 
 ## Repair Or Upgrade
 
@@ -174,8 +166,7 @@ For an application-only rebuild:
 
 1. Rebuild and verify Coinor.
 2. Replace the local application bundle.
-3. Re-run `scripts/hooks/install.sh` using that exact bundle.
-4. Re-run both hook and release verification.
+3. Re-run release verification.
 
 For a Ghostty update:
 
@@ -183,7 +174,7 @@ For a Ghostty update:
 2. Rebuild the complete header/framework/resources artifact.
 3. Install it into `Vendor/Ghostty`.
 4. Run the happy-path and corruption verification suite.
-5. Rebuild Coinor and repeat all Debug, Release, hook, and manual terminal QA.
+5. Rebuild Coinor and repeat all Debug, Release, and manual terminal QA.
 
 Ghostty source components are never upgraded independently.
 
@@ -195,7 +186,6 @@ The Release application contains:
 - statically linked Ghostty terminal code
 - `Contents/Resources/ghostty`
 - `Contents/Resources/terminfo`
-- `Contents/Resources/coinor-hook-relay`
 - `Contents/Resources/GhosttyArtifactManifest.txt`
 - `Contents/Resources/ThirdPartyNotices.txt`
 
@@ -212,3 +202,79 @@ shasum -a 256 Artifacts/Coinor-0.1.0-arm64.zip
 ```
 
 The archive remains an ad-hoc, non-notarized personal build.
+
+## Security Gate
+
+Run the security gate before the first push and again against the exact release
+candidate:
+
+```sh
+git diff --check
+scripts/release/security-scan.sh "$APP"
+```
+
+The script scans Git history, a clean snapshot containing exactly tracked and
+non-ignored untracked files, and every regular file in the application bundle
+for secrets and the local home path. Also inspect the complete release diff and
+archive contents for credentials, tokens, private keys, credentialed URLs,
+Coinor metadata, Grok transcripts, or other user data. A non-empty finding
+blocks the push and release until it is understood and removed.
+
+Build outputs, DerivedData, the ignored Ghostty artifact, Application Support
+metadata, and the private leader socket must never be committed.
+
+## Publish
+
+The first release creates the public repository if it does not already exist:
+
+```sh
+gh repo create jattento/coinor --public --source=. --remote=origin
+```
+
+For every release:
+
+1. Update `MARKETING_VERSION` when the user-facing version changes and always
+   increment `CURRENT_PROJECT_VERSION`.
+2. Complete Debug build, full test, Release build, bundle verification,
+   boundary checks, visual QA, and the security gate.
+3. Create the verified archive and checksum file:
+
+```sh
+VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")"
+mkdir -p Artifacts
+ditto -c -k --sequesterRsrc --keepParent \
+  "$APP" "Artifacts/Coinor-${VERSION}-arm64.zip"
+(
+  cd Artifacts
+  shasum -a 256 "Coinor-${VERSION}-arm64.zip" > SHA256SUMS
+)
+```
+
+4. Commit the validated source, push `main`, and create an annotated tag:
+
+```sh
+git push origin main
+git tag -a "v${VERSION}" -m "Coinor ${VERSION}"
+git push origin "v${VERSION}"
+```
+
+5. Publish the public GitHub Release:
+
+```sh
+gh release create "v${VERSION}" \
+  "Artifacts/Coinor-${VERSION}-arm64.zip#Coinor macOS arm64 application" \
+  "Artifacts/SHA256SUMS#SHA-256 checksums" \
+  --repo jattento/coinor \
+  --title "Coinor ${VERSION}" \
+  --notes-file "docs/releases/${VERSION}.md" \
+  --verify-tag
+```
+
+6. Verify that GitHub's asset digests match the local checksums, that `main`
+   and the annotated tag resolve to the release commit, and that the release is
+   public rather than draft or prerelease.
+7. Quit Coinor, install the exact verified release bundle, reopen it, and
+   confirm the installed version and primary workflow.
+
+Never move a published tag or replace an existing release asset. A correction
+gets a new version and release; the previous one remains the rollback point.
