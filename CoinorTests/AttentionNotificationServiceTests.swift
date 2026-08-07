@@ -28,7 +28,7 @@ private final class NotificationCenterSpy: UserNotificationCentering {
 
 @Test
 @MainActor
-func attentionNotificationIsSuppressedWhileCoinorIsFocused() async {
+func focusedAttentionRequestsAuthorizationButSuppressesNotification() async {
     let center = NotificationCenterSpy()
     let service = AttentionNotificationService(
         center: center,
@@ -40,6 +40,7 @@ func attentionNotificationIsSuppressedWhileCoinorIsFocused() async {
         conversationTitle: "Conversation"
     )
 
+    #expect(center.authorizationRequests == 1)
     #expect(center.requests.isEmpty)
 }
 

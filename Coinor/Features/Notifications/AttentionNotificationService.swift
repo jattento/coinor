@@ -15,6 +15,7 @@ final class AttentionNotificationService {
     private let center: any UserNotificationCentering
     private let isApplicationActive: () -> Bool
     private var authorizationRequested = false
+    private var authorizationGranted = false
 
     init(
         center: any UserNotificationCentering = UNUserNotificationCenter.current(),
@@ -28,18 +29,20 @@ final class AttentionNotificationService {
         sessionID: String,
         conversationTitle: String
     ) async {
-        guard !isApplicationActive() else { return }
+        if !authorizationRequested {
+            authorizationRequested = true
+            do {
+                authorizationGranted = try await center.requestAuthorization(
+                    options: [.alert, .sound]
+                )
+            } catch {
+                authorizationRequested = false
+                return
+            }
+        }
+        guard authorizationGranted, !isApplicationActive() else { return }
 
         do {
-            if !authorizationRequested {
-                authorizationRequested = true
-                guard try await center.requestAuthorization(
-                    options: [.alert, .sound]
-                ) else {
-                    return
-                }
-            }
-
             let content = UNMutableNotificationContent()
             content.title = conversationTitle
             content.body = "Grok needs your attention."
