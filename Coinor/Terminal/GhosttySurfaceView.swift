@@ -4,8 +4,258 @@ import Foundation
 import GhosttyKit
 import QuartzCore
 
+struct GhosttyMouseInput: Equatable {
+    let point: CGPoint
+    let modifiers: NSEvent.ModifierFlags
+
+    func forcingShift(_ present: Bool) -> Self {
+        var routedModifiers = modifiers
+        if present {
+            routedModifiers.insert(.shift)
+        } else {
+            routedModifiers.remove(.shift)
+        }
+        return Self(point: point, modifiers: routedModifiers)
+    }
+}
+
+enum GhosttyMouseButtonAction: Equatable {
+    case press
+    case release
+}
+
+enum GhosttyMouseRoutingCommand: Equatable {
+    case position(GhosttyMouseInput)
+    case leftButton(GhosttyMouseButtonAction, GhosttyMouseInput)
+}
+
+enum GhosttySecondaryClickOwner: Equatable {
+    case terminal
+    case host
+}
+
+struct GhosttySecondaryClickRouter {
+    private enum State {
+        case idle
+        case terminal(GhosttyMouseInput)
+        case host
+    }
+
+    private var state: State = .idle
+
+    mutating func mouseDown(
+        _ input: GhosttyMouseInput,
+        terminalConsumed: Bool
+    ) -> GhosttySecondaryClickOwner {
+        if terminalConsumed {
+            state = .terminal(input)
+            return .terminal
+        }
+
+        state = .host
+        return .host
+    }
+
+    mutating func mouseDragged(_ input: GhosttyMouseInput) {
+        guard case .terminal = state else { return }
+        state = .terminal(input)
+    }
+
+    mutating func mouseUp() -> GhosttySecondaryClickOwner? {
+        defer { state = .idle }
+        return switch state {
+        case .terminal:
+            .terminal
+        case .host:
+            .host
+        case .idle:
+            nil
+        }
+    }
+
+    mutating func cancel() -> GhosttyMouseInput? {
+        defer { state = .idle }
+        guard case .terminal(let input) = state else { return nil }
+        return input
+    }
+}
+
+enum GhosttyHostContextMenuPolicy {
+    static func allowsMenu(
+        buttonNumber: Int,
+        modifiers: NSEvent.ModifierFlags,
+        mouseCaptured: Bool
+    ) -> Bool {
+        let isControlLeftClick =
+            buttonNumber == 0 && modifiers.contains(.control)
+        return !(mouseCaptured && isControlLeftClick)
+    }
+}
+
+enum GhosttyMouseBoundaryRouting {
+    static func exitCommands(
+        modifiers: NSEvent.ModifierFlags,
+        hasPressedMouseButtons: Bool
+    ) -> [GhosttyMouseRoutingCommand] {
+        guard !hasPressedMouseButtons else { return [] }
+        return [
+            .position(
+                GhosttyMouseInput(
+                    point: CGPoint(x: -1, y: -1),
+                    modifiers: modifiers
+                )
+            ),
+        ]
+    }
+}
+
+struct GhosttyMouseRouter {
+    private struct ActiveGesture {
+        let shiftPresent: Bool
+        var lastRoutedInput: GhosttyMouseInput
+
+        mutating func route(_ input: GhosttyMouseInput) -> GhosttyMouseInput {
+            let routed = input.forcingShift(shiftPresent)
+            lastRoutedInput = routed
+            return routed
+        }
+    }
+
+    private enum State {
+        case idle
+        case immediate(ActiveGesture)
+        case deferred(ActiveGesture)
+        case selecting(ActiveGesture)
+    }
+
+    private var state: State = .idle
+
+    mutating func mouseDown(
+        _ input: GhosttyMouseInput,
+        mouseCaptured: Bool
+    ) -> [GhosttyMouseRoutingCommand] {
+        let shiftPresent = input.modifiers.contains(.shift)
+        let routed = input.forcingShift(shiftPresent)
+        let gesture = ActiveGesture(
+            shiftPresent: shiftPresent,
+            lastRoutedInput: routed
+        )
+
+        if !mouseCaptured || shiftPresent {
+            state = .immediate(gesture)
+            return [
+                .position(routed),
+                .leftButton(.press, routed),
+            ]
+        }
+
+        state = .deferred(gesture)
+        return []
+    }
+
+    mutating func mouseDragged(
+        _ input: GhosttyMouseInput
+    ) -> [GhosttyMouseRoutingCommand] {
+        switch state {
+        case .deferred(let gesture):
+            let shiftedOriginal = gesture.lastRoutedInput.forcingShift(true)
+            let shiftedCurrent = input.forcingShift(true)
+            state = .selecting(
+                ActiveGesture(
+                    shiftPresent: true,
+                    lastRoutedInput: shiftedCurrent
+                )
+            )
+            return [
+                .position(shiftedOriginal),
+                .leftButton(.press, shiftedOriginal),
+                .position(shiftedCurrent),
+            ]
+
+        case .selecting(var gesture):
+            let routed = gesture.route(input)
+            state = .selecting(gesture)
+            return [.position(routed)]
+
+        case .immediate(var gesture):
+            let routed = gesture.route(input)
+            state = .immediate(gesture)
+            return [.position(routed)]
+
+        case .idle:
+            return [.position(input)]
+        }
+    }
+
+    mutating func mouseUp(
+        _ input: GhosttyMouseInput
+    ) -> [GhosttyMouseRoutingCommand] {
+        defer { state = .idle }
+
+        switch state {
+        case .deferred(let gesture):
+            let original = gesture.lastRoutedInput.forcingShift(false)
+            let routed = input.forcingShift(false)
+            return [
+                .position(original),
+                .leftButton(.press, original),
+                .position(routed),
+                .leftButton(.release, routed),
+            ]
+
+        case .selecting(var gesture):
+            let routed = gesture.route(input)
+            return [
+                .position(routed),
+                .leftButton(.release, routed),
+            ]
+
+        case .immediate(var gesture):
+            let routed = gesture.route(input)
+            return [
+                .position(routed),
+                .leftButton(.release, routed),
+            ]
+
+        case .idle:
+            return []
+        }
+    }
+
+    mutating func cancel() -> [GhosttyMouseRoutingCommand] {
+        defer { state = .idle }
+
+        switch state {
+        case .immediate(let gesture), .selecting(let gesture):
+            let last = gesture.lastRoutedInput
+            return [
+                .position(last),
+                .leftButton(.release, last),
+            ]
+
+        case .deferred, .idle:
+            return []
+        }
+    }
+}
+
+enum GhosttyMouseCoordinateMapper {
+    static func surfacePoint(
+        viewPoint: CGPoint,
+        bounds: CGRect,
+        isFlipped: Bool
+    ) -> CGPoint {
+        CGPoint(
+            x: viewPoint.x - bounds.minX,
+            y: isFlipped
+                ? viewPoint.y - bounds.minY
+                : bounds.maxY - viewPoint.y
+        )
+    }
+}
+
 @MainActor
-final class GhosttySurfaceView: NSView {
+final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     nonisolated(unsafe) private(set) var surfaceHandle: ghostty_surface_t?
     private let runtime: GhosttyRuntime
     private let launch: TerminalLaunchRequest
@@ -13,6 +263,8 @@ final class GhosttySurfaceView: NSView {
     private var observers: [NSObjectProtocol] = []
     private var lastPixelSize = CGSize.zero
     private var isShuttingDown = false
+    private var mouseRouter = GhosttyMouseRouter()
+    private var secondaryClickRouter = GhosttySecondaryClickRouter()
 
     var onCloseRequest: (() -> Void)?
     var onProcessExit: ((UInt64) -> Void)?
@@ -98,7 +350,10 @@ final class GhosttySurfaceView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         removeObservers()
-        guard let window else { return }
+        guard let window else {
+            cancelMouseInteraction()
+            return
+        }
         updateDisplayProperties()
         updateFocus()
         window.makeFirstResponder(self)
@@ -200,19 +455,67 @@ final class GhosttySurfaceView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT)
+        let captured = surfaceHandle.map(ghostty_surface_mouse_captured) ?? false
+        dispatchMouseCommands(
+            mouseRouter.mouseDown(
+                mouseInput(event),
+                mouseCaptured: captured
+            )
+        )
     }
 
     override func mouseUp(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT)
+        dispatchMouseCommands(mouseRouter.mouseUp(mouseInput(event)))
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_RIGHT)
+        window?.makeFirstResponder(self)
+        let input = mouseInput(event)
+        let consumed = sendMouseButton(
+            input,
+            state: GHOSTTY_MOUSE_PRESS,
+            button: GHOSTTY_MOUSE_RIGHT
+        )
+        if secondaryClickRouter.mouseDown(
+            input,
+            terminalConsumed: consumed
+        ) == .host {
+            super.rightMouseDown(with: event)
+        }
     }
 
     override func rightMouseUp(with event: NSEvent) {
-        sendMouseButton(event, state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_RIGHT)
+        switch secondaryClickRouter.mouseUp() {
+        case .terminal:
+            _ = sendMouseButton(
+                event,
+                state: GHOSTTY_MOUSE_RELEASE,
+                button: GHOSTTY_MOUSE_RIGHT
+            )
+        case .host:
+            super.rightMouseUp(with: event)
+        case nil:
+            break
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        sendMousePosition(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        let hasPressedMouseButtons = NSEvent.pressedMouseButtons != 0
+        if !hasPressedMouseButtons {
+            cancelMouseInteraction()
+            dispatchMouseCommands(
+                GhosttyMouseBoundaryRouting.exitCommands(
+                    modifiers: event.modifierFlags,
+                    hasPressedMouseButtons: false
+                )
+            )
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -220,6 +523,16 @@ final class GhosttySurfaceView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        dispatchMouseCommands(mouseRouter.mouseDragged(mouseInput(event)))
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        let input = mouseInput(event)
+        secondaryClickRouter.mouseDragged(input)
+        sendMousePosition(input)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
         sendMousePosition(event)
     }
 
@@ -231,6 +544,75 @@ final class GhosttySurfaceView: NSView {
             event.scrollingDeltaY,
             0
         )
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let mouseCaptured = surfaceHandle.map(ghostty_surface_mouse_captured) ?? false
+        guard GhosttyHostContextMenuPolicy.allowsMenu(
+            buttonNumber: event.buttonNumber,
+            modifiers: event.modifierFlags,
+            mouseCaptured: mouseCaptured
+        ) else {
+            return nil
+        }
+
+        let menu = NSMenu()
+
+        let copyItem = NSMenuItem(
+            title: "Copy",
+            action: #selector(copy(_:)),
+            keyEquivalent: ""
+        )
+        copyItem.target = self
+        copyItem.isEnabled = hasSelection
+        menu.addItem(copyItem)
+
+        let pasteItem = NSMenuItem(
+            title: "Paste",
+            action: #selector(paste(_:)),
+            keyEquivalent: ""
+        )
+        pasteItem.target = self
+        pasteItem.isEnabled = NSPasteboard.general.string(forType: .string) != nil
+        menu.addItem(pasteItem)
+
+        menu.addItem(.separator())
+
+        let selectAllItem = NSMenuItem(
+            title: "Select All",
+            action: #selector(selectAll(_:)),
+            keyEquivalent: ""
+        )
+        selectAllItem.target = self
+        menu.addItem(selectAllItem)
+
+        return menu
+    }
+
+    @IBAction func copy(_ sender: Any?) {
+        guard hasSelection else { return }
+        _ = performBindingAction("copy_to_clipboard")
+    }
+
+    @IBAction func paste(_ sender: Any?) {
+        _ = performBindingAction("paste_from_clipboard")
+    }
+
+    @IBAction override func selectAll(_ sender: Any?) {
+        _ = performBindingAction("select_all")
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(copy(_:)):
+            hasSelection
+        case #selector(paste(_:)):
+            NSPasteboard.general.string(forType: .string) != nil
+        case #selector(selectAll(_:)):
+            surfaceHandle != nil
+        default:
+            true
+        }
     }
 
     func requestHostClose() {
@@ -306,6 +688,7 @@ final class GhosttySurfaceView: NSView {
     }
 
     func shutdown() {
+        cancelMouseInteraction()
         guard !isShuttingDown, let surfaceHandle else { return }
         isShuttingDown = true
         removeObservers()
@@ -315,6 +698,17 @@ final class GhosttySurfaceView: NSView {
         onWorkingDirectoryChange = nil
         ghostty_surface_free(surfaceHandle)
         self.surfaceHandle = nil
+    }
+
+    private func cancelMouseInteraction() {
+        dispatchMouseCommands(mouseRouter.cancel())
+        if let input = secondaryClickRouter.cancel() {
+            _ = sendMouseButton(
+                input,
+                state: GHOSTTY_MOUSE_RELEASE,
+                button: GHOSTTY_MOUSE_RIGHT
+            )
+        }
     }
 
     private static func terminalPath() -> String {
@@ -490,27 +884,96 @@ final class GhosttySurfaceView: NSView {
         _ event: NSEvent,
         state: ghostty_input_mouse_state_e,
         button: ghostty_input_mouse_button_e
-    ) {
-        guard let surfaceHandle else { return }
-        sendMousePosition(event)
-        _ = ghostty_surface_mouse_button(
+    ) -> Bool {
+        sendMouseButton(
+            mouseInput(event),
+            state: state,
+            button: button
+        )
+    }
+
+    private func sendMouseButton(
+        _ input: GhosttyMouseInput,
+        state: ghostty_input_mouse_state_e,
+        button: ghostty_input_mouse_button_e
+    ) -> Bool {
+        guard let surfaceHandle else { return false }
+        sendMousePosition(input)
+        return ghostty_surface_mouse_button(
             surfaceHandle,
             state,
             button,
-            Self.modifiers(event.modifierFlags)
+            Self.modifiers(input.modifiers)
         )
     }
 
     private func sendMousePosition(_ event: NSEvent) {
+        sendMousePosition(mouseInput(event))
+    }
+
+    private func sendMousePosition(_ input: GhosttyMouseInput) {
         guard let surfaceHandle else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        let backingPoint = convertToBacking(point)
         ghostty_surface_mouse_pos(
             surfaceHandle,
-            backingPoint.x,
-            backingPoint.y,
-            Self.modifiers(event.modifierFlags)
+            input.point.x,
+            input.point.y,
+            Self.modifiers(input.modifiers)
         )
+    }
+
+    private func mouseInput(_ event: NSEvent) -> GhosttyMouseInput {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        return GhosttyMouseInput(
+            point: GhosttyMouseCoordinateMapper.surfacePoint(
+                viewPoint: viewPoint,
+                bounds: bounds,
+                isFlipped: isFlipped
+            ),
+            modifiers: event.modifierFlags
+        )
+    }
+
+    private func dispatchMouseCommands(
+        _ commands: [GhosttyMouseRoutingCommand]
+    ) {
+        guard let surfaceHandle else { return }
+
+        for command in commands {
+            switch command {
+            case .position(let input):
+                sendMousePosition(input)
+
+            case .leftButton(let action, let input):
+                let state: ghostty_input_mouse_state_e = switch action {
+                case .press:
+                    GHOSTTY_MOUSE_PRESS
+                case .release:
+                    GHOSTTY_MOUSE_RELEASE
+                }
+                _ = ghostty_surface_mouse_button(
+                    surfaceHandle,
+                    state,
+                    GHOSTTY_MOUSE_LEFT,
+                    Self.modifiers(input.modifiers)
+                )
+            }
+        }
+    }
+
+    private var hasSelection: Bool {
+        surfaceHandle.map(ghostty_surface_has_selection) ?? false
+    }
+
+    @discardableResult
+    private func performBindingAction(_ action: String) -> Bool {
+        guard let surfaceHandle else { return false }
+        return action.withCString {
+            ghostty_surface_binding_action(
+                surfaceHandle,
+                $0,
+                UInt(action.utf8.count)
+            )
+        }
     }
 
     private static func modifiers(

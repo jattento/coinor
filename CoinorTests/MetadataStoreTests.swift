@@ -45,6 +45,13 @@ func relaunchRestoresPersistedState() async throws {
                 "project-a",
                 iconName: "terminal"
             )
+            document.setProjectIconColorName(
+                "project-a",
+                iconColorName: "green"
+            )
+            document.reorderProjects(
+                to: ["project-b", "project-a"]
+            )
             document.setLastVisibleSession("session-a")
         }
     }
@@ -58,6 +65,8 @@ func relaunchRestoresPersistedState() async throws {
     #expect(document.projectCheckoutPath("project-a") == "/tmp/Project A")
     #expect(document.projectDisplayName("project-a") == "Customer Portal")
     #expect(document.projectIconName("project-a") == "terminal")
+    #expect(document.projectIconColorName("project-a") == "green")
+    #expect(document.projectOrder == ["project-b", "project-a"])
     #expect(document.lastVisibleSessionID == "session-a")
 }
 
@@ -73,11 +82,54 @@ func clearingProjectPresentationPrunesAnOtherwiseEmptyOverride() {
         "project-a",
         iconName: "terminal"
     )
+    document.setProjectIconColorName(
+        "project-a",
+        iconColorName: "blue"
+    )
     #expect(document.projects["project-a"] != nil)
 
     document.setProjectDisplayName("project-a", displayName: nil)
     document.setProjectIconName("project-a", iconName: nil)
+    document.setProjectIconColorName("project-a", iconColorName: nil)
     #expect(document.projects["project-a"] == nil)
+}
+
+@Test
+func reorderingVisibleProjectsPreservesArchivedSlots() {
+    var document = MetadataDocument.empty
+    document.reorderProjects(
+        to: ["project-a", "project-b", "project-c"]
+    )
+    document.setProjectArchived("project-b", archived: true)
+
+    document.reorderVisibleProjects(
+        to: ["project-c", "project-a"],
+        allKnownProjectIDs: [
+            "project-a",
+            "project-b",
+            "project-c",
+        ]
+    )
+
+    #expect(
+        document.projectOrder
+            == ["project-c", "project-b", "project-a"]
+    )
+}
+
+@Test
+func projectOrderRemainsBackwardCompatibleWithSchemaTwo() throws {
+    var document = MetadataDocument.empty
+    document.reorderProjects(to: ["project-b", "project-a"])
+
+    let encoded = try JSONEncoder().encode(document)
+    let decoded = try JSONDecoder().decode(
+        MetadataDocument.self,
+        from: encoded
+    )
+
+    #expect(decoded.schemaVersion == 2)
+    #expect(decoded.projectOrder == ["project-b", "project-a"])
 }
 
 @Test

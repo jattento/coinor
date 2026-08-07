@@ -13,16 +13,17 @@ private struct DetachedRuntimeState {
 
 @MainActor
 final class AppCoordinator: ObservableObject {
-    private static let supportedProjectIconNames: Set<String> = [
-        "app",
-        "chevron.left.forwardslash.chevron.right",
-        "cloud",
-        "cylinder",
-        "folder",
-        "server.rack",
-        "terminal",
-        "wrench.and.screwdriver",
-    ]
+    private static let supportedProjectIconNames =
+        ProjectIconChoice.supportedSystemNames.union([
+            "app",
+            "cloud",
+            "cylinder",
+            "server.rack",
+            "wrench.and.screwdriver",
+        ])
+    private static let supportedProjectIconColorNames = Set(
+        ProjectIconColorChoice.allCases.compactMap(\.persistedName)
+    )
 
     enum Status: Equatable {
         case starting
@@ -59,6 +60,7 @@ final class AppCoordinator: ObservableObject {
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
+    private var projectReorderGeneration = 0
     private var lifecycleGeneration = 0
     private var started = false
     private let notifications = AttentionNotificationService()
@@ -277,7 +279,8 @@ final class AppCoordinator: ObservableObject {
         let summary = SessionSummary(
             id: sessionID,
             projectID: projectID,
-            title: "New Conversation"
+            title: "New Conversation",
+            lastActivityAt: Date()
         )
         pendingSessions[sessionID] = summary
         rebuildCatalog()
@@ -335,6 +338,42 @@ final class AppCoordinator: ObservableObject {
         schedulePersistence { coordinator in
             await coordinator.persist {
                 $0.setProjectExpanded(projectID, expanded: expanded)
+            }
+        }
+    }
+
+    func reorderProjects(to projectIDs: [String]) {
+        let visibleProjectIDs = catalog.projects.map(\.projectID)
+        guard projectIDs.count == visibleProjectIDs.count,
+              Set(projectIDs) == Set(visibleProjectIDs) else {
+            return
+        }
+
+        let rowsByID = Dictionary(
+            uniqueKeysWithValues: catalog.projects.map {
+                ($0.projectID, $0)
+            }
+        )
+        catalog = SessionCatalog(
+            pinned: catalog.pinned,
+            projects: projectIDs.compactMap { rowsByID[$0] }
+        )
+
+        projectReorderGeneration += 1
+        let generation = projectReorderGeneration
+        schedulePersistence { coordinator in
+            let allKnownProjectIDs = coordinator.allKnownProjectIDs
+            _ = await coordinator.persist(
+                {
+                    $0.reorderVisibleProjects(
+                        to: projectIDs,
+                        allKnownProjectIDs: allKnownProjectIDs
+                    )
+                },
+                rebuildCatalog: false
+            )
+            if coordinator.projectReorderGeneration == generation {
+                coordinator.rebuildCatalog()
             }
         }
     }
@@ -570,6 +609,14 @@ final class AppCoordinator: ObservableObject {
         return iconName
     }
 
+    func projectIconColorName(_ projectID: String) -> String? {
+        guard let colorName = metadata.projectIconColorName(projectID),
+              Self.supportedProjectIconColorNames.contains(colorName) else {
+            return nil
+        }
+        return colorName
+    }
+
     func projectHasCustomDisplayName(_ projectID: String) -> Bool {
         metadata.projectDisplayName(projectID) != nil
     }
@@ -595,6 +642,25 @@ final class AppCoordinator: ObservableObject {
                 $0.setProjectIconName(
                     projectID,
                     iconName: iconName
+                )
+            }
+        }
+    }
+
+    func setProjectAppearance(
+        _ projectID: String,
+        iconName: String?,
+        colorName: String?
+    ) {
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setProjectIconName(
+                    projectID,
+                    iconName: iconName
+                )
+                $0.setProjectIconColorName(
+                    projectID,
+                    iconColorName: colorName
                 )
             }
         }
@@ -626,13 +692,28 @@ final class AppCoordinator: ObservableObject {
         return authoritativeActivity(for: sessionID) ?? .idle
     }
 
+    func searchConversations(_ query: String) -> [ConversationRow] {
+        ConversationSearch.results(
+            query: query,
+            sessions: summaries,
+            metadata: metadata
+        )
+    }
+
     private var summaries: [SessionSummary] {
         let persisted = persistedSessions.map { session in
-            SessionSummary(
+            let dates = [
+                session.lastActiveAt,
+                session.updatedAt,
+                session.createdAt,
+                roster[session.id.rawValue]?.lastChange,
+            ].compactMap { $0 }
+            return SessionSummary(
                 id: session.id.rawValue,
                 projectID: projectIDBySessionID[session.id.rawValue]
                     ?? fallbackProjectID(for: session),
-                title: session.title ?? "Untitled Conversation"
+                title: session.title ?? "Untitled Conversation",
+                lastActivityAt: dates.max()
             )
         }
         let persistedIDs = Set(persisted.map(\.id))
@@ -705,6 +786,18 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
+    private var allKnownProjectIDs: [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for projectID in summaries.map(\.projectID)
+            + metadata.projects.keys.sorted() {
+            if seen.insert(projectID).inserted {
+                result.append(projectID)
+            }
+        }
+        return result
+    }
+
     private func schedulePersistence(
         _ operation: @escaping @MainActor (AppCoordinator) async -> Void
     ) {
@@ -731,12 +824,15 @@ final class AppCoordinator: ObservableObject {
 
     @discardableResult
     private func persist(
-        _ transform: @Sendable @escaping (inout MetadataDocument) -> Void
+        _ transform: @Sendable @escaping (inout MetadataDocument) -> Void,
+        rebuildCatalog shouldRebuildCatalog: Bool = true
     ) async -> Bool {
         guard let metadataStore else { return false }
         do {
             metadata = try await metadataStore.update(transform)
-            rebuildCatalog()
+            if shouldRebuildCatalog {
+                rebuildCatalog()
+            }
             return true
         } catch {
             warningMessage = error.localizedDescription

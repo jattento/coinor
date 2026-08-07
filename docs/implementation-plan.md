@@ -191,6 +191,12 @@ Implement:
 - activity glyph aggregation
 - attention focus routing
 - macOS notifications while unfocused
+- project drag ordering with archived-slot preservation
+- 30-symbol and eight-color project appearance picker
+- fuzzy conversation search above `Pinned`
+- advisory Grok fork update warning
+- Retina-correct mouse hover, click, double-click, selection, and clipboard
+- Voice microphone purpose declaration
 
 Acceptance criteria:
 
@@ -199,6 +205,12 @@ Acceptance criteria:
 - archive never deletes a Grok session
 - archived active work is not interrupted and unloads when inactive
 - subagent attention reaches the root row and correct pane
+- rapid project reorders cannot be overwritten by stale persistence
+- exact and closer search matches rank before older fuzzy matches
+- ordinary drag selects text while Grok click and double-click actions remain
+  interactive
+- Voice prompts for Coinor microphone access when first used
+- update-check failures never block startup or erase a known update
 
 ## Phase 7: quality and packaging
 
@@ -231,6 +243,9 @@ Use focused tests at each boundary:
 - retry tests for a child session whose summary appears after the native start
 - Git fixture repositories for worktree grouping and remote fallback
 - AppKit tests for surface lifecycle where practical
+- pure mouse-routing and logical-coordinate tests for captured clicks, native
+  selection, pane boundaries, and context-menu routing
+- update-version parser and failure-preservation tests
 - Playwright is not applicable to the native UI; use XCTest/XCUITest and
   screenshot inspection
 

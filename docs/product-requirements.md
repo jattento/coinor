@@ -17,15 +17,21 @@ Projects with no Grok conversations can be added manually. Conversations
 appear in one flat list beneath their project; worktree conversations do not
 create a second navigation level or display a worktree badge in the sidebar.
 
-Coinor can assign a local display name and icon to a project from its sidebar
-context menu. These presentation overrides do not rename, move, or otherwise
-modify the underlying repository.
+Coinor can assign a local display name, icon, and icon color to a project from
+its sidebar context menu. The appearance picker offers the complete Coinor
+catalog of 30 project symbols and eight adaptive system colors. These
+presentation overrides do not rename, move, or otherwise modify the
+underlying repository.
 
 ## Sidebar presentation
 
 Sidebar controls use adaptive system colors so icons remain visible in both
 Light and Dark appearances. Project and conversation rows use a lighter system
 font weight than terminal content.
+
+The new-conversation `+` control is visible only while its project row is
+hovered or the control has keyboard or accessibility focus. Its reserved layout
+space remains stable so rows do not move when it appears.
 
 On macOS 26 or newer, Coinor uses the native Liquid Glass sidebar supplied by
 `NavigationSplitView` and subtly extends terminal content beneath it with
@@ -54,6 +60,19 @@ section.
 Coinor can rename conversations from the sidebar. Renaming updates the
 underlying Grok session through Grok's session administration API; Coinor does
 not store a separate display-title alias.
+
+Projects can be dragged to a user-defined order. The order is local Coinor
+metadata, survives relaunch, and preserves the relative slot of an archived
+project so unarchiving restores it where the user left it.
+Only project headers are draggable. Reordering must not introduce an additional
+outline level: every project header remains aligned in the same flat column,
+whether collapsed, expanded, or moved past a project with conversations.
+
+A fuzzy conversation search field appears above `Pinned`. While an effective
+query is present, the sidebar shows one flat result list rather than duplicating
+the normal sections. Textual closeness is the primary ranking signal; more
+recent activity breaks ties, and archived conversations or projects never
+appear.
 
 ## Creating conversations
 
@@ -99,7 +118,18 @@ time. A subagent pane opens when the subagent starts and closes when it ends.
 Every terminal pane loads the user's standard Ghostty configuration, including
 fonts, colors, and terminal behavior. Coinor overrides only the values required
 to launch the correct Grok session in the correct working directory through
-Coinor's isolated leader.
+Coinor's isolated leader, plus the mouse-capture setting required for native
+text selection.
+
+Mouse coordinates, hover, clicks, double clicks, and drag selection remain
+fully interactive inside Grok. A normal drag selects terminal text even while
+Grok has mouse reporting enabled; normal clicks and double clicks continue to
+activate Grok rows and expandable task output. Selected text can be copied with
+the standard macOS command or the terminal context menu.
+
+Voice uses Grok's native microphone capture. Coinor declares the macOS
+microphone purpose string, and macOS requests access when the user starts
+Voice; Coinor does not record or persist audio itself.
 
 ## Activity and attention
 
@@ -111,3 +141,11 @@ focuses the pane requesting input.
 
 Coinor sends a native macOS notification when a conversation needs attention
 only while Coinor is not the focused application.
+
+## Grok compatibility updates
+
+Coinor checks the public latest release of the configured Grok fork at launch
+and periodically while open. When that release is newer than the installed
+binary, an orange warning appears at the right edge of the window toolbar and
+opens the matching release page. Network and version-probe failures are
+non-blocking and preserve the last successful update state.

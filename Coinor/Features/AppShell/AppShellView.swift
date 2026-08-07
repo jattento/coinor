@@ -3,6 +3,7 @@ import SwiftUI
 struct AppShellView: View {
     @ObservedObject var model: AppShellModel
     @ObservedObject var coordinator: AppCoordinator
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationSplitView {
@@ -29,6 +30,28 @@ struct AppShellView: View {
             await coordinator.start()
             _ = await diagnostics
             await model.runStartupChecks()
+        }
+        .task {
+            await model.monitorGrokUpdates()
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if let release = model.availableGrokRelease {
+                    Button {
+                        openURL(release.url)
+                    } label: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    .help("Grok \(release.tagName) is available")
+                    .accessibilityLabel(
+                        "Grok update available: \(release.tagName)"
+                    )
+                    .accessibilityIdentifier(
+                        AppShellIdentifier.grokUpdateButton
+                    )
+                }
+            }
         }
         .sheet(isPresented: $coordinator.showsArchivedItems) {
             ArchivedItemsView(coordinator: coordinator)

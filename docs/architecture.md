@@ -152,12 +152,31 @@ At startup, the runtime:
 2. calls `ghostty_init` exactly once
 3. creates one shared Ghostty application handle
 4. creates a configuration and loads Ghostty's default and recursive files
-5. finalizes the configuration and reports diagnostics
-6. creates one surface per root or subagent pane
+5. loads Coinor's bundled overrides after user configuration
+6. finalizes the configuration and reports diagnostics
+7. creates one surface per root or subagent pane
 
 Each surface inherits the user's normal font, colors, and terminal behavior.
 Coinor overrides the surface command, working directory, environment, and
 initial size required by the pane.
+
+The bundled override sets `mouse-shift-capture = never`. Grok uses terminal
+mouse reporting for its interactive rows, so `GhosttySurfaceView` distinguishes
+clicks from drags while capture is active:
+
+- an ordinary click is replayed to Grok unchanged
+- two clicks remain two ordinary press/release pairs for Grok's double-click
+  detection
+- the first drag event replays the deferred press with Shift so Ghostty starts
+  native selection
+- subsequent drag and release events retain Shift only for that selection
+
+AppKit mouse locations are sent to Ghostty in logical points rather than
+Retina backing pixels. Enter, move, exit, right-drag, and auxiliary-drag events
+are forwarded so hover state does not remain stale across panes. Exiting sends
+Ghostty's `(-1, -1)` sentinel when no button is pressed. A right click with an
+active selection opens Coinor's standard Copy/Paste/Select All menu; otherwise
+the right click remains available to Grok.
 
 `GhosttyActionBridge` handles clipboard completion, close requests, cursor
 state, title and working-directory updates, URL opening, renderer health, and
@@ -236,7 +255,9 @@ sidebar material.
 
 Sidebar action icons use adaptive label colors. Project and conversation row
 text uses a light system weight. Project-specific display names and SF Symbol
-choices come from Coinor metadata and do not alter the repository.
+and color choices come from Coinor metadata and do not alter the repository.
+The new-conversation control is always mounted in a fixed slot but visually
+appears only for hover or keyboard/accessibility focus.
 
 ### Session and project catalog
 
@@ -257,6 +278,24 @@ have different common directories and remain separate.
 
 The primary checkout is resolved from `git worktree list --porcelain`.
 Manually registered repositories are retained even when they have no sessions.
+
+`ConversationSearch` performs deterministic, local fuzzy ranking over the
+current Grok catalog. It compares normalized exact, prefix, substring, token,
+and subsequence matches in that order. Activity time sorts equal-quality
+matches, using the newest available catalog or live-roster timestamp.
+
+Project order is stored as one canonical ID sequence. Rendering filters that
+sequence to currently visible projects and appends newly discovered IDs.
+Reordering replaces only visible slots, leaving archived project IDs in their
+relative positions. The coordinator publishes an optimistic order immediately
+and generation-checks serialized persistence completions so stale writes never
+overwrite a newer drag.
+
+The drag source and destination are attached directly to each
+`DisclosureGroup` label using a Coinor-prefixed string payload. This keeps the
+project list structurally flat and rejects conversation rows, external text,
+and unknown project IDs. A fixed icon slot preserves one shared horizontal
+alignment across collapsed, expanded, and reordered project headers.
 
 ### Worktree creation
 
@@ -283,10 +322,11 @@ volume and single-process writer.
 Stored metadata includes:
 
 - manually registered projects
-- optional project display names and SF Symbol icon choices
+- optional project display names, SF Symbol icon choices, and icon colors
 - archived project identities
 - pinned and archived conversation IDs
 - pin ordering
+- canonical project ordering
 - last visible conversation ID
 - lightweight UI state such as expanded projects
 
@@ -324,6 +364,16 @@ Coinor is intentionally coupled to the custom Grok build. On startup it must:
 
 An unsupported binary produces one actionable English diagnostic instead of a
 partially working interface.
+
+`GitHubGrokUpdateChecker` separately compares the locally probed semantic fork
+version with the latest public `jattento/grok-build` release. This advisory
+check runs at launch and every six hours. It does not participate in startup
+health, and failures do not clear a previously known update.
+
+Grok's Voice helper opens CoreAudio from the terminal child process, but macOS
+attributes that request to Coinor's bundle. `Info.plist` therefore carries
+`NSMicrophoneUsageDescription`; no Coinor audio pipeline or audio persistence
+exists.
 
 ## Licensing boundary
 

@@ -24,6 +24,7 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var checkoutPath: String?
     var displayName: String?
     var iconName: String?
+    var iconColorName: String?
 }
 
 /// The single JSON document Coinor persists.
@@ -37,6 +38,7 @@ struct MetadataDocument: Equatable, Sendable {
     var sessions: [String: SessionMetadata]
     var projects: [String: ProjectMetadata]
     var pinnedSessionIDs: [String]
+    var projectOrder: [String]
     var lastVisibleSessionID: String?
 
     static let empty = MetadataDocument(
@@ -44,6 +46,7 @@ struct MetadataDocument: Equatable, Sendable {
         sessions: [:],
         projects: [:],
         pinnedSessionIDs: [],
+        projectOrder: [],
         lastVisibleSessionID: nil
     )
 }
@@ -82,6 +85,10 @@ extension MetadataDocument {
     func projectIconName(_ projectID: String) -> String? {
         projects[projectID]?.iconName
     }
+
+    func projectIconColorName(_ projectID: String) -> String? {
+        projects[projectID]?.iconColorName
+    }
 }
 
 // MARK: - Mutations
@@ -103,6 +110,38 @@ extension MetadataDocument {
     mutating func reorderPinnedSessions(to newOrder: [String]) {
         let pinned = Set(pinnedSessionIDs)
         pinnedSessionIDs = newOrder.filter { pinned.contains($0) }
+    }
+
+    mutating func reorderProjects(to newOrder: [String]) {
+        var seen: Set<String> = []
+        projectOrder = newOrder.filter { seen.insert($0).inserted }
+    }
+
+    mutating func reorderVisibleProjects(
+        to visibleOrder: [String],
+        allKnownProjectIDs: [String]
+    ) {
+        var seen: Set<String> = []
+        var canonical = projectOrder.filter {
+            seen.insert($0).inserted
+        }
+        for projectID in allKnownProjectIDs + visibleOrder
+        where seen.insert(projectID).inserted {
+            canonical.append(projectID)
+        }
+
+        let visibleIDs = Set(visibleOrder)
+        var replacement = visibleOrder.makeIterator()
+        for index in canonical.indices
+        where visibleIDs.contains(canonical[index]) {
+            if let projectID = replacement.next() {
+                canonical[index] = projectID
+            }
+        }
+        while let projectID = replacement.next() {
+            canonical.append(projectID)
+        }
+        projectOrder = canonical
     }
 
     mutating func setSessionArchived(_ sessionID: String, archived: Bool) {
@@ -159,6 +198,15 @@ extension MetadataDocument {
         storeProject(projectID, value)
     }
 
+    mutating func setProjectIconColorName(
+        _ projectID: String,
+        iconColorName: String?
+    ) {
+        var value = projects[projectID] ?? ProjectMetadata()
+        value.iconColorName = iconColorName
+        storeProject(projectID, value)
+    }
+
     mutating func setLastVisibleSession(_ sessionID: String?) {
         lastVisibleSessionID = sessionID
     }
@@ -186,7 +234,12 @@ extension MetadataDocument {
 
 extension MetadataDocument: Codable {
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, sessions, projects, pinnedSessionIDs, lastVisibleSessionID
+        case schemaVersion
+        case sessions
+        case projects
+        case pinnedSessionIDs
+        case projectOrder
+        case lastVisibleSessionID
     }
 
     /// Decodes leniently: every key is optional with a safe default, so a
@@ -198,6 +251,7 @@ extension MetadataDocument: Codable {
         sessions = try container.decodeIfPresent([String: SessionMetadata].self, forKey: .sessions) ?? [:]
         projects = try container.decodeIfPresent([String: ProjectMetadata].self, forKey: .projects) ?? [:]
         pinnedSessionIDs = try container.decodeIfPresent([String].self, forKey: .pinnedSessionIDs) ?? []
+        projectOrder = try container.decodeIfPresent([String].self, forKey: .projectOrder) ?? []
         lastVisibleSessionID = try container.decodeIfPresent(String.self, forKey: .lastVisibleSessionID)
     }
 
@@ -207,6 +261,7 @@ extension MetadataDocument: Codable {
         try container.encode(sessions, forKey: .sessions)
         try container.encode(projects, forKey: .projects)
         try container.encode(pinnedSessionIDs, forKey: .pinnedSessionIDs)
+        try container.encode(projectOrder, forKey: .projectOrder)
         try container.encodeIfPresent(lastVisibleSessionID, forKey: .lastVisibleSessionID)
     }
 }

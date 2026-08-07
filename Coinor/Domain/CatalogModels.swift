@@ -7,6 +7,19 @@ struct SessionSummary: Equatable, Identifiable, Sendable {
     let id: String
     let projectID: String
     let title: String
+    let lastActivityAt: Date?
+
+    init(
+        id: String,
+        projectID: String,
+        title: String,
+        lastActivityAt: Date? = nil
+    ) {
+        self.id = id
+        self.projectID = projectID
+        self.title = title
+        self.lastActivityAt = lastActivityAt
+    }
 }
 
 /// A conversation row ready for display. Pin and archive state are expressed
@@ -83,7 +96,18 @@ extension SessionCatalog {
             .map(\.key)
             .sorted()
 
-        let projectRows = (projectOrder + manualOnlyProjectIDs).map { projectID in
+        let defaultProjectOrder = projectOrder + manualOnlyProjectIDs
+        let availableProjectIDs = Set(defaultProjectOrder)
+        var seenProjectIDs: Set<String> = []
+        let storedProjectOrder = metadata.projectOrder.filter {
+            availableProjectIDs.contains($0)
+                && seenProjectIDs.insert($0).inserted
+        }
+        let remainingProjectIDs = defaultProjectOrder.filter {
+            !seenProjectIDs.contains($0)
+        }
+
+        let projectRows = (storedProjectOrder + remainingProjectIDs).map { projectID in
             ProjectRow(
                 projectID: projectID,
                 conversations: conversationsByProject[projectID] ?? [],
@@ -93,5 +117,219 @@ extension SessionCatalog {
         }
 
         return SessionCatalog(pinned: pinned, projects: projectRows)
+    }
+}
+
+enum ConversationSearch {
+    private struct Rank: Equatable {
+        let tier: Int
+        let quality: Int
+    }
+
+    private struct RankedConversation {
+        let row: ConversationRow
+        let rank: Rank
+    }
+
+    static func hasEffectiveQuery(_ query: String) -> Bool {
+        !normalize(query).isEmpty
+    }
+
+    static func results(
+        query: String,
+        sessions: [SessionSummary],
+        metadata: MetadataDocument
+    ) -> [ConversationRow] {
+        let normalizedQuery = normalize(query)
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        let ranked: [RankedConversation] = sessions.compactMap { session in
+            guard !metadata.isSessionArchived(session.id),
+                  !metadata.isProjectArchived(session.projectID),
+                  let rank = rank(
+                    normalizedQuery: normalizedQuery,
+                    title: session.title
+                  ) else {
+                return nil
+            }
+            return RankedConversation(
+                row: ConversationRow(session: session),
+                rank: rank
+            )
+        }
+
+        return ranked.sorted { lhs, rhs in
+            if lhs.rank.tier != rhs.rank.tier {
+                return lhs.rank.tier > rhs.rank.tier
+            }
+            if lhs.rank.quality != rhs.rank.quality {
+                return lhs.rank.quality > rhs.rank.quality
+            }
+            let lhsDate = lhs.row.session.lastActivityAt ?? .distantPast
+            let rhsDate = rhs.row.session.lastActivityAt ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            let titleOrder = lhs.row.session.title
+                .localizedCaseInsensitiveCompare(rhs.row.session.title)
+            if titleOrder != .orderedSame {
+                return titleOrder == .orderedAscending
+            }
+            return lhs.row.id < rhs.row.id
+        }
+        .map(\.row)
+    }
+
+    private static func rank(
+        normalizedQuery: String,
+        title: String
+    ) -> Rank? {
+        let normalizedTitle = normalize(title)
+        guard !normalizedTitle.isEmpty else { return nil }
+
+        if normalizedTitle == normalizedQuery {
+            return Rank(tier: 5, quality: 0)
+        }
+        if normalizedTitle.hasPrefix(normalizedQuery) {
+            return Rank(
+                tier: 4,
+                quality: -max(
+                    0,
+                    normalizedTitle.count - normalizedQuery.count
+                )
+            )
+        }
+        if let range = normalizedTitle.range(of: normalizedQuery) {
+            let offset = normalizedTitle.distance(
+                from: normalizedTitle.startIndex,
+                to: range.lowerBound
+            )
+            return Rank(
+                tier: 3,
+                quality: -(
+                    offset * 10
+                        + max(
+                            0,
+                            normalizedTitle.count - normalizedQuery.count
+                        )
+                )
+            )
+        }
+
+        let queryTokens = normalizedQuery.split(separator: " ")
+        let titleTokens = normalizedTitle.split(separator: " ")
+        if let quality = tokenQuality(
+            queryTokens: queryTokens,
+            titleTokens: titleTokens
+        ) {
+            return Rank(tier: 2, quality: quality)
+        }
+
+        let compactQuery = normalizedQuery.replacingOccurrences(
+            of: " ",
+            with: ""
+        )
+        let compactTitle = normalizedTitle.replacingOccurrences(
+            of: " ",
+            with: ""
+        )
+        guard let subsequence = subsequenceScore(
+            query: compactQuery,
+            title: compactTitle
+        ) else {
+            return nil
+        }
+        return Rank(tier: 1, quality: subsequence)
+    }
+
+    private static func tokenQuality(
+        queryTokens: [Substring],
+        titleTokens: [Substring]
+    ) -> Int? {
+        guard !queryTokens.isEmpty else { return nil }
+
+        var best: Int?
+        for start in titleTokens.indices
+        where titleTokens[start].hasPrefix(queryTokens[0]) {
+            var matchedIndices = [start]
+            var nextTitleIndex = titleTokens.index(after: start)
+
+            for queryToken in queryTokens.dropFirst() {
+                guard let match = titleTokens[nextTitleIndex...]
+                    .firstIndex(where: { $0.hasPrefix(queryToken) }) else {
+                    matchedIndices.removeAll()
+                    break
+                }
+                matchedIndices.append(match)
+                nextTitleIndex = titleTokens.index(after: match)
+            }
+
+            guard matchedIndices.count == queryTokens.count,
+                  let last = matchedIndices.last else {
+                continue
+            }
+            let exactMatches = zip(queryTokens, matchedIndices).filter {
+                titleTokens[$0.1] == $0.0
+            }.count
+            let span = last - start
+            let gaps = span - max(0, queryTokens.count - 1)
+            let quality = exactMatches * 100
+                - gaps * 20
+                - start * 5
+            best = max(best ?? quality, quality)
+        }
+        return best
+    }
+
+    private static func subsequenceScore(
+        query: String,
+        title: String
+    ) -> Int? {
+        let queryCharacters = Array(query)
+        let titleCharacters = Array(title)
+        guard !queryCharacters.isEmpty else { return nil }
+
+        var best: Int?
+        for start in titleCharacters.indices
+        where titleCharacters[start] == queryCharacters[0] {
+            var queryIndex = 1
+            var titleIndex = start + 1
+            while queryIndex < queryCharacters.count,
+                  titleIndex < titleCharacters.count {
+                if titleCharacters[titleIndex] == queryCharacters[queryIndex] {
+                    queryIndex += 1
+                }
+                titleIndex += 1
+            }
+
+            guard queryIndex == queryCharacters.count else { continue }
+            let end = titleIndex - 1
+            let span = end - start + 1
+            let gaps = span - queryCharacters.count
+            let quality = -(
+                start * 15
+                    + gaps * 25
+                    + max(0, titleCharacters.count - span)
+            )
+            best = max(best ?? quality, quality)
+        }
+        return best
+    }
+
+    private static func normalize(_ value: String) -> String {
+        let folded = value
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            )
+            .lowercased()
+        let separated = folded.unicodeScalars.map { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+                ? String(scalar)
+                : " "
+        }.joined()
+        return separated
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }

@@ -11,35 +11,71 @@ struct AppShellSidebar: View {
     @State private var worktreeProjectID: String?
     @State private var worktreeName = ""
     @State private var hoveredConversationID: String?
+    @State private var hoveredProjectID: String?
+    @State private var appearanceProjectID: String?
+    @State private var searchText = ""
+    @FocusState private var focusedProjectMenuID: String?
 
     var body: some View {
         VStack(spacing: 0) {
+            searchField
+
             List(selection: selection) {
-                if !coordinator.catalog.pinned.isEmpty {
+                if isSearching {
                     Section {
-                        ForEach(coordinator.catalog.pinned) { conversation in
-                            conversationRow(conversation, pinned: true)
+                        if searchResults.isEmpty {
+                            Text("No matching conversations")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityIdentifier(
+                                    AppShellIdentifier.searchEmptyState
+                                )
+                        } else {
+                            ForEach(searchResults) { conversation in
+                                conversationRow(
+                                    conversation,
+                                    pinned: coordinator.metadata
+                                        .isSessionPinned(conversation.id)
+                                )
+                            }
                         }
                     } header: {
-                        sectionHeader("Pinned")
+                        sectionHeader("Search Results")
                     }
-                    .accessibilityIdentifier(AppShellIdentifier.pinnedSection)
-                }
-
-                Section {
-                    if coordinator.catalog.projects.isEmpty {
-                        Text("No projects")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        ForEach(coordinator.catalog.projects) { project in
-                            projectRow(project)
+                    .accessibilityIdentifier(
+                        AppShellIdentifier.searchResultsSection
+                    )
+                } else {
+                    if !coordinator.catalog.pinned.isEmpty {
+                        Section {
+                            ForEach(coordinator.catalog.pinned) { conversation in
+                                conversationRow(conversation, pinned: true)
+                            }
+                        } header: {
+                            sectionHeader("Pinned")
                         }
+                        .accessibilityIdentifier(
+                            AppShellIdentifier.pinnedSection
+                        )
                     }
-                } header: {
-                    sectionHeader("Projects")
+
+                    Section {
+                        if coordinator.catalog.projects.isEmpty {
+                            Text("No projects")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            ForEach(coordinator.catalog.projects) { project in
+                                projectRow(project)
+                            }
+                        }
+                    } header: {
+                        sectionHeader("Projects")
+                    }
+                    .accessibilityIdentifier(
+                        AppShellIdentifier.projectsSection
+                    )
                 }
-                .accessibilityIdentifier(AppShellIdentifier.projectsSection)
             }
             .listStyle(.sidebar)
 
@@ -166,8 +202,59 @@ struct AppShellSidebar: View {
         Color(nsColor: .labelColor)
     }
 
+    private var isSearching: Bool {
+        ConversationSearch.hasEffectiveQuery(searchText)
+    }
+
+    private var searchResults: [ConversationRow] {
+        coordinator.searchConversations(searchText)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search conversations", text: $searchText)
+                .textFieldStyle(.plain)
+                .onExitCommand {
+                    searchText = ""
+                }
+                .accessibilityIdentifier(
+                    AppShellIdentifier.conversationSearchField
+                )
+            if isSearching {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Search")
+                .accessibilityLabel("Clear Search")
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.8))
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
     private func projectRow(_ project: ProjectRow) -> some View {
-        DisclosureGroup(
+        let showsNewConversation =
+            hoveredProjectID == project.projectID
+                || focusedProjectMenuID == project.projectID
+
+        return DisclosureGroup(
             isExpanded: Binding(
                 get: { project.isExpanded },
                 set: {
@@ -189,15 +276,25 @@ struct AppShellSidebar: View {
                     )
                 )
                     .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(.secondary)
+                    .frame(width: 20, alignment: .center)
+                    .foregroundStyle(
+                        ProjectIconColorChoice.choice(
+                            for: coordinator.projectIconColorName(
+                                project.projectID
+                            )
+                        ).color
+                    )
                 Text(coordinator.projectDisplayName(project.projectID))
                     .font(.system(size: 13, weight: .light))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 activityIndicator(coordinator.projectActivity(project))
+                    .frame(width: 12, height: 12)
                 Menu {
                     Button("In Main Checkout") {
-                        coordinator.createConversation(in: project.projectID)
+                        coordinator.createConversation(
+                            in: project.projectID
+                        )
                     }
                     Button("In New Worktree") {
                         worktreeName = ""
@@ -206,9 +303,19 @@ struct AppShellSidebar: View {
                 } label: {
                     HStack(spacing: 2) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(
+                                .system(
+                                    size: 11,
+                                    weight: .medium
+                                )
+                            )
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 7, weight: .semibold))
+                            .font(
+                                .system(
+                                    size: 7,
+                                    weight: .semibold
+                                )
+                            )
                     }
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(sidebarControlColor)
@@ -219,8 +326,39 @@ struct AppShellSidebar: View {
                 .menuIndicator(.hidden)
                 .tint(sidebarControlColor)
                 .fixedSize()
+                .opacity(showsNewConversation ? 1 : 0)
+                .focused(
+                    $focusedProjectMenuID,
+                    equals: project.projectID
+                )
                 .help("New Conversation")
                 .accessibilityLabel("New Conversation")
+                .accessibilityHint(
+                    "Choose where to start the conversation"
+                )
+            }
+            .frame(height: ProjectDropOrder.headerHeight)
+            .contentShape(Rectangle())
+            .draggable(
+                ProjectDropPayload.encoded(
+                    projectID: project.projectID
+                )
+            )
+            .dropDestination(for: String.self) {
+                payloads,
+                location in
+                handleProjectDrop(
+                    payloads,
+                    location: location,
+                    targetProjectID: project.projectID
+                )
+            }
+            .onHover { hovering in
+                if hovering {
+                    hoveredProjectID = project.projectID
+                } else if hoveredProjectID == project.projectID {
+                    hoveredProjectID = nil
+                }
             }
             .contextMenu {
                 Button("Rename Project") {
@@ -234,29 +372,36 @@ struct AppShellSidebar: View {
                         coordinator.useFolderName(for: project.projectID)
                     }
                 }
-                Menu("Change Icon") {
-                    ForEach(ProjectIconChoice.allCases) { choice in
-                        Button {
-                            coordinator.setProjectIcon(
-                                project.projectID,
-                                iconName: choice.persistedName
-                            )
-                        } label: {
-                            Label(
-                                choice.title,
-                                systemImage: choice.menuSymbol(
-                                    selected: coordinator.projectIconName(
-                                        project.projectID
-                                    )
-                                )
-                            )
-                        }
-                    }
+                Button("Change Icon") {
+                    appearanceProjectID = project.projectID
                 }
                 Divider()
                 Button("Archive Project") {
                     coordinator.archiveProject(project.projectID)
                 }
+            }
+            .popover(
+                isPresented: projectAppearancePresented(project.projectID),
+                arrowEdge: .trailing
+            ) {
+                ProjectAppearancePicker(
+                    initialIconName: coordinator.projectIconName(
+                        project.projectID
+                    ),
+                    initialColorName: coordinator.projectIconColorName(
+                        project.projectID
+                    ),
+                    apply: { iconName, colorName in
+                        coordinator.setProjectAppearance(
+                            project.projectID,
+                            iconName: iconName,
+                            colorName: colorName
+                        )
+                    },
+                    dismiss: {
+                        appearanceProjectID = nil
+                    }
+                )
             }
         }
     }
@@ -329,6 +474,48 @@ struct AppShellSidebar: View {
             .textCase(nil)
     }
 
+    private func projectAppearancePresented(
+        _ projectID: String
+    ) -> Binding<Bool> {
+        Binding(
+            get: { appearanceProjectID == projectID },
+            set: {
+                if !$0, appearanceProjectID == projectID {
+                    appearanceProjectID = nil
+                }
+            }
+        )
+    }
+
+    private func handleProjectDrop(
+        _ payloads: [String],
+        location: CGPoint,
+        targetProjectID: String
+    ) -> Bool {
+        let projectIDs = coordinator.catalog.projects.map(\.projectID)
+        guard let sourceProjectID = payloads
+            .compactMap({
+                ProjectDropPayload.projectID(
+                    from: $0,
+                    validProjectIDs: projectIDs
+                )
+            })
+            .first else {
+            return false
+        }
+        let reordered = ProjectDropOrder.reorderedProjectIDs(
+            projectIDs,
+            moving: sourceProjectID,
+            relativeTo: targetProjectID,
+            dropY: location.y,
+            targetHeight: ProjectDropOrder.headerHeight
+        )
+        if reordered != projectIDs {
+            coordinator.reorderProjects(to: reordered)
+        }
+        return true
+    }
+
     @ViewBuilder
     private func activityIndicator(
         _ activity: RuntimeActivity
@@ -367,49 +554,171 @@ struct AppShellSidebar: View {
     }
 }
 
-private enum ProjectIconChoice: String, CaseIterable, Identifiable {
-    case folder
-    case terminal
-    case app
-    case code
-    case tools
-    case server
-    case database
-    case cloud
+enum ProjectDropPayload {
+    private static let prefix = "coinor-project-id:"
 
-    var id: String { rawValue }
+    static func encoded(projectID: String) -> String {
+        prefix + projectID
+    }
 
-    var title: String {
-        switch self {
-        case .folder: "Folder"
-        case .terminal: "Terminal"
-        case .app: "Application"
-        case .code: "Code"
-        case .tools: "Tools"
-        case .server: "Server"
-        case .database: "Database"
-        case .cloud: "Cloud"
+    static func projectID(
+        from payload: String,
+        validProjectIDs: [String]
+    ) -> String? {
+        guard payload.hasPrefix(prefix) else {
+            return nil
         }
-    }
-
-    var systemName: String {
-        switch self {
-        case .folder: "folder"
-        case .terminal: "terminal"
-        case .app: "app"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .tools: "wrench.and.screwdriver"
-        case .server: "server.rack"
-        case .database: "cylinder"
-        case .cloud: "cloud"
+        let projectID = String(payload.dropFirst(prefix.count))
+        guard !projectID.isEmpty,
+              validProjectIDs.contains(projectID) else {
+            return nil
         }
+        return projectID
+    }
+}
+
+enum ProjectDropOrder {
+    static let headerHeight: CGFloat = 18
+
+    static func reorderedProjectIDs(
+        _ projectIDs: [String],
+        moving sourceProjectID: String,
+        relativeTo targetProjectID: String,
+        dropY: CGFloat,
+        targetHeight: CGFloat
+    ) -> [String] {
+        guard sourceProjectID != targetProjectID,
+              let sourceIndex = projectIDs.firstIndex(
+                  of: sourceProjectID
+              ),
+              projectIDs.contains(targetProjectID) else {
+            return projectIDs
+        }
+
+        var reordered = projectIDs
+        reordered.remove(at: sourceIndex)
+        guard let targetIndex = reordered.firstIndex(
+            of: targetProjectID
+        ) else {
+            return projectIDs
+        }
+
+        let insertAfter = dropY >= targetHeight / 2
+        reordered.insert(
+            sourceProjectID,
+            at: targetIndex + (insertAfter ? 1 : 0)
+        )
+        return reordered
+    }
+}
+
+private struct ProjectAppearancePicker: View {
+    @State private var selectedIcon: ProjectIconChoice
+    @State private var selectedColor: ProjectIconColorChoice
+
+    let apply: (String?, String?) -> Void
+    let dismiss: () -> Void
+
+    private let columns = Array(
+        repeating: GridItem(.fixed(34), spacing: 10),
+        count: 6
+    )
+
+    init(
+        initialIconName: String,
+        initialColorName: String?,
+        apply: @escaping (String?, String?) -> Void,
+        dismiss: @escaping () -> Void
+    ) {
+        _selectedIcon = State(
+            initialValue: ProjectIconChoice.choice(
+                for: initialIconName
+            )
+        )
+        _selectedColor = State(
+            initialValue: ProjectIconColorChoice.choice(
+                for: initialColorName
+            )
+        )
+        self.apply = apply
+        self.dismiss = dismiss
     }
 
-    var persistedName: String? {
-        self == .folder ? nil : systemName
-    }
+    var body: some View {
+        VStack(spacing: 14) {
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(ProjectIconColorChoice.allCases) { choice in
+                    Button {
+                        selectedColor = choice
+                    } label: {
+                        Circle()
+                            .fill(choice.color)
+                            .frame(width: 28, height: 28)
+                            .padding(3)
+                            .overlay {
+                                if selectedColor == choice {
+                                    Circle()
+                                        .stroke(
+                                            Color(nsColor: .labelColor),
+                                            lineWidth: 2
+                                        )
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(choice.title)
+                    .accessibilityLabel(
+                        "\(choice.title) icon color"
+                    )
+                    .accessibilityValue(
+                        selectedColor == choice ? "Selected" : ""
+                    )
+                }
+            }
 
-    func menuSymbol(selected selectedName: String) -> String {
-        selectedName == systemName ? "checkmark" : systemName
+            Divider()
+
+            LazyVGrid(columns: columns, spacing: 13) {
+                ForEach(ProjectIconChoice.allCases) { choice in
+                    Button {
+                        selectedIcon = choice
+                    } label: {
+                        Image(systemName: choice.systemName)
+                            .font(.system(size: 19, weight: .regular))
+                            .foregroundStyle(selectedColor.color)
+                            .frame(width: 34, height: 32)
+                            .background {
+                                if selectedIcon == choice {
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .fill(
+                                            Color(nsColor: .selectedContentBackgroundColor)
+                                                .opacity(0.22)
+                                        )
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(choice.title)
+                    .accessibilityLabel(choice.title)
+                    .accessibilityValue(
+                        selectedIcon == choice ? "Selected" : ""
+                    )
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    apply(
+                        selectedIcon.persistedName,
+                        selectedColor.persistedName
+                    )
+                    dismiss()
+                }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 286)
     }
 }

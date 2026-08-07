@@ -5,6 +5,7 @@ import XCTest
 /// keeps these literals in step with `AppShellIdentifier`.
 private enum Identifier {
     static let sidebar = "AppShellSidebar"
+    static let conversationSearch = "AppShellConversationSearch"
     static let terminalRegion = "AppShellTerminalRegion"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
 }
@@ -43,6 +44,12 @@ final class AppShellUITests: XCTestCase {
     func testSidebarExposesProjectAndArchiveActions() {
         let app = launchApp()
         XCTAssertTrue(element(Identifier.sidebar, in: app).waitForExistence(timeout: 15))
+        XCTAssertTrue(
+            element(
+                Identifier.conversationSearch,
+                in: app
+            ).waitForExistence(timeout: 5)
+        )
         XCTAssertTrue(app.buttons["Add Project"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Archived Items"].waitForExistence(timeout: 5))
     }

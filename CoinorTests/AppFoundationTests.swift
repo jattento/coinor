@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Coinor
 
@@ -143,12 +144,34 @@ final class AppFoundationTests: XCTestCase {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String, "Coinor")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "LSMinimumSystemVersion") as? String, "13.0")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDevelopmentRegion") as? String, "en")
+        XCTAssertEqual(
+            Bundle.main.object(
+                forInfoDictionaryKey: "NSMicrophoneUsageDescription"
+            ) as? String,
+            "Coinor uses the microphone only when you start Voice to transcribe speech into your Grok prompt."
+        )
     }
 
     func testAccessibilityIdentifiersMatchTheStringsUsedByUITests() {
         XCTAssertEqual(AppShellIdentifier.sidebar, "AppShellSidebar")
         XCTAssertEqual(AppShellIdentifier.pinnedSection, "AppShellSidebarPinned")
         XCTAssertEqual(AppShellIdentifier.projectsSection, "AppShellSidebarProjects")
+        XCTAssertEqual(
+            AppShellIdentifier.conversationSearchField,
+            "AppShellConversationSearch"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.searchResultsSection,
+            "AppShellSearchResults"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.searchEmptyState,
+            "AppShellSearchEmptyState"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.grokUpdateButton,
+            "AppShellGrokUpdate"
+        )
         XCTAssertEqual(AppShellIdentifier.terminalRegion, "AppShellTerminalRegion")
         XCTAssertEqual(AppShellIdentifier.startupDiagnostics, "AppShellStartupDiagnostics")
         XCTAssertEqual(AppShellIdentifier.refreshStartupChecks, "AppShellRefreshStartupChecks")
@@ -159,6 +182,29 @@ final class AppFoundationTests: XCTestCase {
                 "AppShellStartupCheck.ghosttyRuntime",
                 "AppShellStartupCheck.leaderSocket",
             ]
+        )
+    }
+
+    func testProjectAppearanceCatalogIsCompleteAndRenderable() {
+        XCTAssertEqual(ProjectIconChoice.allCases.count, 30)
+        XCTAssertEqual(ProjectIconColorChoice.allCases.count, 8)
+        XCTAssertTrue(
+            ProjectIconChoice.allCases.allSatisfy {
+                NSImage(
+                    systemSymbolName: $0.systemName,
+                    accessibilityDescription: nil
+                ) != nil
+            }
+        )
+        XCTAssertEqual(
+            ProjectIconChoice.choice(for: "server.rack"),
+            .terminal
+        )
+        XCTAssertEqual(
+            ProjectIconChoice.choice(
+                for: "wrench.and.screwdriver"
+            ),
+            .tools
         )
     }
 }

@@ -1,9 +1,20 @@
+import Foundation
 import Testing
 
 @testable import Coinor
 
-private func session(_ id: String, project: String, title: String = "Untitled") -> SessionSummary {
-    SessionSummary(id: id, projectID: project, title: title)
+private func session(
+    _ id: String,
+    project: String,
+    title: String = "Untitled",
+    lastActivityAt: Date? = nil
+) -> SessionSummary {
+    SessionSummary(
+        id: id,
+        projectID: project,
+        title: title,
+        lastActivityAt: lastActivityAt
+    )
 }
 
 @Test
@@ -139,4 +150,180 @@ func sessionsSharingAProjectIdentityStayFlatRegardlessOfOrigin() {
 
     #expect(catalog.projects.count == 1)
     #expect(catalog.projects.first?.conversations.map(\.id) == ["main-session", "worktree-session"])
+}
+
+@Test
+func storedProjectOrderWinsAndNewProjectsAppend() {
+    var metadata = MetadataDocument.empty
+    metadata.reorderProjects(to: ["project-b", "project-a"])
+
+    let catalog = SessionCatalog.build(
+        sessions: [
+            session("a", project: "project-a"),
+            session("b", project: "project-b"),
+            session("c", project: "project-c"),
+        ],
+        metadata: metadata
+    )
+
+    #expect(
+        catalog.projects.map(\.projectID)
+            == ["project-b", "project-a", "project-c"]
+    )
+}
+
+@Test
+func archivedProjectReturnsToItsCanonicalPosition() {
+    var metadata = MetadataDocument.empty
+    metadata.reorderProjects(
+        to: ["project-c", "project-b", "project-a"]
+    )
+    metadata.setProjectArchived("project-b", archived: true)
+    let sessions = [
+        session("a", project: "project-a"),
+        session("b", project: "project-b"),
+        session("c", project: "project-c"),
+    ]
+
+    var catalog = SessionCatalog.build(
+        sessions: sessions,
+        metadata: metadata
+    )
+    #expect(
+        catalog.projects.map(\.projectID)
+            == ["project-c", "project-a"]
+    )
+
+    metadata.setProjectArchived("project-b", archived: false)
+    catalog = SessionCatalog.build(
+        sessions: sessions,
+        metadata: metadata
+    )
+    #expect(
+        catalog.projects.map(\.projectID)
+            == ["project-c", "project-b", "project-a"]
+    )
+}
+
+@Test
+func searchRanksTextualClosenessBeforeRecency() {
+    let old = Date(timeIntervalSince1970: 100)
+    let recent = Date(timeIntervalSince1970: 1_000)
+    let sessions = [
+        session(
+            "exact",
+            project: "project",
+            title: "Rent Roll",
+            lastActivityAt: old
+        ),
+        session(
+            "prefix",
+            project: "project",
+            title: "Rent Roll Normalizer",
+            lastActivityAt: recent
+        ),
+        session(
+            "substring",
+            project: "project",
+            title: "Debug Rent Roll Import",
+            lastActivityAt: recent
+        ),
+    ]
+
+    let results = ConversationSearch.results(
+        query: "rent roll",
+        sessions: sessions,
+        metadata: .empty
+    )
+
+    #expect(
+        results.map(\.id)
+            == ["exact", "prefix", "substring"]
+    )
+}
+
+@Test
+func fuzzySearchUsesRecencyWithinEqualQuality() {
+    let sessions = [
+        session(
+            "older",
+            project: "project",
+            title: "Rent Roll Normalizer old",
+            lastActivityAt: Date(timeIntervalSince1970: 100)
+        ),
+        session(
+            "newer",
+            project: "project",
+            title: "Rent Roll Normalizer new",
+            lastActivityAt: Date(timeIntervalSince1970: 1_000)
+        ),
+    ]
+
+    let results = ConversationSearch.results(
+        query: "rrn",
+        sessions: sessions,
+        metadata: .empty
+    )
+
+    #expect(results.map(\.id) == ["newer", "older"])
+}
+
+@Test
+func searchNormalizesCaseAccentsAndPunctuation() {
+    let sessions = [
+        session(
+            "match",
+            project: "project",
+            title: "Résumé: Rent-Roll"
+        ),
+    ]
+
+    let results = ConversationSearch.results(
+        query: "resume rent roll",
+        sessions: sessions,
+        metadata: .empty
+    )
+
+    #expect(results.map(\.id) == ["match"])
+    #expect(!ConversationSearch.hasEffectiveQuery("..."))
+}
+
+@Test
+func searchExcludesArchivedItemsAndIsDeterministic() {
+    var metadata = MetadataDocument.empty
+    metadata.setSessionArchived("archived", archived: true)
+    metadata.setProjectArchived("hidden-project", archived: true)
+    let timestamp = Date(timeIntervalSince1970: 1_000)
+    let sessions = [
+        session(
+            "b",
+            project: "project",
+            title: "Same",
+            lastActivityAt: timestamp
+        ),
+        session(
+            "a",
+            project: "project",
+            title: "Same",
+            lastActivityAt: timestamp
+        ),
+        session(
+            "archived",
+            project: "project",
+            title: "Same"
+        ),
+        session(
+            "hidden",
+            project: "hidden-project",
+            title: "Same"
+        ),
+    ]
+
+    let results = ConversationSearch.results(
+        query: "same",
+        sessions: sessions,
+        metadata: metadata
+    )
+
+    #expect(results.map(\.id) == ["a", "b"])
 }

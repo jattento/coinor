@@ -195,10 +195,12 @@ executable from `~/bin/grok`.
 An optional local archive can be created after verification:
 
 ```sh
+VERSION="$(plutil -extract CFBundleShortVersionString raw \
+  "$APP/Contents/Info.plist")"
 mkdir -p Artifacts
 ditto -c -k --sequesterRsrc --keepParent \
-  "$APP" Artifacts/Coinor-0.1.0-arm64.zip
-shasum -a 256 Artifacts/Coinor-0.1.0-arm64.zip
+  "$APP" "Artifacts/Coinor-${VERSION}-arm64.zip"
+shasum -a 256 "Artifacts/Coinor-${VERSION}-arm64.zip"
 ```
 
 The archive remains an ad-hoc, non-notarized personal build.
