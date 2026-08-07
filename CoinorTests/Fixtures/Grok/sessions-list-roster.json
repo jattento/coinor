@@ -1,0 +1,40 @@
+{
+  "result": {
+    "sessions": [
+      {
+        "sessionId": "00000000-0000-7000-8000-000000000001",
+        "title": "Normalize the rent roll importer",
+        "cwd": "/Users/example/projects/rent-roll-normalizer",
+        "isWorktree": false,
+        "modelId": "grok-4",
+        "reasoningEffort": "high",
+        "yolo": false,
+        "activity": "working",
+        "resident": true,
+        "lastChangeUnixMs": 1786120935482,
+        "origin": { "kind": "local" }
+      },
+      {
+        "sessionId": "00000000-0000-7000-8000-000000000002",
+        "title": "Investigate the Teams integration",
+        "cwd": "/Users/example/.grok/worktrees/rent-roll-normalizer/teams-sync",
+        "isWorktree": true,
+        "yolo": false,
+        "activity": "needs_input",
+        "resident": true,
+        "lastChangeUnixMs": 1786120000000,
+        "origin": { "kind": "local" }
+      },
+      {
+        "sessionId": "00000000-0000-7000-8000-000000000003",
+        "cwd": "/Users/example/projects/coinor",
+        "isWorktree": false,
+        "yolo": false,
+        "activity": "hibernating",
+        "resident": false,
+        "lastChangeUnixMs": 1786000000000,
+        "origin": { "kind": "remote", "host": "workstation" }
+      }
+    ]
+  }
+}

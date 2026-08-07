@@ -1,0 +1,26 @@
+{
+  "protocolVersion": 1,
+  "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": { "embeddedContext": true },
+    "mcpCapabilities": { "http": true, "sse": true },
+    "sessionCapabilities": { "list": {} },
+    "_meta": { "x.ai/fs_notify": true }
+  },
+  "authMethods": [
+    { "id": "xai.api_key", "name": "xAI API key" },
+    { "id": "grok.com", "name": "Sign in with grok.com" },
+    { "id": "cached_token", "name": "Cached credentials" }
+  ],
+  "_meta": {
+    "grokShell": true,
+    "defaultAuthMethodId": "cached_token",
+    "agentVersion": "0.2.117",
+    "agentId": "agent-7f3c1a",
+    "agentInstanceId": "instance-91b0",
+    "hostname": "coinor-host.local",
+    "currentWorkingDirectory": "/Users/example",
+    "sessionRecap": true,
+    "voiceMode": false
+  }
+}

@@ -1,0 +1,159 @@
+import SwiftUI
+
+struct AppShellView: View {
+    @ObservedObject var model: AppShellModel
+    @ObservedObject var coordinator: AppCoordinator
+
+    var body: some View {
+        NavigationSplitView {
+            AppShellSidebar(coordinator: coordinator)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
+        } detail: {
+            VStack(spacing: 0) {
+                ConversationContentView(coordinator: coordinator)
+                if model.unresolvedStartupCheckCount > 0 {
+                    Divider()
+                    StartupDiagnosticsPanel(
+                        checks: model.startupChecks,
+                        isRunning: model.isRunningStartupChecks,
+                        rerun: { Task { await model.runStartupChecks() } }
+                    )
+                }
+            }
+            .frame(minWidth: 560, minHeight: 380)
+        }
+        .frame(minWidth: 840, minHeight: 520)
+        .task {
+            async let diagnostics: Void = model.runStartupChecks()
+            await coordinator.start()
+            _ = await diagnostics
+            await model.runStartupChecks()
+        }
+        .sheet(isPresented: $coordinator.showsArchivedItems) {
+            ArchivedItemsView(coordinator: coordinator)
+        }
+        .overlay(alignment: .top) {
+            if let warning = coordinator.warningMessage {
+                WarningBanner(message: warning) {
+                    coordinator.dismissWarning()
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+}
+
+private struct WarningBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 12))
+                .lineLimit(2)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
+        .background(.regularMaterial)
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(nsColor: .separatorColor))
+        }
+        .padding(.horizontal, 12)
+    }
+}
+
+private struct ArchivedItemsView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Archived Items")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Close")
+            }
+            .padding(14)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                if !coordinator.archivedConversations.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        archivedSectionTitle("Conversations")
+                        ForEach(coordinator.archivedConversations) { conversation in
+                            HStack {
+                                Text(conversation.title)
+                                Spacer()
+                                Button("Unarchive") {
+                                    coordinator.unarchiveConversation(
+                                        conversation.id
+                                    )
+                                }
+                                .accessibilityLabel(
+                                    "Unarchive \(conversation.title)"
+                                )
+                                .accessibilityIdentifier(
+                                    "ArchivedConversation.\(conversation.id).Unarchive"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if !coordinator.archivedProjectIDs.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        archivedSectionTitle("Projects")
+                        ForEach(coordinator.archivedProjectIDs, id: \.self) { projectID in
+                            let name = coordinator.projectDisplayName(projectID)
+                            HStack {
+                                Text(name)
+                                Spacer()
+                                Button("Unarchive") {
+                                    coordinator.unarchiveProject(projectID)
+                                }
+                                .accessibilityLabel("Unarchive \(name)")
+                                .accessibilityIdentifier(
+                                    "ArchivedProject.\(projectID).Unarchive"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if coordinator.archivedConversations.isEmpty,
+                   coordinator.archivedProjectIDs.isEmpty {
+                    Text("No archived items")
+                        .foregroundStyle(.secondary)
+                }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(minWidth: 520, minHeight: 360)
+    }
+
+    private func archivedSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}

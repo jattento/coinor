@@ -1,0 +1,16 @@
+{
+  "upserted": [
+    {
+      "sessionId": "00000000-0000-7000-8000-000000000002",
+      "title": "Investigate the Teams integration",
+      "cwd": "/Users/example/.grok/worktrees/rent-roll-normalizer/teams-sync",
+      "isWorktree": true,
+      "yolo": false,
+      "activity": "dormant",
+      "resident": false,
+      "lastChangeUnixMs": 1786120945000,
+      "origin": { "kind": "local" }
+    }
+  ],
+  "removed": ["00000000-0000-7000-8000-000000000009"]
+}

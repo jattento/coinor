@@ -3,11 +3,34 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-package_path="$repo_root/Tools/CoinorHookRelay"
+default_app="$repo_root/.build/DerivedData/Build/Products/Debug/Coinor.app"
+app_bundle=${1:-${COINOR_APP_BUNDLE:-$default_app}}
 hooks_dir="$HOME/.grok/hooks"
 hook_file="$hooks_dir/coinor.json"
 relay_file="$hooks_dir/coinor-hook-relay"
 socket_path="$HOME/Library/Application Support/Coinor/hook.sock"
+bundled_relay="$app_bundle/Contents/Resources/coinor-hook-relay"
+
+if [ "$#" -gt 1 ]; then
+  printf 'Usage: %s [Coinor.app]\n' "$0" >&2
+  exit 2
+fi
+
+[ -d "$app_bundle" ] || {
+  printf 'Coinor app bundle is missing: %s\n' "$app_bundle" >&2
+  printf 'Build Coinor first or pass an explicit Coinor.app path.\n' >&2
+  exit 1
+}
+
+[ -x "$bundled_relay" ] || {
+  printf 'Bundled Coinor hook relay is missing or not executable: %s\n' "$bundled_relay" >&2
+  exit 1
+}
+
+codesign --verify --deep --strict "$app_bundle" || {
+  printf 'Coinor app bundle has an invalid code signature: %s\n' "$app_bundle" >&2
+  exit 1
+}
 
 mkdir -p "$hooks_dir"
 
@@ -30,19 +53,15 @@ elif [ -e "$relay_file" ]; then
   exit 1
 fi
 
-swift build --configuration release --package-path "$package_path"
-relay_source=$(
-  swift build \
-    --configuration release \
-    --package-path "$package_path" \
-    --show-bin-path
-)/coinor-hook-relay
-
 relay_temporary="$relay_file.tmp.$$"
 hook_temporary="$hook_file.tmp.$$"
 trap 'rm -f "$relay_temporary" "$hook_temporary"' EXIT HUP INT TERM
 
-install -m 755 "$relay_source" "$relay_temporary"
+install -m 755 "$bundled_relay" "$relay_temporary"
+cmp -s "$bundled_relay" "$relay_temporary" || {
+  printf 'Installed relay copy does not match the Coinor app bundle.\n' >&2
+  exit 1
+}
 mv -f "$relay_temporary" "$relay_file"
 
 python3 - "$hook_temporary" "$relay_file" "$socket_path" <<'PY'
@@ -87,4 +106,5 @@ python3 -m json.tool "$hook_file" >/dev/null
 
 printf 'Installed Coinor hook registration: %s\n' "$hook_file"
 printf 'Installed Coinor hook relay: %s\n' "$relay_file"
+printf 'Installed from Coinor app: %s\n' "$app_bundle"
 printf 'Configured Coinor hook socket: %s\n' "$socket_path"

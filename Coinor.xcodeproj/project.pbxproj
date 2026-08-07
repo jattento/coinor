@@ -1,0 +1,623 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		CA0000000000000000000051 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000050 /* GhosttyKit.xcframework */; };
+		CA0000000000000000000053 /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000052 /* ghostty */; };
+		CA0000000000000000000055 /* terminfo in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000054 /* terminfo */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CA000000000000000000002A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA0000000000000000000010;
+			remoteInfo = Coinor;
+		};
+		CA000000000000000000003A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA0000000000000000000010;
+			remoteInfo = Coinor;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		CA0000000000000000000011 /* Coinor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Coinor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA0000000000000000000021 /* CoinorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoinorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA0000000000000000000031 /* CoinorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoinorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA0000000000000000000050 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = "Vendor/Ghostty/GhosttyKit.xcframework"; sourceTree = SOURCE_ROOT; };
+		CA0000000000000000000052 /* ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ghostty; path = "Vendor/Ghostty/Resources/ghostty"; sourceTree = SOURCE_ROOT; };
+		CA0000000000000000000054 /* terminfo */ = {isa = PBXFileReference; lastKnownFileType = folder; name = terminfo; path = "Vendor/Ghostty/Resources/terminfo"; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		CA0000000000000000000016 /* Exceptions for "Coinor" folder in "Coinor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Coinor.entitlements",
+				"Info.plist",
+			);
+			target = CA0000000000000000000010 /* Coinor */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		CA0000000000000000000015 /* Coinor */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CA0000000000000000000016 /* Exceptions for "Coinor" folder in "Coinor" target */,
+			);
+			path = Coinor;
+			sourceTree = "<group>";
+		};
+		CA0000000000000000000025 /* CoinorTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CoinorTests;
+			sourceTree = "<group>";
+		};
+		CA0000000000000000000035 /* CoinorUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CoinorUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CA0000000000000000000013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA0000000000000000000051 /* GhosttyKit.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000023 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000033 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		CA0000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				CA0000000000000000000015 /* Coinor */,
+				CA0000000000000000000025 /* CoinorTests */,
+				CA0000000000000000000035 /* CoinorUITests */,
+				CA0000000000000000000056 /* Vendor */,
+				CA0000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CA0000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CA0000000000000000000011 /* Coinor.app */,
+				CA0000000000000000000021 /* CoinorTests.xctest */,
+				CA0000000000000000000031 /* CoinorUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CA0000000000000000000056 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				CA0000000000000000000050 /* GhosttyKit.xcframework */,
+				CA0000000000000000000052 /* ghostty */,
+				CA0000000000000000000054 /* terminfo */,
+			);
+			name = Vendor;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CA0000000000000000000010 /* Coinor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA0000000000000000000017 /* Build configuration list for PBXNativeTarget "Coinor" */;
+			buildPhases = (
+				CA0000000000000000000012 /* Sources */,
+				CA0000000000000000000013 /* Frameworks */,
+				CA0000000000000000000057 /* Build Bundled Hook Relay */,
+				CA0000000000000000000014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CA0000000000000000000015 /* Coinor */,
+			);
+			name = Coinor;
+			packageProductDependencies = (
+			);
+			productName = Coinor;
+			productReference = CA0000000000000000000011 /* Coinor.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CA0000000000000000000020 /* CoinorTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA0000000000000000000026 /* Build configuration list for PBXNativeTarget "CoinorTests" */;
+			buildPhases = (
+				CA0000000000000000000022 /* Sources */,
+				CA0000000000000000000023 /* Frameworks */,
+				CA0000000000000000000024 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CA0000000000000000000029 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CA0000000000000000000025 /* CoinorTests */,
+			);
+			name = CoinorTests;
+			packageProductDependencies = (
+			);
+			productName = CoinorTests;
+			productReference = CA0000000000000000000021 /* CoinorTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		CA0000000000000000000030 /* CoinorUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA0000000000000000000036 /* Build configuration list for PBXNativeTarget "CoinorUITests" */;
+			buildPhases = (
+				CA0000000000000000000032 /* Sources */,
+				CA0000000000000000000033 /* Frameworks */,
+				CA0000000000000000000034 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CA0000000000000000000039 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CA0000000000000000000035 /* CoinorUITests */,
+			);
+			name = CoinorUITests;
+			packageProductDependencies = (
+			);
+			productName = CoinorUITests;
+			productReference = CA0000000000000000000031 /* CoinorUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					CA0000000000000000000010 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					CA0000000000000000000020 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = CA0000000000000000000010;
+					};
+					CA0000000000000000000030 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = CA0000000000000000000010;
+					};
+				};
+			};
+			buildConfigurationList = CA0000000000000000000040 /* Build configuration list for PBXProject "Coinor" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = CA0000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = CA0000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CA0000000000000000000010 /* Coinor */,
+				CA0000000000000000000020 /* CoinorTests */,
+				CA0000000000000000000030 /* CoinorUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		CA0000000000000000000014 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA0000000000000000000053 /* ghostty in Resources */,
+				CA0000000000000000000055 /* terminfo in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000024 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000034 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		CA0000000000000000000057 /* Build Bundled Hook Relay */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Tools/CoinorHookRelay/Package.swift",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelay/main.swift",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayCore/FramedJSON.swift",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayCore/HookRelay.swift",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayPOSIX/CoinorHookRelayPOSIX.c",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Sources/CoinorHookRelayPOSIX/include/CoinorHookRelayPOSIX.h",
+				"$(SRCROOT)/Tools/CoinorHookRelay/Tests/CoinorHookRelayCoreTests/FramedJSONTests.swift",
+			);
+			name = "Build Bundled Hook Relay";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/coinor-hook-relay",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\npackage_path=\"$SRCROOT/Tools/CoinorHookRelay\"\nrelay_build_root=\"$TEMP_DIR/CoinorHookRelay\"\nrelay_scratch=\"$relay_build_root/build\"\nrelay_home=\"$relay_build_root/home\"\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/coinor-hook-relay\"\n\nmkdir -p \"$relay_home\" \"$(dirname \"$destination\")\"\nexport HOME=\"$relay_home\"\n\n/usr/bin/xcrun --sdk macosx swift build \\\n  --disable-sandbox \\\n  --configuration release \\\n  --package-path \"$package_path\" \\\n  --scratch-path \"$relay_scratch\"\n\nrelay_bin=$(\n  /usr/bin/xcrun --sdk macosx swift build \\\n    --disable-sandbox \\\n    --configuration release \\\n    --package-path \"$package_path\" \\\n    --scratch-path \"$relay_scratch\" \\\n    --show-bin-path\n)/coinor-hook-relay\n\nif [ ! -x \"$relay_bin\" ]; then\n  printf 'Coinor hook relay build did not produce an executable: %s\\n' \"$relay_bin\" >&2\n  exit 1\nfi\n\n/usr/bin/install -m 755 \"$relay_bin\" \"$destination\"\n/usr/bin/cmp -s \"$relay_bin\" \"$destination\" || {\n  printf 'Coinor hook relay bundle copy does not match its Release build.\\n' >&2\n  exit 1\n}\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CA0000000000000000000012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000022 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000000032 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CA0000000000000000000029 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA0000000000000000000010 /* Coinor */;
+			targetProxy = CA000000000000000000002A /* PBXContainerItemProxy */;
+		};
+		CA0000000000000000000039 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA0000000000000000000010 /* Coinor */;
+			targetProxy = CA000000000000000000003A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		CA0000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		CA0000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		CA0000000000000000000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Coinor/Coinor.entitlements";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Coinor/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lstdc++",
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.Coinor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		CA0000000000000000000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Coinor/Coinor.entitlements";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Coinor/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lstdc++",
+					"-framework",
+					Carbon,
+					"-framework",
+					CoreGraphics,
+					"-framework",
+					Metal,
+					"-framework",
+					QuartzCore,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.Coinor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		CA0000000000000000000027 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.CoinorTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Coinor.app/Contents/MacOS/Coinor";
+			};
+			name = Debug;
+		};
+		CA0000000000000000000028 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.CoinorTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Coinor.app/Contents/MacOS/Coinor";
+			};
+			name = Release;
+		};
+		CA0000000000000000000037 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.CoinorUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Coinor;
+			};
+			name = Debug;
+		};
+		CA0000000000000000000038 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.coinor.CoinorUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Coinor;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CA0000000000000000000040 /* Build configuration list for PBXProject "Coinor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA0000000000000000000041 /* Debug */,
+				CA0000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CA0000000000000000000017 /* Build configuration list for PBXNativeTarget "Coinor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA0000000000000000000018 /* Debug */,
+				CA0000000000000000000019 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CA0000000000000000000026 /* Build configuration list for PBXNativeTarget "CoinorTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA0000000000000000000027 /* Debug */,
+				CA0000000000000000000028 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CA0000000000000000000036 /* Build configuration list for PBXNativeTarget "CoinorUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA0000000000000000000037 /* Debug */,
+				CA0000000000000000000038 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = CA0000000000000000000001 /* Project object */;
+}

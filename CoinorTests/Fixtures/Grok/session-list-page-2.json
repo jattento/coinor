@@ -1,0 +1,24 @@
+{
+  "result": {
+    "sessions": [
+      {
+        "sessionId": "00000000-0000-7000-8000-000000000001",
+        "summary": "Normalize the rent roll importer",
+        "updatedAt": "2026-08-05T18:22:15Z",
+        "createdAt": "2026-08-05T17:02:00Z",
+        "cwd": "/Users/example/projects/rent-roll-normalizer",
+        "source": "local",
+        "title": "Normalize the rent roll importer",
+        "_meta": { "x.ai/session": { "kind": "build", "facets": {} } }
+      },
+      {
+        "sessionId": "00000000-0000-7000-8000-000000000003",
+        "cwd": "/Users/example/projects/coinor"
+      }
+    ],
+    "_meta": {
+      "x.ai/facets": {},
+      "x.ai/partial": { "conversations": false }
+    }
+  }
+}
