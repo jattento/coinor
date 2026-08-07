@@ -110,7 +110,7 @@ was taken full-screen on a 3456 x 2234 Retina display.
 | Phase 0 integration gate | `c69a264` |
 | Phases 1-6 native product implementation | `a2c5551` |
 | Notification authorization QA fix | `b2fe81d` |
-| Phase 7 quality, packaging, and documentation | **RECORDED AFTER PHASE 7 COMMIT** |
+| Phase 7 quality, packaging, and documentation | `c43c1f8` |
 
 ## Final Boundary Record
 
