@@ -2,6 +2,64 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.5 Verification
+
+The embedded Ghostty terminal theme was aligned with the Codex desktop app's
+"Codex Dark" theme card (surface, accent, and a warm foreground) as version
+`0.5.5` build `12` and validated on August 8, 2026.
+
+Automated verification:
+
+- 213 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITests passed with 0 failures and 0 skips.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed for Ghostty
+  tag `v1.3.1`, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, or the Release bundle.
+- `git diff --check` passed.
+- The archive checksum verified.
+
+Final Xcode result bundle:
+
+```text
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.08_15-18-10--0300.xcresult
+```
+
+Manual verification used a rendered mockup of the exact tab-strip and
+terminal chrome, driven by the same hex values now in
+`GhosttyOverrides.conf` and `AccentColor.colorset`:
+
+- The selected-tab underline and terminal cursor both render the new
+  `#339cff` accent; every other UI element that previously used
+  `Color.accentColor` was confirmed to be limited to that one underline, so
+  no other chrome changed.
+- Tab labels, close/add controls, and terminal body text render the new
+  `#faf3dd` warm foreground with contrast against `#181818` improved
+  slightly over the previous `#e8e8e8` (16.0:1 vs 14.5:1).
+- The ANSI palette used for command output (diff/status colors) is
+  visually unchanged.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.5` build `12` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.5-arm64.zip` |
+| Archive size | `6,000,608` bytes |
+| Archive SHA-256 | `83bb3de31718c60978ef6d5c10a7ac44b049c812a1a1026a43bd8ee394ebf03b` |
+
 ## Conan Code 0.5.4 Verification
 
 The startup loading screen's ASCII mascot artwork was replaced as version
