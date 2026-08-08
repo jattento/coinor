@@ -61,12 +61,23 @@ Coinor can rename conversations from the sidebar. Renaming updates the
 underlying Grok session through Grok's session administration API; Coinor does
 not store a separate display-title alias.
 
-Projects can be dragged to a user-defined order. The order is local Coinor
-metadata, survives relaunch, and preserves the relative slot of an archived
-project so unarchiving restores it where the user left it.
-Only project headers are draggable. Reordering must not introduce an additional
-outline level: every project header remains aligned in the same flat column,
-whether collapsed, expanded, or moved past a project with conversations.
+Projects, pinned conversations, and the conversations within each project can
+be dragged to user-defined orders. Each drag lifts a visible preview with the
+row's real content, moves that preview with the pointer, and opens an animated
+space between candidate neighbors before the user releases it. Releasing
+outside a valid destination cancels the preview without changing stored order.
+Holding near the top or bottom edge uses the sidebar's native auto-scroll.
+
+Orders are local Coinor metadata and survive relaunch. Project ordering
+preserves the relative slot of an archived project. Project conversation
+ordering preserves the slots of pinned and archived conversations so unpinning
+or unarchiving returns them where the user left them. Pinned conversations can
+be reordered only within `Pinned`, and project conversations can be reordered
+only within their current project. Search results are not draggable.
+
+Reordering must not introduce an additional outline level: every project header
+remains aligned in the same flat column, whether collapsed, expanded, or moved
+past a project with conversations.
 
 A fuzzy conversation search field appears above `Pinned`. While an effective
 query is present, the sidebar shows one flat result list rather than duplicating

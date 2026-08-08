@@ -52,6 +52,11 @@ func relaunchRestoresPersistedState() async throws {
             document.reorderProjects(
                 to: ["project-b", "project-a"]
             )
+            document.reorderVisibleConversations(
+                in: "project-a",
+                to: ["session-b", "session-a"],
+                allKnownSessionIDs: ["session-a", "session-b"]
+            )
             document.setLastVisibleSession("session-a")
         }
     }
@@ -67,6 +72,10 @@ func relaunchRestoresPersistedState() async throws {
     #expect(document.projectIconName("project-a") == "terminal")
     #expect(document.projectIconColorName("project-a") == "green")
     #expect(document.projectOrder == ["project-b", "project-a"])
+    #expect(
+        document.projectConversationOrder("project-a")
+            == ["session-b", "session-a"]
+    )
     #expect(document.lastVisibleSessionID == "session-a")
 }
 
@@ -130,6 +139,97 @@ func projectOrderRemainsBackwardCompatibleWithSchemaTwo() throws {
 
     #expect(decoded.schemaVersion == 2)
     #expect(decoded.projectOrder == ["project-b", "project-a"])
+}
+
+@Test
+func projectMetadataWithoutConversationOrderStillDecodes() throws {
+    let json = """
+    {
+      "schemaVersion": 2,
+      "sessions": {},
+      "projects": {
+        "project-a": {
+          "manuallyRegistered": true,
+          "archived": false,
+          "expanded": true
+        }
+      },
+      "pinnedSessionIDs": [],
+      "projectOrder": ["project-a"]
+    }
+    """
+
+    let decoded = try JSONDecoder().decode(
+        MetadataDocument.self,
+        from: Data(json.utf8)
+    )
+
+    #expect(decoded.schemaVersion == 2)
+    #expect(decoded.projectConversationOrder("project-a").isEmpty)
+}
+
+@Test
+func reorderingVisibleConversationsPreservesHiddenSlots() {
+    var document = MetadataDocument.empty
+    document.reorderVisibleConversations(
+        in: "project-a",
+        to: [
+            "session-a",
+            "hidden-pinned",
+            "session-b",
+            "hidden-archived",
+            "session-c",
+        ],
+        allKnownSessionIDs: [
+            "session-a",
+            "hidden-pinned",
+            "session-b",
+            "hidden-archived",
+            "session-c",
+        ]
+    )
+    document.pin("hidden-pinned")
+    document.setSessionArchived("hidden-archived", archived: true)
+
+    document.reorderVisibleConversations(
+        in: "project-a",
+        to: ["session-c", "session-a", "session-b"],
+        allKnownSessionIDs: [
+            "session-a",
+            "hidden-pinned",
+            "session-b",
+            "hidden-archived",
+            "session-c",
+        ]
+    )
+
+    #expect(
+        document.projectConversationOrder("project-a")
+            == [
+                "session-c",
+                "hidden-pinned",
+                "session-a",
+                "hidden-archived",
+                "session-b",
+            ]
+    )
+}
+
+@Test
+func reorderingVisiblePinnedSessionsPreservesHiddenPinnedSlots() {
+    var document = MetadataDocument.empty
+    document.pin("hidden")
+    document.pin("first")
+    document.pin("second")
+
+    document.reorderVisiblePinnedSessions(
+        to: ["second", "first"]
+    )
+
+    #expect(
+        document.pinnedSessionIDs
+            == ["hidden", "second", "first"]
+    )
 }
 
 @Test

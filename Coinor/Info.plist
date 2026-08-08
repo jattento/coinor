@@ -36,5 +36,28 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Coinor Project Reorder</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.coinor.project-reorder</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Coinor Conversation Reorder</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.coinor.conversation-reorder</string>
+		</dict>
+	</array>
 </dict>
 </plist>

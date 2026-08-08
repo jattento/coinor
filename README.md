@@ -7,7 +7,8 @@ conversation in a fixed 50/50 layout.
 
 Grok remains the source of truth for session IDs, titles, transcripts, and
 execution. Coinor stores only local organization metadata such as pins,
-archives, manually registered projects, and the last visible conversation.
+archives, manually registered projects, sidebar ordering, and the last visible
+conversation.
 
 ## Requirements
 

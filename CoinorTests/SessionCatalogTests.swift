@@ -206,6 +206,67 @@ func archivedProjectReturnsToItsCanonicalPosition() {
 }
 
 @Test
+func storedConversationOrderWinsWithinItsProject() {
+    var metadata = MetadataDocument.empty
+    metadata.reorderVisibleConversations(
+        in: "project-a",
+        to: ["session-c", "session-a", "session-b"],
+        allKnownSessionIDs: ["session-a", "session-b", "session-c"]
+    )
+
+    let catalog = SessionCatalog.build(
+        sessions: [
+            session("session-a", project: "project-a"),
+            session("session-b", project: "project-a"),
+            session("session-c", project: "project-a"),
+        ],
+        metadata: metadata
+    )
+
+    #expect(
+        catalog.projects.first?.conversations.map(\.id)
+            == ["session-c", "session-a", "session-b"]
+    )
+}
+
+@Test
+func pinnedAndArchivedConversationsReturnToCanonicalProjectSlots() {
+    var metadata = MetadataDocument.empty
+    metadata.reorderVisibleConversations(
+        in: "project-a",
+        to: ["session-c", "session-b", "session-a"],
+        allKnownSessionIDs: ["session-a", "session-b", "session-c"]
+    )
+    metadata.pin("session-b")
+    metadata.setSessionArchived("session-c", archived: true)
+    let sessions = [
+        session("session-a", project: "project-a"),
+        session("session-b", project: "project-a"),
+        session("session-c", project: "project-a"),
+    ]
+
+    var catalog = SessionCatalog.build(
+        sessions: sessions,
+        metadata: metadata
+    )
+    #expect(
+        catalog.projects.first?.conversations.map(\.id)
+            == ["session-a"]
+    )
+
+    metadata.unpin("session-b")
+    metadata.setSessionArchived("session-c", archived: false)
+    catalog = SessionCatalog.build(
+        sessions: sessions,
+        metadata: metadata
+    )
+    #expect(
+        catalog.projects.first?.conversations.map(\.id)
+            == ["session-c", "session-b", "session-a"]
+    )
+}
+
+@Test
 func searchRanksTextualClosenessBeforeRecency() {
     let old = Date(timeIntervalSince1970: 100)
     let recent = Date(timeIntervalSince1970: 1_000)

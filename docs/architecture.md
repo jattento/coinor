@@ -284,18 +284,28 @@ current Grok catalog. It compares normalized exact, prefix, substring, token,
 and subsequence matches in that order. Activity time sorts equal-quality
 matches, using the newest available catalog or live-roster timestamp.
 
-Project order is stored as one canonical ID sequence. Rendering filters that
-sequence to currently visible projects and appends newly discovered IDs.
-Reordering replaces only visible slots, leaving archived project IDs in their
-relative positions. The coordinator publishes an optimistic order immediately
-and generation-checks serialized persistence completions so stale writes never
-overwrite a newer drag.
+Project order, pinned order, and each project's conversation order are stored
+as canonical ID sequences. Rendering filters those sequences to currently
+visible rows and appends newly discovered IDs. Reordering replaces only visible
+slots, leaving archived projects and hidden pinned or archived conversations in
+their relative positions. The coordinator publishes an optimistic order
+immediately and generation-checks serialized persistence completions so stale
+writes never overwrite a newer drag.
 
-The drag source and destination are attached directly to each
-`DisclosureGroup` label using a Coinor-prefixed string payload. This keeps the
-project list structurally flat and rejects conversation rows, external text,
-and unknown project IDs. A fixed icon slot preserves one shared horizontal
-alignment across collapsed, expanded, and reordered project headers.
+`SidebarReorderModel` owns one view-local drag session containing the scope,
+dragged ID, original order, and current preview order. Projects, `Pinned`, and
+each project are isolated scopes, so a conversation cannot cross sections or
+projects. Private exported UTIs prevent external text and unrelated rows from
+being accepted.
+
+Each row uses a custom SwiftUI drag preview. Row drop delegates update the
+preview order during `dropEntered` and `dropUpdated`, causing the transparent
+source placeholder and surrounding rows to animate into the candidate
+position before release. A list-level delegate commits drops inside the open
+placeholder. Because SwiftUI has no cancelled-drop callback, a short mouse
+release monitor clears uncommitted preview state after a drag ends. The native
+sidebar list provides edge auto-scroll. A fixed project icon slot preserves one
+shared horizontal alignment across collapsed, expanded, and reordered headers.
 
 ### Worktree creation
 
@@ -327,6 +337,7 @@ Stored metadata includes:
 - pinned and archived conversation IDs
 - pin ordering
 - canonical project ordering
+- canonical conversation ordering within each project
 - last visible conversation ID
 - lightweight UI state such as expanded projects
 

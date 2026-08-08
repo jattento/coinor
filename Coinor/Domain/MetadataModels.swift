@@ -25,6 +25,7 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var displayName: String?
     var iconName: String?
     var iconColorName: String?
+    var conversationOrder: [String]?
 }
 
 /// The single JSON document Coinor persists.
@@ -89,6 +90,10 @@ extension MetadataDocument {
     func projectIconColorName(_ projectID: String) -> String? {
         projects[projectID]?.iconColorName
     }
+
+    func projectConversationOrder(_ projectID: String) -> [String] {
+        projects[projectID]?.conversationOrder ?? []
+    }
 }
 
 // MARK: - Mutations
@@ -110,6 +115,24 @@ extension MetadataDocument {
     mutating func reorderPinnedSessions(to newOrder: [String]) {
         let pinned = Set(pinnedSessionIDs)
         pinnedSessionIDs = newOrder.filter { pinned.contains($0) }
+    }
+
+    mutating func reorderVisiblePinnedSessions(
+        to visibleOrder: [String]
+    ) {
+        let visibleIDs = Set(visibleOrder)
+        guard visibleIDs.count == visibleOrder.count,
+              visibleIDs.isSubset(of: Set(pinnedSessionIDs)) else {
+            return
+        }
+
+        var replacement = visibleOrder.makeIterator()
+        for index in pinnedSessionIDs.indices
+        where visibleIDs.contains(pinnedSessionIDs[index]) {
+            if let sessionID = replacement.next() {
+                pinnedSessionIDs[index] = sessionID
+            }
+        }
     }
 
     mutating func reorderProjects(to newOrder: [String]) {
@@ -204,6 +227,37 @@ extension MetadataDocument {
     ) {
         var value = projects[projectID] ?? ProjectMetadata()
         value.iconColorName = iconColorName
+        storeProject(projectID, value)
+    }
+
+    mutating func reorderVisibleConversations(
+        in projectID: String,
+        to visibleOrder: [String],
+        allKnownSessionIDs: [String]
+    ) {
+        var value = projects[projectID] ?? ProjectMetadata()
+        var seen: Set<String> = []
+        var canonical = (value.conversationOrder ?? []).filter {
+            seen.insert($0).inserted
+        }
+        for sessionID in allKnownSessionIDs + visibleOrder
+        where seen.insert(sessionID).inserted {
+            canonical.append(sessionID)
+        }
+
+        let visibleIDs = Set(visibleOrder)
+        var replacement = visibleOrder.makeIterator()
+        for index in canonical.indices
+        where visibleIDs.contains(canonical[index]) {
+            if let sessionID = replacement.next() {
+                canonical[index] = sessionID
+            }
+        }
+        while let sessionID = replacement.next() {
+            canonical.append(sessionID)
+        }
+
+        value.conversationOrder = canonical
         storeProject(projectID, value)
     }
 

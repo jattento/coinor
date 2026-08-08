@@ -1,6 +1,6 @@
 # Coinor Verification Record
 
-Date: August 7, 2026
+Date: August 8, 2026
 
 ## Environment
 
@@ -25,7 +25,7 @@ XCTest and XCUITest runner to execute normally.
 
 ## Automated Verification
 
-All commands below were run against the final source candidate on August 7,
+All commands below were run against the final source candidate on August 8,
 2026.
 
 | Check | Command | Final result |
@@ -33,7 +33,7 @@ All commands below were run against the final source candidate on August 7,
 | Ghostty artifact | `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` | Pass. Verified tag, exact commit, header, static library, full XCFramework, resources, terminfo, and crash reporting disabled. |
 | Ghostty corruption suite | `scripts/ghostty/test-verification.sh` | Pass. Happy path plus header, framework, resources, and manifest corruption were all detected. |
 | Debug build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
-| Full Debug test | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData test` | `TEST SUCCEEDED`. 31 XCTest + 135 Swift Testing + 3 XCUITest = 169 tests, 0 failures. |
+| Debug tests | `xcodebuild ... test -only-testing:CoinorTests` followed by `xcodebuild ... test -only-testing:CoinorUITests` | `TEST SUCCEEDED`. 31 XCTest + 145 Swift Testing + 3 XCUITest = 179 tests, 0 failures. |
 | Release build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
 | Release bundle contract | `scripts/release/verify-app.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Bundle ID, version, arm64 architecture, macOS 13 minimum, strict signature, Ghostty provenance, no sandbox, and no `get-task-allow` verified. |
 | Public release security | `scripts/release/security-scan.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Git history, the exact publishable snapshot, and every regular file in the release bundle were free of detected secrets and the local home path. |
@@ -43,10 +43,17 @@ All commands below were run against the final source candidate on August 7,
 | English-owned UI scan | `rg` scan across Coinor-owned Swift UI source | Pass. No Spanish Coinor-owned UI literals found. |
 | Whitespace errors | `git diff --check` | Pass. |
 
-The final Xcode result bundle is:
+The first combined Debug run completed all unit tests, then macOS timed out
+while enabling UI automation before any XCUITest started. Developer mode was
+confirmed enabled. Re-running the UI target in isolation started normally and
+all three tests passed; the final candidate was then re-run through both
+isolated targets successfully.
+
+The final Xcode result bundles are:
 
 ```text
-.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_20-27-37--0300.xcresult
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_21-19-12--0300.xcresult
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_21-19-41--0300.xcresult
 ```
 
 ## Manual End-To-End Verification
@@ -67,7 +74,7 @@ Computer Use with embedded Ghostty and the real custom Grok binary.
 | Local-HEAD fallback | A repository without a usable remote used exact local `HEAD`, displayed a non-blocking English warning, and left the primary checkout unchanged. | Pass |
 | Rename, pin, and archive | Conversation rename, project display rename, project icon selection, pin/unpin, and conversation/project archive/unarchive were exercised through the real UI. Pinned rows were not duplicated under projects. | Pass |
 | Sidebar controls | Each project keeps a fixed action slot, while `+` appears only on hover or keyboard/accessibility focus. Right-click exposes rename, appearance, and archive actions. | Pass |
-| Project drag ordering and alignment | A real XCUITest drag changed persisted project order. Collapsed and expanded projects remained in one shared icon/title column after the move, and the original metadata file was restored byte-for-byte. | Pass |
+| Natural sidebar reordering | Real pointer drags lifted project and conversation previews, moved the insertion space before release, persisted project and project-conversation order after relaunch, and used native edge auto-scroll. Dropping outside restored the prior order without changing metadata. The original metadata file was restored byte-for-byte. | Pass |
 | Project appearance | The picker exposes 30 renderable SF Symbols and eight adaptive colors, applies only on `Done`, and preserves older icon metadata through compatibility mapping. | Pass |
 | Conversation search | Exact, prefix, substring, token, and subsequence ranking were verified, with recency used only inside equal textual quality and archived items excluded. | Pass |
 | Grok update advisory | Semantic fork-version comparison, strictly-newer filtering, launch/periodic monitoring, and preservation of the last successful result after network failure were verified. The installed and latest versions were equal during the final run, so no warning was expected. | Pass |
@@ -91,12 +98,13 @@ that Coinor was registered and notifications were enabled.
 
 ## Visual Evidence
 
-The final 0.2.0 Release candidate was opened from
+The final 0.2.1 Release candidate was opened from
 `.build/DerivedData/Build/Products/Release/Coinor.app` and inspected at
 1704 x 1059 logical window size. The capture was intentionally not committed
 because it displayed the owner's live Grok transcript. Search, Pinned, project
-rows, terminal content, and input remained readable with no overlap. Expanded
-and collapsed project headers shared the same horizontal alignment.
+rows, terminal content, and input remained readable with no overlap. The
+catalog and exact last-visible Grok session restored normally. Expanded and
+collapsed project headers shared the same horizontal alignment.
 
 | Screenshot | Captured state | Review |
 | --- | --- | --- |
@@ -134,7 +142,7 @@ was taken full-screen on a 3456 x 2234 Retina display.
 | Field | Final value |
 | --- | --- |
 | Debug build | Pass |
-| Full Debug test | 169 tests, 0 failures |
+| Debug tests | 179 tests, 0 failures |
 | Release build | Pass |
 | Release verifier | Pass |
 | Screenshots | Compact, standard, and wide reviewed |

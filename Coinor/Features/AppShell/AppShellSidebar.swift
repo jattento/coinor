@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppShellSidebar: View {
     @ObservedObject var coordinator: AppCoordinator
+    @StateObject private var reorder = SidebarReorderModel()
 
     @State private var renameSessionID: String?
     @State private var renameText = ""
@@ -48,8 +49,12 @@ struct AppShellSidebar: View {
                 } else {
                     if !coordinator.catalog.pinned.isEmpty {
                         Section {
-                            ForEach(coordinator.catalog.pinned) { conversation in
-                                conversationRow(conversation, pinned: true)
+                            ForEach(displayPinnedConversations) { conversation in
+                                conversationRow(
+                                    conversation,
+                                    pinned: true,
+                                    reorderScope: .pinned
+                                )
                             }
                         } header: {
                             sectionHeader("Pinned")
@@ -65,7 +70,7 @@ struct AppShellSidebar: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(.tertiary)
                         } else {
-                            ForEach(coordinator.catalog.projects) { project in
+                            ForEach(displayProjects) { project in
                                 projectRow(project)
                             }
                         }
@@ -77,6 +82,21 @@ struct AppShellSidebar: View {
                     )
                 }
             }
+            .onDrop(
+                of: [
+                    .coinorProjectReorder,
+                    .coinorConversationReorder,
+                ],
+                delegate: SidebarReorderBackgroundDropDelegate(
+                    model: reorder,
+                    currentOrder: {
+                        currentOrder(for: $0)
+                    },
+                    commit: {
+                        commitReorder(scope: $0, order: $1)
+                    }
+                )
+            )
             .listStyle(.sidebar)
 
             Divider()
@@ -164,6 +184,11 @@ struct AppShellSidebar: View {
         } message: {
             Text("Enter a name for the new worktree.")
         }
+        .onChange(of: isSearching) { searching in
+            if searching {
+                reorder.cancel()
+            }
+        }
     }
 
     private var selection: Binding<String?> {
@@ -210,6 +235,20 @@ struct AppShellSidebar: View {
         coordinator.searchConversations(searchText)
     }
 
+    private var displayProjects: [ProjectRow] {
+        orderedRows(
+            coordinator.catalog.projects,
+            scope: .projects
+        )
+    }
+
+    private var displayPinnedConversations: [ConversationRow] {
+        orderedRows(
+            coordinator.catalog.pinned,
+            scope: .pinned
+        )
+    }
+
     private var searchField: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
@@ -249,7 +288,18 @@ struct AppShellSidebar: View {
         .padding(.bottom, 4)
     }
 
+    @ViewBuilder
     private func projectRow(_ project: ProjectRow) -> some View {
+        if reorder.isDragging(project.projectID, in: .projects) {
+            projectReorderPlaceholder(project)
+        } else {
+            projectDisclosureGroup(project)
+        }
+    }
+
+    private func projectDisclosureGroup(
+        _ project: ProjectRow
+    ) -> some View {
         let showsNewConversation =
             hoveredProjectID == project.projectID
                 || focusedProjectMenuID == project.projectID
@@ -265,8 +315,13 @@ struct AppShellSidebar: View {
                 }
             )
         ) {
-            ForEach(project.conversations) { conversation in
-                conversationRow(conversation, pinned: false)
+            ForEach(displayConversations(in: project)) { conversation in
+                conversationRow(
+                    conversation,
+                    pinned: false,
+                    reorderScope: .project(project.projectID),
+                    projectDropTargetID: project.projectID
+                )
             }
         } label: {
             HStack(spacing: 7) {
@@ -337,23 +392,29 @@ struct AppShellSidebar: View {
                     "Choose where to start the conversation"
                 )
             }
-            .frame(height: ProjectDropOrder.headerHeight)
+            .frame(height: SidebarReorderMetrics.projectHeaderHeight)
             .contentShape(Rectangle())
-            .draggable(
-                ProjectDropPayload.encoded(
-                    projectID: project.projectID
+            .onDrag {
+                hoveredProjectID = nil
+                return reorder.begin(
+                    scope: .projects,
+                    itemID: project.projectID,
+                    currentOrder: currentOrder(for: .projects)
                 )
-            )
-            .dropDestination(for: String.self) {
-                payloads,
-                location in
-                handleProjectDrop(
-                    payloads,
-                    location: location,
+            } preview: {
+                projectDragPreview(project)
+            }
+            .onDrop(
+                of: [.coinorProjectReorder],
+                delegate: projectDropDelegate(
                     targetProjectID: project.projectID
                 )
-            }
+            )
             .onHover { hovering in
+                guard !reorder.isActive else {
+                    hoveredProjectID = nil
+                    return
+                }
                 if hovering {
                     hoveredProjectID = project.projectID
                 } else if hoveredProjectID == project.projectID {
@@ -406,7 +467,46 @@ struct AppShellSidebar: View {
         }
     }
 
+    private func projectReorderPlaceholder(
+        _ project: ProjectRow
+    ) -> some View {
+        Color.clear
+            .frame(
+                height:
+                    SidebarReorderMetrics.projectHeaderHeight
+                    + (
+                        project.isExpanded
+                            ? CGFloat(project.conversations.count)
+                                * SidebarReorderMetrics.listRowHeight
+                            : 0
+                    )
+            )
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
     private func conversationRow(
+        _ conversation: ConversationRow,
+        pinned: Bool,
+        reorderScope: SidebarReorderScope? = nil,
+        projectDropTargetID: String? = nil
+    ) -> some View {
+        if let reorderScope {
+            reorderableConversationRow(
+                conversation,
+                pinned: pinned,
+                scope: reorderScope,
+                projectDropTargetID: projectDropTargetID
+            )
+        } else {
+            conversationRowContent(
+                conversation,
+                pinned: pinned
+            )
+        }
+    }
+
+    private func conversationRowContent(
         _ conversation: ConversationRow,
         pinned: Bool
     ) -> some View {
@@ -441,10 +541,14 @@ struct AppShellSidebar: View {
             }
         }
         .tag(conversation.id)
-        .frame(height: 24)
+        .frame(height: SidebarReorderMetrics.conversationHeight)
         .contentShape(Rectangle())
         .onHover { hovered in
-            hoveredConversationID = hovered ? conversation.id : nil
+            if reorder.isActive {
+                hoveredConversationID = nil
+            } else {
+                hoveredConversationID = hovered ? conversation.id : nil
+            }
         }
         .contextMenu {
             if pinned {
@@ -464,6 +568,62 @@ struct AppShellSidebar: View {
             Button("Archive") {
                 coordinator.archiveConversation(conversation.id)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func reorderableConversationRow(
+        _ conversation: ConversationRow,
+        pinned: Bool,
+        scope: SidebarReorderScope,
+        projectDropTargetID: String?
+    ) -> some View {
+        let row = conversationRowContent(
+            conversation,
+            pinned: pinned
+        )
+            .opacity(
+                reorder.isDragging(conversation.id, in: scope)
+                    ? 0.001
+                    : 1
+            )
+            .onDrag {
+                hoveredConversationID = nil
+                return reorder.begin(
+                    scope: scope,
+                    itemID: conversation.id,
+                    currentOrder: currentOrder(for: scope)
+                )
+            } preview: {
+                conversationDragPreview(conversation)
+            }
+            .onDrop(
+                of: [scope.contentType],
+                delegate: SidebarReorderDropDelegate(
+                    scope: scope,
+                    targetID: conversation.id,
+                    targetHeight: SidebarReorderMetrics
+                        .conversationHeight,
+                    forceAfterTarget: false,
+                    model: reorder,
+                    currentOrder: {
+                        currentOrder(for: scope)
+                    },
+                    commit: {
+                        commitReorder(scope: scope, order: $0)
+                    }
+                )
+            )
+        if let projectDropTargetID {
+            row.onDrop(
+                of: [.coinorProjectReorder],
+                delegate: projectDropDelegate(
+                    targetProjectID: projectDropTargetID,
+                    forceAfterTarget: true
+                )
+            )
+        } else {
+            row
         }
     }
 
@@ -487,33 +647,133 @@ struct AppShellSidebar: View {
         )
     }
 
-    private func handleProjectDrop(
-        _ payloads: [String],
-        location: CGPoint,
-        targetProjectID: String
-    ) -> Bool {
-        let projectIDs = coordinator.catalog.projects.map(\.projectID)
-        guard let sourceProjectID = payloads
-            .compactMap({
-                ProjectDropPayload.projectID(
-                    from: $0,
-                    validProjectIDs: projectIDs
-                )
-            })
-            .first else {
-            return false
-        }
-        let reordered = ProjectDropOrder.reorderedProjectIDs(
-            projectIDs,
-            moving: sourceProjectID,
-            relativeTo: targetProjectID,
-            dropY: location.y,
-            targetHeight: ProjectDropOrder.headerHeight
+    private func displayConversations(
+        in project: ProjectRow
+    ) -> [ConversationRow] {
+        orderedRows(
+            project.conversations,
+            scope: .project(project.projectID)
         )
-        if reordered != projectIDs {
-            coordinator.reorderProjects(to: reordered)
+    }
+
+    private func orderedRows<Row: Identifiable>(
+        _ rows: [Row],
+        scope: SidebarReorderScope
+    ) -> [Row] where Row.ID == String {
+        let rowsByID = Dictionary(
+            uniqueKeysWithValues: rows.map { ($0.id, $0) }
+        )
+        let order = reorder.displayOrder(
+            for: scope,
+            currentOrder: rows.map(\.id)
+        )
+        return order.compactMap { rowsByID[$0] }
+    }
+
+    private func currentOrder(
+        for scope: SidebarReorderScope
+    ) -> [String] {
+        switch scope {
+        case .projects:
+            coordinator.catalog.projects.map(\.projectID)
+        case .pinned:
+            coordinator.catalog.pinned.map(\.id)
+        case .project(let projectID):
+            coordinator.catalog.projects.first {
+                $0.projectID == projectID
+            }?.conversations.map(\.id) ?? []
         }
-        return true
+    }
+
+    private func commitReorder(
+        scope: SidebarReorderScope,
+        order: [String]
+    ) {
+        switch scope {
+        case .projects:
+            coordinator.reorderProjects(to: order)
+        case .pinned:
+            coordinator.reorderPinnedConversations(to: order)
+        case .project(let projectID):
+            coordinator.reorderConversations(
+                in: projectID,
+                to: order
+            )
+        }
+    }
+
+    private func projectDropDelegate(
+        targetProjectID: String,
+        forceAfterTarget: Bool = false
+    ) -> SidebarReorderDropDelegate {
+        SidebarReorderDropDelegate(
+            scope: .projects,
+            targetID: targetProjectID,
+            targetHeight: SidebarReorderMetrics.projectHeaderHeight,
+            forceAfterTarget: forceAfterTarget,
+            model: reorder,
+            currentOrder: {
+                currentOrder(for: .projects)
+            },
+            commit: {
+                commitReorder(scope: .projects, order: $0)
+            }
+        )
+    }
+
+    private func projectDragPreview(
+        _ project: ProjectRow
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(
+                systemName: coordinator.projectIconName(
+                    project.projectID
+                )
+            )
+                .frame(width: 20)
+                .foregroundStyle(
+                    ProjectIconColorChoice.choice(
+                        for: coordinator.projectIconColorName(
+                            project.projectID
+                        )
+                    ).color
+                )
+            Text(coordinator.projectDisplayName(project.projectID))
+                .font(.system(size: 13, weight: .light))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 238, height: 32)
+        .background(
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(nsColor: .separatorColor))
+        }
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+    }
+
+    private func conversationDragPreview(
+        _ conversation: ConversationRow
+    ) -> some View {
+        Text(conversation.session.title)
+            .font(.system(size: 13, weight: .light))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(width: 238, height: 32)
+            .background(
+                .regularMaterial,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color(nsColor: .separatorColor))
+            }
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
     }
 
     @ViewBuilder
@@ -551,64 +811,6 @@ struct AppShellSidebar: View {
         if panel.runModal() == .OK, let url = panel.url {
             coordinator.addProject(url: url)
         }
-    }
-}
-
-enum ProjectDropPayload {
-    private static let prefix = "coinor-project-id:"
-
-    static func encoded(projectID: String) -> String {
-        prefix + projectID
-    }
-
-    static func projectID(
-        from payload: String,
-        validProjectIDs: [String]
-    ) -> String? {
-        guard payload.hasPrefix(prefix) else {
-            return nil
-        }
-        let projectID = String(payload.dropFirst(prefix.count))
-        guard !projectID.isEmpty,
-              validProjectIDs.contains(projectID) else {
-            return nil
-        }
-        return projectID
-    }
-}
-
-enum ProjectDropOrder {
-    static let headerHeight: CGFloat = 18
-
-    static func reorderedProjectIDs(
-        _ projectIDs: [String],
-        moving sourceProjectID: String,
-        relativeTo targetProjectID: String,
-        dropY: CGFloat,
-        targetHeight: CGFloat
-    ) -> [String] {
-        guard sourceProjectID != targetProjectID,
-              let sourceIndex = projectIDs.firstIndex(
-                  of: sourceProjectID
-              ),
-              projectIDs.contains(targetProjectID) else {
-            return projectIDs
-        }
-
-        var reordered = projectIDs
-        reordered.remove(at: sourceIndex)
-        guard let targetIndex = reordered.firstIndex(
-            of: targetProjectID
-        ) else {
-            return projectIDs
-        }
-
-        let insertAfter = dropY >= targetHeight / 2
-        reordered.insert(
-            sourceProjectID,
-            at: targetIndex + (insertAfter ? 1 : 0)
-        )
-        return reordered
     }
 }
 

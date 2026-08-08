@@ -191,7 +191,10 @@ Implement:
 - activity glyph aggregation
 - attention focus routing
 - macOS notifications while unfocused
-- project drag ordering with archived-slot preservation
+- natural project, pinned, and project-conversation drag ordering
+- floating drag previews, animated insertion spaces, cancellation restoration,
+  and native edge auto-scroll
+- archived, pinned, and hidden-slot preservation
 - 30-symbol and eight-color project appearance picker
 - fuzzy conversation search above `Pinned`
 - advisory Grok fork update warning
@@ -205,7 +208,10 @@ Acceptance criteria:
 - archive never deletes a Grok session
 - archived active work is not interrupted and unloads when inactive
 - subagent attention reaches the root row and correct pane
-- rapid project reorders cannot be overwritten by stale persistence
+- rapid sidebar reorders cannot be overwritten by stale persistence
+- conversations cannot be dragged across projects or between project and
+  `Pinned` scopes
+- dropping outside a valid destination restores the pre-drag order
 - exact and closer search matches rank before older fuzzy matches
 - ordinary drag selects text while Grok click and double-click actions remain
   interactive

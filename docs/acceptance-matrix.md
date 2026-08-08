@@ -1,6 +1,6 @@
 # Coinor Acceptance Matrix
 
-Date: August 7, 2026
+Date: August 8, 2026
 
 Status terms:
 
@@ -16,7 +16,7 @@ Status terms:
 | --- | --- | --- | --- | --- |
 | 1. Interface language | Every Coinor-owned label, menu, tooltip, warning, empty state, diagnostic, and notification is English. | `Coinor/Features/AppShell`, `AttentionNotificationService.swift`, `AppFoundationTests`, notification tests, final Swift literal scan. | Sidebar, dialogs, warnings, archived view, activity text, and error states were reviewed. Grok-rendered content is outside Coinor-owned copy. | Pass |
 | 2. Projects and conversations | List persisted Grok sessions; group main checkout and worktrees by canonical Git project; keep clones separate; retain manually added empty projects; keep conversations flat; allow local project display names and icons. | `GrokControlClient`, `GitProjectResolver`, `SessionCatalog`, `MetadataModels`; catalog, resolver, and project-presentation persistence tests. | Real project rows were inspected; the context menu exposed rename and SF Symbol choices without changing repository paths. | Pass |
-| 3. Conversation organization | Pin/unpin, dedicated archives, metadata-only archive, active archive continuity, and Grok-owned conversation rename. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/runtime tests. | Conversation rename, pin/unpin, conversation/project archive/unarchive, idle unload, and active archive continuity were exercised. | Pass |
+| 3. Conversation organization | Pin/unpin, dedicated archives, metadata-only archive, active archive continuity, Grok-owned conversation rename, and scoped natural drag ordering. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `SidebarReorderModel`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/reorder/runtime tests. | Project and conversation rows lifted into pointer-following previews, opened insertion spaces, persisted after relaunch, auto-scrolled at the edge, and cancelled cleanly outside valid destinations. | Pass |
 | 4. Creating conversations | `In Main Checkout`, named `In New Worktree`, remote default branch, exact local-HEAD fallback, and English warning. | `AppShellSidebar`, `AppCoordinator`, `WorktreeService`; 8 Git fixture tests. | Remote-default and no-remote fallback workflows completed without mutating the primary checkout. | Pass |
 | 5. Conversation lifetime | Activated roots remain live while Coinor is open; changing visible rows does not stop work. | `ConversationRuntimeManager`, `RuntimeHostView`, runtime tests. | Root and child PIDs stayed stable through selection changes and active archive/unarchive. | Pass |
 | 6. Relaunch behavior | Restore only the last visible session, exact resume, lazy resume for other rows, no blank shell, no promise after quit. | `AppCoordinator.start`, `TerminalLaunchRequest`, `MetadataStoreTests.relaunchRestoresPersistedState`. | Immediate selection-and-quit persisted the new session. Relaunch restored its transcript directly. | Pass |
@@ -127,6 +127,9 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 | Active archive does not interrupt work | Stable root/child PIDs and final response | Pass |
 | Attention reaches root/project and correct terminal | Activity/focus tests and real `ask_user` | Pass |
 | Notification permission is prepared before background delivery | Focused authorization test, macOS registration, and enabled Coinor notification settings | Pass |
+| Projects, pinned rows, and project conversations reorder only inside their scopes | Reorder model, custom UTI, metadata hidden-slot, catalog restore, and payload tests | Pass |
+| Drag preview follows the pointer and opens the destination space before release | Real Debug-app project and conversation drags with full-screen captures | Pass |
+| Cancelled drag restores the original order without a metadata write | Release-monitor unit coverage and byte-identical real metadata QA | Pass |
 
 ## Phase 7: Quality And Packaging
 

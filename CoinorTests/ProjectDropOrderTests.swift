@@ -1,42 +1,32 @@
-import CoreGraphics
 import Testing
+import UniformTypeIdentifiers
 
 @testable import Coinor
 
 @Suite
 struct ProjectDropOrderTests {
     @Test
-    func projectDropPayloadAcceptsOnlyKnownPrefixedProjects() {
-        let projectIDs = ["project-a", "project-b"]
-        let validPayload = ProjectDropPayload.encoded(
-            projectID: "project-b"
+    func projectPayloadAdvertisesOnlyThePrivateProjectType() {
+        let provider = SidebarReorderPayload.provider(
+            scope: .projects,
+            itemID: "project-b"
         )
 
         #expect(
-            ProjectDropPayload.projectID(
-                from: validPayload,
-                validProjectIDs: projectIDs
-            ) == "project-b"
+            provider.hasItemConformingToTypeIdentifier(
+                UTType.coinorProjectReorder.identifier
+            )
         )
         #expect(
-            ProjectDropPayload.projectID(
-                from: "project-b",
-                validProjectIDs: projectIDs
-            ) == nil
-        )
-        #expect(
-            ProjectDropPayload.projectID(
-                from: ProjectDropPayload.encoded(
-                    projectID: "unknown"
-                ),
-                validProjectIDs: projectIDs
-            ) == nil
+            !provider.hasItemConformingToTypeIdentifier(
+                UTType.plainText.identifier
+            )
         )
     }
 
     @Test
     func projectDropMovesUpwardBeforeTarget() {
-        let reordered = ProjectDropOrder.reorderedProjectIDs(
+        let reordered = SidebarReorderOrder.reorderedIDs(
             ["a", "b", "c", "d"],
             moving: "d",
             relativeTo: "b",
@@ -49,7 +39,7 @@ struct ProjectDropOrderTests {
 
     @Test
     func projectDropMovesDownwardAfterTarget() {
-        let reordered = ProjectDropOrder.reorderedProjectIDs(
+        let reordered = SidebarReorderOrder.reorderedIDs(
             ["a", "b", "c", "d"],
             moving: "a",
             relativeTo: "c",
@@ -64,14 +54,14 @@ struct ProjectDropOrderTests {
     func projectDropLeavesAnEquivalentOrderUnchanged() {
         let projectIDs = ["a", "b", "c", "d"]
 
-        let alreadyBeforeTarget = ProjectDropOrder.reorderedProjectIDs(
+        let alreadyBeforeTarget = SidebarReorderOrder.reorderedIDs(
             projectIDs,
             moving: "b",
             relativeTo: "c",
             dropY: 2,
             targetHeight: 20
         )
-        let sameTarget = ProjectDropOrder.reorderedProjectIDs(
+        let sameTarget = SidebarReorderOrder.reorderedIDs(
             projectIDs,
             moving: "b",
             relativeTo: "b",

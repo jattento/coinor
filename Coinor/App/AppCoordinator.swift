@@ -60,7 +60,7 @@ final class AppCoordinator: ObservableObject {
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
-    private var projectReorderGeneration = 0
+    private var reorderGeneration = 0
     private var lifecycleGeneration = 0
     private var started = false
     private let notifications = AttentionNotificationService()
@@ -359,8 +359,8 @@ final class AppCoordinator: ObservableObject {
             projects: projectIDs.compactMap { rowsByID[$0] }
         )
 
-        projectReorderGeneration += 1
-        let generation = projectReorderGeneration
+        reorderGeneration += 1
+        let generation = reorderGeneration
         schedulePersistence { coordinator in
             let allKnownProjectIDs = coordinator.allKnownProjectIDs
             _ = await coordinator.persist(
@@ -372,7 +372,94 @@ final class AppCoordinator: ObservableObject {
                 },
                 rebuildCatalog: false
             )
-            if coordinator.projectReorderGeneration == generation {
+            if coordinator.reorderGeneration == generation {
+                coordinator.rebuildCatalog()
+            }
+        }
+    }
+
+    func reorderPinnedConversations(to sessionIDs: [String]) {
+        let visibleSessionIDs = catalog.pinned.map(\.id)
+        guard sessionIDs.count == visibleSessionIDs.count,
+              Set(sessionIDs) == Set(visibleSessionIDs) else {
+            return
+        }
+
+        let rowsByID = Dictionary(
+            uniqueKeysWithValues: catalog.pinned.map {
+                ($0.id, $0)
+            }
+        )
+        catalog = SessionCatalog(
+            pinned: sessionIDs.compactMap { rowsByID[$0] },
+            projects: catalog.projects
+        )
+
+        reorderGeneration += 1
+        let generation = reorderGeneration
+        schedulePersistence { coordinator in
+            _ = await coordinator.persist(
+                {
+                    $0.reorderVisiblePinnedSessions(to: sessionIDs)
+                },
+                rebuildCatalog: false
+            )
+            if coordinator.reorderGeneration == generation {
+                coordinator.rebuildCatalog()
+            }
+        }
+    }
+
+    func reorderConversations(
+        in projectID: String,
+        to sessionIDs: [String]
+    ) {
+        guard let projectIndex = catalog.projects.firstIndex(
+            where: { $0.projectID == projectID }
+        ) else {
+            return
+        }
+        let project = catalog.projects[projectIndex]
+        let visibleSessionIDs = project.conversations.map(\.id)
+        guard sessionIDs.count == visibleSessionIDs.count,
+              Set(sessionIDs) == Set(visibleSessionIDs) else {
+            return
+        }
+
+        let rowsByID = Dictionary(
+            uniqueKeysWithValues: project.conversations.map {
+                ($0.id, $0)
+            }
+        )
+        var projects = catalog.projects
+        projects[projectIndex] = ProjectRow(
+            projectID: project.projectID,
+            conversations: sessionIDs.compactMap { rowsByID[$0] },
+            isManuallyRegistered: project.isManuallyRegistered,
+            isExpanded: project.isExpanded
+        )
+        catalog = SessionCatalog(
+            pinned: catalog.pinned,
+            projects: projects
+        )
+
+        reorderGeneration += 1
+        let generation = reorderGeneration
+        schedulePersistence { coordinator in
+            let allKnownSessionIDs = coordinator.summaries
+                .filter { $0.projectID == projectID }
+                .map(\.id)
+            _ = await coordinator.persist(
+                {
+                    $0.reorderVisibleConversations(
+                        in: projectID,
+                        to: sessionIDs,
+                        allKnownSessionIDs: allKnownSessionIDs
+                    )
+                },
+                rebuildCatalog: false
+            )
+            if coordinator.reorderGeneration == generation {
                 coordinator.rebuildCatalog()
             }
         }

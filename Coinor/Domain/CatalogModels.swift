@@ -73,7 +73,7 @@ extension SessionCatalog {
         }
         let pinnedIDs = Set(pinned.map(\.id))
 
-        var conversationsByProject: [String: [ConversationRow]] = [:]
+        var sessionsByProject: [String: [SessionSummary]] = [:]
         var projectOrder: [String] = []
         var discoveredProjects: Set<String> = []
         for session in sessions
@@ -81,10 +81,7 @@ extension SessionCatalog {
             if discoveredProjects.insert(session.projectID).inserted {
                 projectOrder.append(session.projectID)
             }
-            guard isVisible(session), !pinnedIDs.contains(session.id) else {
-                continue
-            }
-            conversationsByProject[session.projectID, default: []].append(ConversationRow(session: session))
+            sessionsByProject[session.projectID, default: []].append(session)
         }
 
         let manualOnlyProjectIDs = metadata.projects
@@ -108,9 +105,37 @@ extension SessionCatalog {
         }
 
         let projectRows = (storedProjectOrder + remainingProjectIDs).map { projectID in
-            ProjectRow(
+            let projectSessions = sessionsByProject[projectID] ?? []
+            let sessionsByID = Dictionary(
+                projectSessions.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let defaultConversationOrder = projectSessions.map(\.id)
+            let availableSessionIDs = Set(defaultConversationOrder)
+            var seenSessionIDs: Set<String> = []
+            let storedConversationOrder = metadata
+                .projectConversationOrder(projectID)
+                .filter {
+                    availableSessionIDs.contains($0)
+                        && seenSessionIDs.insert($0).inserted
+                }
+            let remainingSessionIDs = defaultConversationOrder.filter {
+                !seenSessionIDs.contains($0)
+            }
+            let conversations = (
+                storedConversationOrder + remainingSessionIDs
+            ).compactMap { sessionID -> ConversationRow? in
+                guard let session = sessionsByID[sessionID],
+                      isVisible(session),
+                      !pinnedIDs.contains(sessionID) else {
+                    return nil
+                }
+                return ConversationRow(session: session)
+            }
+
+            return ProjectRow(
                 projectID: projectID,
-                conversations: conversationsByProject[projectID] ?? [],
+                conversations: conversations,
                 isManuallyRegistered: metadata.isProjectManuallyRegistered(projectID),
                 isExpanded: metadata.isProjectExpanded(projectID)
             )
