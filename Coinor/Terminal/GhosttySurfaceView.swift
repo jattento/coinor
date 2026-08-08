@@ -265,11 +265,19 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var isShuttingDown = false
     private var mouseRouter = GhosttyMouseRouter()
     private var secondaryClickRouter = GhosttySecondaryClickRouter()
+    private var hostVisible = true
+    private var focusesWhenAttached = false
 
     var onCloseRequest: (() -> Void)?
     var onProcessExit: ((UInt64) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
+    var onNewTabRequest: (() -> Void)?
+    var onCloseTabRequest: (() -> Void)?
+    var onTabNavigationRequest: ((TerminalTabNavigationRequest) -> Void)?
+    var onMoveTabRequest: ((Int) -> Void)?
+    var onRenameTabRequest: ((String?) -> Void)?
+    var onBecameFocused: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
@@ -301,7 +309,8 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             environmentPointer,
             environmentCount in
             try launch.workingDirectory.withCString { workingDirectory in
-                try launch.shellCommand.withCString { command in
+                let createSurface: (UnsafePointer<CChar>?) throws
+                    -> ghostty_surface_t = { command in
                     var configuration = ghostty_surface_config_new()
                     configuration.platform_tag = GHOSTTY_PLATFORM_MACOS
                     configuration.platform = ghostty_platform_u(
@@ -319,8 +328,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                     configuration.command = command
                     configuration.env_vars = environmentPointer
                     configuration.env_var_count = environmentCount
-                    configuration.wait_after_command = true
-                    configuration.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
+                    configuration.wait_after_command = launch.waitsAfterCommand
+                    configuration.context = Self.context(
+                        for: launch.surfaceContext
+                    )
 
                     guard let surface = ghostty_surface_new(
                         app,
@@ -330,6 +341,12 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                     }
                     return surface
                 }
+                if let command = launch.explicitCommand {
+                    return try command.withCString {
+                        try createSurface($0)
+                    }
+                }
+                return try createSurface(nil)
             }
         }
 
@@ -356,7 +373,11 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
         updateDisplayProperties()
         updateFocus()
-        window.makeFirstResponder(self)
+        updateOcclusion()
+        if focusesWhenAttached, hostVisible {
+            focusesWhenAttached = false
+            window.makeFirstResponder(self)
+        }
         installObservers(window: window)
     }
 
@@ -392,7 +413,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { updateFocus() }
+        if result {
+            updateFocus()
+            onBecameFocused?()
+        }
         return result
     }
 
@@ -616,11 +640,12 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     func requestHostClose() {
+        guard launch.mode != .shell else { return }
         onCloseRequest?()
     }
 
     func processDidRequestClose(processAlive: Bool) {
-        if !processAlive {
+        if !processAlive || launch.mode == .shell {
             onCloseRequest?()
         }
     }
@@ -670,6 +695,44 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         onWorkingDirectoryChange?(directory)
     }
 
+    func setHostVisibility(_ visible: Bool) {
+        guard hostVisible != visible else { return }
+        if !visible {
+            cancelMouseInteraction()
+        }
+        hostVisible = visible
+        isHidden = !visible
+        updateOcclusion()
+        updateFocus()
+        if visible {
+            updateDisplayProperties()
+        }
+        if visible, focusesWhenAttached, let window {
+            focusesWhenAttached = false
+            window.makeFirstResponder(self)
+        }
+    }
+
+    func requestNewTab() {
+        onNewTabRequest?()
+    }
+
+    func requestCloseTab() {
+        onCloseTabRequest?()
+    }
+
+    func requestTabNavigation(_ request: TerminalTabNavigationRequest) {
+        onTabNavigationRequest?(request)
+    }
+
+    func requestMoveTab(by amount: Int) {
+        onMoveTabRequest?(amount)
+    }
+
+    func requestRenameTab(_ name: String?) {
+        onRenameTabRequest?(name)
+    }
+
     func updateCursor(_ shape: ghostty_action_mouse_shape_e) {
         switch shape {
         case GHOSTTY_MOUSE_SHAPE_POINTER:
@@ -684,7 +747,16 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     func focusTerminal() {
-        window?.makeFirstResponder(self)
+        guard hostVisible, let window else {
+            focusesWhenAttached = true
+            return
+        }
+        focusesWhenAttached = false
+        window.makeFirstResponder(self)
+    }
+
+    func cancelPendingFocus() {
+        focusesWhenAttached = false
     }
 
     func shutdown() {
@@ -696,6 +768,13 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         onProcessExit = nil
         onTitleChange = nil
         onWorkingDirectoryChange = nil
+        onNewTabRequest = nil
+        onCloseTabRequest = nil
+        onTabNavigationRequest = nil
+        onMoveTabRequest = nil
+        onRenameTabRequest = nil
+        onBecameFocused = nil
+        focusesWhenAttached = false
         ghostty_surface_free(surfaceHandle)
         self.surfaceHandle = nil
     }
@@ -708,6 +787,19 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                 state: GHOSTTY_MOUSE_RELEASE,
                 button: GHOSTTY_MOUSE_RIGHT
             )
+        }
+    }
+
+    private static func context(
+        for context: TerminalSurfaceContext
+    ) -> ghostty_surface_context_e {
+        switch context {
+        case .window:
+            GHOSTTY_SURFACE_CONTEXT_WINDOW
+        case .tab:
+            GHOSTTY_SURFACE_CONTEXT_TAB
+        case .split:
+            GHOSTTY_SURFACE_CONTEXT_SPLIT
         }
     }
 
@@ -742,12 +834,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                 forName: NSWindow.didChangeOcclusionStateNotification,
                 object: window,
                 queue: .main
-            ) { [weak self, weak window] _ in
-                guard let self, let window else { return }
+            ) { [weak self] _ in
+                guard let self else { return }
                 Task { @MainActor in
-                    self.updateOcclusion(
-                        visible: window.occlusionState.contains(.visible)
-                    )
+                    self.updateOcclusion()
                 }
             }
         )
@@ -758,7 +848,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in
-                    self?.updateOcclusion(visible: true)
+                    self?.updateOcclusion()
                     self?.updateDisplayProperties()
                 }
             }
@@ -797,8 +887,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         observers.removeAll()
     }
 
-    private func updateOcclusion(visible: Bool) {
+    private func updateOcclusion() {
         guard let surfaceHandle else { return }
+        let visible = hostVisible
+            && window?.occlusionState.contains(.visible) == true
         ghostty_surface_set_occlusion(surfaceHandle, visible)
     }
 
@@ -817,7 +909,8 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     private func updateFocus() {
         guard let surfaceHandle else { return }
-        let focused = window?.isKeyWindow == true
+        let focused = hostVisible
+            && window?.isKeyWindow == true
             && window?.firstResponder === self
         ghostty_surface_set_focus(surfaceHandle, focused)
     }

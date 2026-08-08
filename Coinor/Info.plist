@@ -38,10 +38,10 @@
 	<false/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
+			<dict>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>Coinor Project Reorder</string>
@@ -55,9 +55,19 @@
 			</array>
 			<key>UTTypeDescription</key>
 			<string>Coinor Conversation Reorder</string>
-			<key>UTTypeIdentifier</key>
-			<string>dev.coinor.conversation-reorder</string>
-		</dict>
-	</array>
+				<key>UTTypeIdentifier</key>
+				<string>dev.coinor.conversation-reorder</string>
+			</dict>
+			<dict>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeDescription</key>
+				<string>Coinor Terminal Tab</string>
+				<key>UTTypeIdentifier</key>
+				<string>dev.coinor.terminal-tab</string>
+			</dict>
+		</array>
 </dict>
 </plist>

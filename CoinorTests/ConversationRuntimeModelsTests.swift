@@ -70,6 +70,20 @@ func terminalLaunchRequestPlacesWorktreeArgumentsBeforeTheSessionID() {
 }
 
 @Test
+func shellLaunchLeavesCommandSelectionToGhostty() {
+    let request = TerminalLaunchRequest(
+        shellTabID: "shell-id",
+        workingDirectory: "/tmp/project"
+    )
+
+    #expect(request.mode == .shell)
+    #expect(request.explicitCommand == nil)
+    #expect(request.arguments.isEmpty)
+    #expect(request.surfaceContext == .tab)
+    #expect(request.waitsAfterCommand == false)
+}
+
+@Test
 func descendantsStayFlatAndOrderedByStartSequence() {
     let root = RuntimePane(
         id: "root",
@@ -161,6 +175,12 @@ func unarchivingCancelsAPendingRuntimeUnload() {
     policy.markArchived()
     #expect(policy.shouldUnload(activity: .working) == false)
     #expect(policy.shouldUnload(activity: .idle))
+    #expect(
+        policy.shouldUnload(
+            activity: .idle,
+            hasShellTabs: true
+        ) == false
+    )
 
     policy.cancel()
     #expect(policy.shouldUnload(activity: .idle) == false)

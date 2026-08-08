@@ -52,15 +52,41 @@ struct RuntimeArchiveUnloadPolicy: Equatable, Sendable {
         isPending = false
     }
 
-    func shouldUnload(activity: RuntimeActivity) -> Bool {
-        isPending && activity != .working && activity != .needsInput
+    func shouldUnload(
+        activity: RuntimeActivity,
+        hasShellTabs: Bool = false
+    ) -> Bool {
+        isPending
+            && !hasShellTabs
+            && activity != .working
+            && activity != .needsInput
     }
+}
+
+enum TerminalSurfaceContext: Equatable, Sendable {
+    case window
+    case tab
+    case split
+}
+
+enum TerminalTabNavigationRequest: Equatable, Sendable {
+    case previous
+    case next
+    case last
+    case index(Int)
+}
+
+enum ConversationShellDirectorySource: Equatable, Sendable {
+    case rootLaunchDirectory
+    case explicit(String)
+    case unavailable
 }
 
 struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
     enum Mode: Equatable, Sendable {
         case newSession
         case resume
+        case shell
     }
 
     let sessionID: String
@@ -69,6 +95,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
     let leaderSocket: String
     let mode: Mode
     let additionalArguments: [String]
+    let surfaceContext: TerminalSurfaceContext
 
     init(
         sessionID: String,
@@ -76,7 +103,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         grokExecutable: String,
         leaderSocket: String,
         mode: Mode,
-        additionalArguments: [String] = []
+        additionalArguments: [String] = [],
+        surfaceContext: TerminalSurfaceContext = .window
     ) {
         self.sessionID = sessionID
         self.workingDirectory = workingDirectory
@@ -84,11 +112,23 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.leaderSocket = leaderSocket
         self.mode = mode
         self.additionalArguments = additionalArguments
+        self.surfaceContext = surfaceContext
+    }
+
+    init(shellTabID: String, workingDirectory: String) {
+        self.sessionID = shellTabID
+        self.workingDirectory = workingDirectory
+        self.grokExecutable = ""
+        self.leaderSocket = ""
+        self.mode = .shell
+        self.additionalArguments = []
+        self.surfaceContext = .tab
     }
 
     var id: String { sessionID }
 
     var arguments: [String] {
+        guard mode != .shell else { return [] }
         var values = [
             "--leader-socket", leaderSocket,
             "--leader",
@@ -100,14 +140,25 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
             values += ["--session-id", sessionID]
         case .resume:
             values += ["--resume", sessionID]
+        case .shell:
+            break
         }
         return values
     }
 
     var shellCommand: String {
-        ([grokExecutable] + arguments)
+        guard mode != .shell else { return "" }
+        return ([grokExecutable] + arguments)
             .map(Self.shellQuote)
             .joined(separator: " ")
+    }
+
+    var explicitCommand: String? {
+        mode == .shell ? nil : shellCommand
+    }
+
+    var waitsAfterCommand: Bool {
+        mode != .shell
     }
 
     private static func shellQuote(_ value: String) -> String {

@@ -152,6 +152,29 @@ final class AppFoundationTests: XCTestCase {
         )
     }
 
+    func testRuntimeEnvironmentCanIsolateApplicationSupport() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Coinor-Isolated", isDirectory: true)
+
+        let resolved = try CoinorRuntimeEnvironment
+            .applicationSupportDirectory(
+                environment: [
+                    CoinorRuntimeEnvironment
+                        .applicationSupportDirectoryKey: directory.path,
+                ]
+            )
+
+        XCTAssertEqual(resolved, directory.standardizedFileURL)
+        XCTAssertEqual(
+            try GrokLeaderSocket.coinorDefault(
+                supportDirectory: resolved
+            ).path,
+            directory
+                .appendingPathComponent("grok-leader.sock")
+                .path
+        )
+    }
+
     func testAccessibilityIdentifiersMatchTheStringsUsedByUITests() {
         XCTAssertEqual(AppShellIdentifier.sidebar, "AppShellSidebar")
         XCTAssertEqual(AppShellIdentifier.pinnedSection, "AppShellSidebarPinned")

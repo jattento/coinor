@@ -43,6 +43,24 @@ area when no subagent is active; otherwise the root keeps the left half and all
 active subagent panes share the right half.
 _Avoid_: Window, project
 
+**Terminal Tab**:
+A Coinor-owned tab within one conversation view. The permanent first tab
+contains the Grok conversation layout; additional tabs contain independent
+Ghostty shells rooted at the conversation's original checkout or worktree.
+_Avoid_: Conversation, Grok session, native Ghostty tab
+
+**Main Tab**:
+The permanent, non-closable terminal tab that contains the root Grok pane and
+any active subagent panes. Its local label defaults to `main` and can be
+renamed without changing the Grok conversation title.
+_Avoid_: Root conversation, sidebar title
+
+**Shell Tab**:
+A closable terminal tab backed by an independent Ghostty shell. Its process and
+scrollback live only while Coinor is running; its local name, order, and
+selection metadata survive relaunch.
+_Avoid_: Grok session, subagent pane
+
 **Subagent Pane**:
 A live, interactive pane backed by a child Grok session. It appears alongside
 its parent conversation while the subagent is available without becoming a

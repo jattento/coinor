@@ -39,5 +39,8 @@ struct CoinorApp: App {
         }
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
+        .commands {
+            TerminalTabCommands(coordinator: coordinator)
+        }
     }
 }

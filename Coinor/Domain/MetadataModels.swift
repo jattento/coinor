@@ -4,15 +4,176 @@ import Foundation
 /// `MetadataDocument`'s persisted shape changes in a way older decoders
 /// cannot already tolerate, and add the matching step to `MetadataMigrator`.
 enum MetadataSchema {
-    static let currentVersion = 2
+    static let currentVersion = 3
+}
+
+struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    var name: String
+}
+
+struct ConversationTabMetadata: Equatable, Sendable {
+    static let mainID = "main"
+
+    var mainName: String
+    var shellTabs: [ShellTabMetadata]
+    var selectedTabID: String
+    var nextTabNumber: Int
+
+    static let initial = ConversationTabMetadata(
+        mainName: "main",
+        shellTabs: [],
+        selectedTabID: mainID,
+        nextTabNumber: 1
+    )
+
+    var orderedTabIDs: [String] {
+        [Self.mainID] + shellTabs.map(\.id)
+    }
+
+    func contains(tabID: String) -> Bool {
+        tabID == Self.mainID || shellTabs.contains { $0.id == tabID }
+    }
+
+    mutating func appendShell(id: String) -> ShellTabMetadata {
+        let tab = ShellTabMetadata(
+            id: id,
+            name: "Tab \(nextTabNumber)"
+        )
+        nextTabNumber += 1
+        shellTabs.append(tab)
+        selectedTabID = tab.id
+        return tab
+    }
+
+    mutating func select(tabID: String) {
+        guard contains(tabID: tabID) else { return }
+        selectedTabID = tabID
+    }
+
+    mutating func rename(tabID: String, to name: String) {
+        if tabID == Self.mainID {
+            mainName = name
+            return
+        }
+        guard let index = shellTabs.firstIndex(where: { $0.id == tabID })
+        else {
+            return
+        }
+        shellTabs[index].name = name
+    }
+
+    mutating func closeShell(tabID: String) {
+        guard let shellIndex = shellTabs.firstIndex(where: {
+            $0.id == tabID
+        }) else {
+            return
+        }
+        let orderedIndex = shellIndex + 1
+        shellTabs.remove(at: shellIndex)
+        if selectedTabID == tabID {
+            selectedTabID = orderedTabIDs[
+                min(orderedIndex - 1, orderedTabIDs.count - 1)
+            ]
+        }
+    }
+
+    mutating func moveShell(tabID: String, toFinalIndex: Int) {
+        guard let sourceIndex = shellTabs.firstIndex(where: {
+            $0.id == tabID
+        }) else {
+            return
+        }
+        let tab = shellTabs.remove(at: sourceIndex)
+        let boundedIndex = min(
+            max(toFinalIndex, 0),
+            shellTabs.count
+        )
+        shellTabs.insert(tab, at: boundedIndex)
+    }
+
+    func normalized() -> ConversationTabMetadata {
+        var seen = Set([Self.mainID])
+        let shells = shellTabs.filter {
+            seen.insert($0.id).inserted
+        }
+        let validIDs = Set([Self.mainID] + shells.map(\.id))
+        return ConversationTabMetadata(
+            mainName: mainName,
+            shellTabs: shells,
+            selectedTabID: validIDs.contains(selectedTabID)
+                ? selectedTabID
+                : Self.mainID,
+            nextTabNumber: max(nextTabNumber, 1)
+        )
+    }
+}
+
+extension ConversationTabMetadata: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case mainName, shellTabs, selectedTabID, nextTabNumber
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mainName = try container.decodeIfPresent(
+            String.self,
+            forKey: .mainName
+        ) ?? Self.initial.mainName
+        shellTabs = try container.decodeIfPresent(
+            [ShellTabMetadata].self,
+            forKey: .shellTabs
+        ) ?? []
+        selectedTabID = try container.decodeIfPresent(
+            String.self,
+            forKey: .selectedTabID
+        ) ?? Self.mainID
+        nextTabNumber = try container.decodeIfPresent(
+            Int.self,
+            forKey: .nextTabNumber
+        ) ?? 1
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mainName, forKey: .mainName)
+        try container.encode(shellTabs, forKey: .shellTabs)
+        try container.encode(selectedTabID, forKey: .selectedTabID)
+        try container.encode(nextTabNumber, forKey: .nextTabNumber)
+    }
 }
 
 /// Coinor's local, versioned organization state for one Grok session.
 ///
 /// Never carries a title or transcript alias: Grok remains the only source
 /// of display text for a conversation.
-struct SessionMetadata: Codable, Equatable, Sendable {
+struct SessionMetadata: Equatable, Sendable {
     var archived: Bool = false
+    var tabs: ConversationTabMetadata? = nil
+}
+
+extension SessionMetadata: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case archived, tabs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        archived = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .archived
+        ) ?? false
+        tabs = try container.decodeIfPresent(
+            ConversationTabMetadata.self,
+            forKey: .tabs
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(archived, forKey: .archived)
+        try container.encodeIfPresent(tabs, forKey: .tabs)
+    }
 }
 
 /// Coinor's local, versioned organization state for one project (a local Git
@@ -61,6 +222,11 @@ extension MetadataDocument {
 
     func isSessionArchived(_ sessionID: String) -> Bool {
         sessions[sessionID]?.archived ?? false
+    }
+
+    func conversationTabs(_ sessionID: String) -> ConversationTabMetadata {
+        sessions[sessionID]?.tabs?.normalized()
+            ?? ConversationTabMetadata.initial
     }
 
     func isProjectArchived(_ projectID: String) -> Bool {
@@ -170,6 +336,16 @@ extension MetadataDocument {
     mutating func setSessionArchived(_ sessionID: String, archived: Bool) {
         var value = sessions[sessionID] ?? SessionMetadata()
         value.archived = archived
+        storeSession(sessionID, value)
+    }
+
+    mutating func setConversationTabs(
+        _ sessionID: String,
+        tabs: ConversationTabMetadata
+    ) {
+        var value = sessions[sessionID] ?? SessionMetadata()
+        let normalized = tabs.normalized()
+        value.tabs = normalized == .initial ? nil : normalized
         storeSession(sessionID, value)
     }
 

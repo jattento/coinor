@@ -9,6 +9,8 @@ Status terms:
   `docs/phase-0-results.md`.
 - **Hardware residual**: implementation and synthetic coverage pass, but the
   named physical hardware event was not induced.
+- **Pending verification**: implementation exists, but build, automated tests,
+  and manual evidence have not been run for the change.
 
 ## Product Requirements
 
@@ -156,6 +158,23 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 | Pinned static Ghostty unit | Manifest and release verifier | Pass |
 | No auxiliary lifecycle executable | Release bundle scan and native ACP lifecycle tests | Pass |
 | Release instructions and licensing | `README.md`, `docs/release.md`, bundled MIT notice | Pass |
+
+## Phase 8: Conversation Terminal Tabs
+
+The implementation was rebased onto `origin/main` and fully validated on
+August 8, 2026.
+
+| Acceptance criterion | Current implementation evidence | Status |
+| --- | --- | --- |
+| Permanent main plus independent shells in the base checkout or worktree | `ConversationRuntime`, `TerminalLaunchRequest`, `ConversationTabbedView`; real shell `pwd` | Pass |
+| Labels, order, selection, and monotonic numbering survive relaunch | `ConversationTabMetadata`, metadata schema 3, metadata tests, isolated relaunch | Pass |
+| Hidden main, descendants, shells, and conversations remain mounted | `RuntimeHostView`, `ConversationTabbedView`; hidden background command and conversation switch | Pass |
+| Close, exit, left-neighbor selection, rename, and fixed-main reorder | Runtime tab mutations, direct UI interaction, and Ghostty `move_tab` | Pass |
+| Ghostty-themed strip and horizontal overflow | `GhosttyConfiguration.themeColors`; 20-tab visual pass | Pass |
+| Native and Ghostty tab shortcuts route into Coinor | `TerminalTabCommands`, shortcut monitor, Ghostty action bridge, manual shortcut pass | Pass |
+| Attention does not switch away from a shell and main restores focus | `ConversationRuntime.focusAttentionPaneIfMainSelected`, main focus tracking, full test suite | Pass |
+| Archived runtimes stay loaded while shell tabs remain | `RuntimeArchiveUnloadPolicy`; archived shell remained interactive | Pass |
+| Missing base directory remains visible as an inline error | `TerminalSurfaceRepresentable`; historical missing-worktree session | Pass |
 
 ## V1 Definition Of Done
 

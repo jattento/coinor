@@ -4,6 +4,17 @@ import SwiftUI
 struct ConversationPaneView: View {
     @ObservedObject var root: TerminalSession
     let descendants: [TerminalSession]
+    let isVisible: Bool
+
+    init(
+        root: TerminalSession,
+        descendants: [TerminalSession],
+        isVisible: Bool = true
+    ) {
+        self.root = root
+        self.descendants = descendants
+        self.isVisible = isVisible
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -31,7 +42,10 @@ struct ConversationPaneView: View {
     }
 
     private func terminal(_ session: TerminalSession) -> some View {
-        TerminalSurfaceRepresentable(session: session)
+        TerminalSurfaceRepresentable(
+            session: session,
+            isVisible: isVisible
+        )
             .id(session.generation)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("terminal.\(session.id)")

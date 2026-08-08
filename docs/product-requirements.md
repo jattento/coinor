@@ -124,6 +124,48 @@ Every root and subagent pane is a fully interactive Grok terminal. Nested
 subagents appear at the same visual level as direct subagents, ordered by start
 time. A subagent pane opens when the subagent starts and closes when it ends.
 
+## Terminal tabs
+
+Every activated conversation has a compact terminal-tab strip directly beneath
+the window title area and above the terminal content. The permanent first tab
+is named `main` by default and displays the root Grok pane plus any active
+subagent panes. It cannot be closed, remains first when tabs are reordered, and
+can be renamed locally without changing the Grok conversation title.
+
+The add button immediately after the last tab creates and selects an independent
+Ghostty shell in the conversation's original checkout or worktree directory.
+Coinor supplies no command for these surfaces, so Ghostty uses the user's normal
+shell configuration. New shells receive monotonically increasing names such as
+`Tab 1` and `Tab 2`; closed numbers are not reused.
+
+Selecting a shell tab gives it the complete terminal content area. The Grok
+root and subagents remain mounted and continue running while hidden. Shell tabs
+also remain mounted when another tab or conversation is selected. Executing
+`exit`, pressing the close button, or using the close-tab shortcut terminates
+the shell immediately and selects the tab to its left.
+
+Double-clicking any tab starts inline rename. Enter or losing focus stores the
+text exactly as entered; Escape cancels. Empty and duplicate labels are valid.
+Shell tabs can be reordered by dragging, but cannot move between conversations.
+The strip scrolls horizontally rather than shrinking labels without limit.
+
+Coinor stores each conversation's tab labels, order, selected tab, and next
+number in local metadata. On relaunch it recreates all persisted shell tabs as
+new shell processes in the base checkout or worktree; terminal processes and
+scrollback do not survive application exit. A missing base directory leaves
+the tab visible with an inline error instead of silently using another path.
+
+The tab strip derives its background and foreground from the active Ghostty
+configuration. The main tab shows aggregated working, attention, and failure
+state. Attention never switches away from a selected shell automatically;
+returning to main focuses the pane needing input, or otherwise the last root or
+subagent pane used.
+
+Coinor supports `Command-T` to create a tab, `Command-W` to close a selected
+shell, `Command-1` through `Command-8` for exact positions, and `Command-9` for
+the last tab. `Command-W` does nothing on main. Equivalent Ghostty tab actions
+are routed into Coinor instead of creating native Ghostty UI.
+
 ## Terminal configuration
 
 Every terminal pane loads the user's standard Ghostty configuration, including

@@ -2,6 +2,55 @@
 
 Date: August 8, 2026
 
+## Terminal-Tab Release Verification
+
+Conversation terminal-tab support was rebased onto `origin/main` at
+`f597828`, prepared as Coinor `0.3.0` build `4`, and validated on August 8,
+2026. This evidence applies to the `v0.3.0` release source and application
+bundle.
+
+Automated verification:
+
+- Full Debug suite:
+  `xcodebuild -quiet -project Coinor.xcodeproj -scheme Coinor
+  -destination 'platform=macOS,arch=arm64'
+  -derivedDataPath .build/DerivedData test`
+  passed 188 tests with 0 failures and 0 skips.
+- Release build passed for Apple Silicon.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed.
+- `scripts/ghostty/test-verification.sh` passed its happy path and all four
+  corruption cases.
+- `scripts/phase0/check-boundaries.sh` passed against the recorded
+  `grok-build` baseline.
+- `scripts/release/verify-app.sh` passed for the Release bundle.
+- `scripts/release/security-scan.sh` found no leaks.
+- `git diff --check` passed.
+
+Manual verification used the real Debug application, embedded Ghostty, the
+real custom Grok binary, and an isolated application-support directory:
+
+- New conversations exposed one permanent `main` tab.
+- The `+` button and `Command-T` created independent shells in the exact
+  conversation checkout without an explicit command.
+- Hidden shells retained scrollback and completed background commands while
+  another tab or conversation was selected.
+- `Command-1` through `Command-9`, `Command-W`, Ghostty previous/next,
+  Ghostty close-tab, Ghostty move-tab, and Ghostty rename-tab actions all
+  mapped to Coinor tabs.
+- `exit`, the close button, and `Command-W` closed shell tabs and selected the
+  left neighbor; `Command-W` on `main` was a no-op.
+- Double-click rename committed on Return and blur, cancelled on Escape,
+  restored terminal focus, and preserved exact duplicate names.
+- Names, order, selected tab, and the monotonic tab counter survived relaunch;
+  shell processes were recreated in the correct checkout.
+- Twenty simultaneous tabs exercised horizontal overflow and automatic
+  selected-tab scrolling without overlap.
+- Archiving removed the conversation from the sidebar while its selected
+  shell remained alive; unarchiving restored the row and runtime.
+- A historical session whose checkout no longer exists showed the inline
+  missing-working-directory error with the exact path.
+- Right-clicking a tab did not open a tab context menu.
+
 ## Environment
 
 | Field | Final value |
@@ -33,7 +82,7 @@ All commands below were run against the final source candidate on August 8,
 | Ghostty artifact | `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` | Pass. Verified tag, exact commit, header, static library, full XCFramework, resources, terminfo, and crash reporting disabled. |
 | Ghostty corruption suite | `scripts/ghostty/test-verification.sh` | Pass. Happy path plus header, framework, resources, and manifest corruption were all detected. |
 | Debug build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
-| Debug tests | `xcodebuild ... test -only-testing:CoinorTests` followed by `xcodebuild ... test -only-testing:CoinorUITests` | `TEST SUCCEEDED`. 31 XCTest + 145 Swift Testing + 3 XCUITest = 179 tests, 0 failures. |
+| Debug tests | `xcodebuild -quiet -project Coinor.xcodeproj -scheme Coinor -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData test` | `TEST SUCCEEDED`. 185 unit tests + 3 XCUITest = 188 tests, 0 failures. |
 | Release build | `xcodebuild -project Coinor.xcodeproj -scheme Coinor -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/DerivedData build` | `BUILD SUCCEEDED`. |
 | Release bundle contract | `scripts/release/verify-app.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Bundle ID, version, arm64 architecture, macOS 13 minimum, strict signature, Ghostty provenance, no sandbox, and no `get-task-allow` verified. |
 | Public release security | `scripts/release/security-scan.sh .build/DerivedData/Build/Products/Release/Coinor.app` | Pass. Git history, the exact publishable snapshot, and every regular file in the release bundle were free of detected secrets and the local home path. |
@@ -43,17 +92,14 @@ All commands below were run against the final source candidate on August 8,
 | English-owned UI scan | `rg` scan across Coinor-owned Swift UI source | Pass. No Spanish Coinor-owned UI literals found. |
 | Whitespace errors | `git diff --check` | Pass. |
 
-The first combined Debug run completed all unit tests, then macOS timed out
-while enabling UI automation before any XCUITest started. Developer mode was
-confirmed enabled. Re-running the UI target in isolation started normally and
-all three tests passed; the final candidate was then re-run through both
-isolated targets successfully.
+The terminal-tab candidate's first complete run exposed a transient UI-test
+race while startup diagnostics were disappearing. The assertion was changed
+to wait for nonexistence, then the complete combined suite passed.
 
-The final Xcode result bundles are:
+The final Xcode result bundle is:
 
 ```text
-.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_21-19-12--0300.xcresult
-.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_21-19-41--0300.xcresult
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.07_22-27-56--0300.xcresult
 ```
 
 ## Manual End-To-End Verification
@@ -142,9 +188,11 @@ was taken full-screen on a 3456 x 2234 Retina display.
 | Field | Final value |
 | --- | --- |
 | Debug build | Pass |
-| Debug tests | 179 tests, 0 failures |
+| Debug tests | 188 tests, 0 failures, 0 skips |
 | Release build | Pass |
 | Release verifier | Pass |
+| Release version | `0.3.0` build `4` |
+| Conversation terminal-tab QA | Pass |
 | Screenshots | Compact, standard, and wide reviewed |
 | Final `grok-build` status | Exactly matches the Phase 0 baseline shown below |
 | Final `~/.grok/config.toml` SHA-256 | `ee006941501e78d4002495c0e799bbdd74d025555aa0e57d722ec15dc4e9fb86` |

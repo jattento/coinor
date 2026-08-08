@@ -7,7 +7,10 @@ struct RuntimeHostView: View {
     var body: some View {
         ZStack {
             ForEach(manager.runtimes) { runtime in
-                RuntimeContainer(runtime: runtime)
+                RuntimeContainer(
+                    runtime: runtime,
+                    isVisible: manager.selectedSessionID == runtime.id
+                )
                 .opacity(manager.selectedSessionID == runtime.id ? 1 : 0)
                 .allowsHitTesting(manager.selectedSessionID == runtime.id)
                 .accessibilityHidden(manager.selectedSessionID != runtime.id)
@@ -33,11 +36,12 @@ struct RuntimeHostView: View {
 @MainActor
 private struct RuntimeContainer: View {
     @ObservedObject var runtime: ConversationRuntime
+    let isVisible: Bool
 
     var body: some View {
-        ConversationPaneView(
-            root: runtime.root,
-            descendants: runtime.descendants
+        ConversationTabbedView(
+            runtime: runtime,
+            isConversationVisible: isVisible
         )
     }
 }

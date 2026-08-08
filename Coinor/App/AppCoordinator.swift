@@ -75,12 +75,8 @@ final class AppCoordinator: ObservableObject {
 
         do {
             let fileManager = FileManager.default
-            let supportDirectory = try fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            ).appendingPathComponent("Coinor", isDirectory: true)
+            let supportDirectory = try CoinorRuntimeEnvironment
+                .applicationSupportDirectory(fileManager: fileManager)
             try fileManager.createDirectory(
                 at: supportDirectory,
                 withIntermediateDirectories: true
@@ -99,7 +95,9 @@ final class AppCoordinator: ObservableObject {
             }
 
             let executable = try GrokExecutable.resolve()
-            let leaderSocket = try GrokLeaderSocket.coinorDefault()
+            let leaderSocket = try GrokLeaderSocket.coinorDefault(
+                supportDirectory: supportDirectory
+            )
             let launch = GrokControlLaunch(
                 executable: executable,
                 leaderSocket: leaderSocket
@@ -124,6 +122,13 @@ final class AppCoordinator: ObservableObject {
                 self?.archivedRuntimeUnloaded(
                     sessionID: sessionID,
                     nextSelectedSessionID: next
+                )
+            }
+            runtimes.onTabMetadataChange = {
+                [weak self] sessionID, tabs in
+                self?.terminalTabsDidChange(
+                    sessionID: sessionID,
+                    tabs: tabs
                 )
             }
 
@@ -216,6 +221,14 @@ final class AppCoordinator: ObservableObject {
         )
 
         persistedSessions = sessions
+        for session in sessions {
+            if let directory = session.cwd {
+                runtimeManager?.resolveShellBaseWorkingDirectory(
+                    sessionID: session.id.rawValue,
+                    directory: directory
+                )
+            }
+        }
         pendingSessions = refreshedPendingSessions
         projectIDBySessionID = locations.projectIDBySessionID
         mainCheckoutByProjectID = refreshedMainCheckouts
@@ -246,7 +259,11 @@ final class AppCoordinator: ObservableObject {
         _ = runtimeManager.activateRoot(
             sessionID: sessionID,
             workingDirectory: workingDirectory,
-            mode: .resume
+            mode: .resume,
+            shellDirectorySource: session.cwd.map {
+                .explicit($0)
+            } ?? .unavailable,
+            tabMetadata: metadata.conversationTabs(sessionID)
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         runtimeManager.select(sessionID: sessionID)
@@ -289,7 +306,11 @@ final class AppCoordinator: ObservableObject {
             sessionID: sessionID,
             workingDirectory: workingDirectory,
             mode: .newSession,
-            additionalArguments: additionalArguments
+            additionalArguments: additionalArguments,
+            shellDirectorySource: additionalArguments.contains {
+                $0.hasPrefix("--worktree=")
+            } ? .unavailable : .rootLaunchDirectory,
+            tabMetadata: metadata.conversationTabs(sessionID)
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         selectedSessionID = sessionID
@@ -605,6 +626,31 @@ final class AppCoordinator: ObservableObject {
 
     func dismissWarning() {
         warningMessage = nil
+    }
+
+    @discardableResult
+    func createTerminalTab() -> Bool {
+        guard runtimeManager?.selectedRuntime != nil else { return false }
+        runtimeManager?.createShellTab()
+        return true
+    }
+
+    @discardableResult
+    func closeSelectedTerminalTab() -> Bool {
+        guard runtimeManager?.selectedRuntime != nil else { return false }
+        runtimeManager?.closeSelectedShellTab()
+        return true
+    }
+
+    @discardableResult
+    func selectTerminalTab(number: Int) -> Bool {
+        guard runtimeManager?.selectedRuntime != nil else { return false }
+        if number == 9 {
+            runtimeManager?.selectLastTab()
+        } else {
+            runtimeManager?.selectTab(at: number)
+        }
+        return true
     }
 
     func restart() async {
@@ -927,6 +973,17 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    private func terminalTabsDidChange(
+        sessionID: String,
+        tabs: ConversationTabMetadata
+    ) {
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setConversationTabs(sessionID, tabs: tabs)
+            }
+        }
+    }
+
     private func isCurrent(
         _ control: GrokControlClient,
         generation: Int
@@ -956,6 +1013,13 @@ final class AppCoordinator: ObservableObject {
                     }
                     for entry in change.upserted {
                         self.roster[entry.id.rawValue] = entry
+                        if let directory = entry.cwd {
+                            self.runtimeManager?
+                                .resolveShellBaseWorkingDirectory(
+                                    sessionID: entry.id.rawValue,
+                                    directory: directory
+                                )
+                        }
                         self.materializePendingSessionIfNeeded(entry)
                         self.startLifecycleCatchupIfReady(entry)
                     }
@@ -1449,6 +1513,13 @@ final class AppCoordinator: ObservableObject {
                         $0.id.rawValue == sessionID
                     }
                     self.persistedSessions.append(persisted)
+                    if let directory = persisted.cwd {
+                        self.runtimeManager?
+                            .resolveShellBaseWorkingDirectory(
+                                sessionID: sessionID,
+                                directory: directory
+                            )
+                    }
                     self.pendingSessions.removeValue(forKey: sessionID)
                     self.projectIDBySessionID.merge(
                         locations.projectIDBySessionID,

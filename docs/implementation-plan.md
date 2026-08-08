@@ -238,6 +238,39 @@ Package:
 - pinned static Ghostty framework, header, and matching resources
 - local release build and installation instructions
 
+## Phase 8: conversation terminal tabs
+
+Implement:
+
+- a permanent, locally renameable `main` tab for every conversation
+- independent Ghostty shell tabs rooted at the conversation's base checkout or
+  worktree
+- persistent labels, ordering, selection, and monotonic numbering
+- full runtime retention for hidden shell tabs
+- inline rename, close, drag reorder, horizontal overflow, and Ghostty-themed
+  presentation
+- Coinor and Ghostty action routing for creation, closure, navigation,
+  movement, and explicit title changes
+- focus restoration between main, root/subagent panes, and shell tabs
+- archive retention while shell tabs remain open
+
+Acceptance criteria:
+
+- every new and existing conversation exposes main before any shell tab
+- `+` creates and focuses `Tab N` in the base checkout or worktree
+- selecting a shell hides main and descendants without interrupting them
+- closing or exiting a shell selects its left neighbor and never closes main
+- rename preserves exact text, including empty and duplicate labels
+- drag reorder keeps main fixed and persists shell order
+- relaunch restores labels, order, selection, numbering, and new shell
+  processes without restoring scrollback
+- `Command-T`, `Command-W`, `Command-1...8`, `Command-9`, and equivalent
+  Ghostty actions operate on Coinor tabs
+- attention marks main without switching away from a shell
+- an archived runtime stays live while it owns any shell tab
+- a missing base directory produces an inline tab error without falling back
+  to another directory
+
 ## Test shape
 
 Use focused tests at each boundary:

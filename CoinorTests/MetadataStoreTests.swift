@@ -57,6 +57,10 @@ func relaunchRestoresPersistedState() async throws {
                 to: ["session-b", "session-a"],
                 allKnownSessionIDs: ["session-a", "session-b"]
             )
+            var tabs = ConversationTabMetadata.initial
+            _ = tabs.appendShell(id: "shell-a")
+            tabs.rename(tabID: "shell-a", to: "server")
+            document.setConversationTabs("session-a", tabs: tabs)
             document.setLastVisibleSession("session-a")
         }
     }
@@ -75,6 +79,14 @@ func relaunchRestoresPersistedState() async throws {
     #expect(
         document.projectConversationOrder("project-a")
             == ["session-b", "session-a"]
+    )
+    #expect(
+        document.conversationTabs("session-a").shellTabs
+            == [ShellTabMetadata(id: "shell-a", name: "server")]
+    )
+    #expect(
+        document.conversationTabs("session-a").selectedTabID
+            == "shell-a"
     )
     #expect(document.lastVisibleSessionID == "session-a")
 }
@@ -127,7 +139,7 @@ func reorderingVisibleProjectsPreservesArchivedSlots() {
 }
 
 @Test
-func projectOrderRemainsBackwardCompatibleWithSchemaTwo() throws {
+func projectOrderRoundTripsWithCurrentSchema() throws {
     var document = MetadataDocument.empty
     document.reorderProjects(to: ["project-b", "project-a"])
 
@@ -137,7 +149,7 @@ func projectOrderRemainsBackwardCompatibleWithSchemaTwo() throws {
         from: encoded
     )
 
-    #expect(decoded.schemaVersion == 2)
+    #expect(decoded.schemaVersion == MetadataSchema.currentVersion)
     #expect(decoded.projectOrder == ["project-b", "project-a"])
 }
 
@@ -366,4 +378,31 @@ func versionOneProjectMetadataMigratesWithoutAStoredCheckout() async throws {
     #expect(document.isProjectManuallyRegistered("project-a"))
     #expect(document.isProjectExpanded("project-a"))
     #expect(document.projectCheckoutPath("project-a") == nil)
+}
+
+@Test
+func versionTwoSessionMetadataDefaultsToMainTab() async throws {
+    let directory = try makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fileURL = directory.appendingPathComponent(MetadataStore.fileName)
+    let versionTwoBytes = Data(
+        #"""
+        {
+          "schemaVersion": 2,
+          "sessions": {
+            "session-a": {
+              "archived": true
+            }
+          }
+        }
+        """#.utf8
+    )
+    try versionTwoBytes.write(to: fileURL)
+
+    let store = try MetadataStore(directoryURL: directory)
+    let document = await store.currentDocument
+
+    #expect(document.schemaVersion == MetadataSchema.currentVersion)
+    #expect(document.isSessionArchived("session-a"))
+    #expect(document.conversationTabs("session-a") == .initial)
 }

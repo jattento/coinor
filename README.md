@@ -3,12 +3,14 @@
 Coinor is a personal, native macOS workspace for organizing durable Grok
 conversations by local Git project. It embeds interactive Ghostty terminals,
 restores exact Grok sessions, and shows active subagents beside the root
-conversation in a fixed 50/50 layout.
+conversation in a fixed 50/50 layout. Each conversation also has persistent
+terminal tabs: a permanent Grok `main` view plus independent Ghostty shells in
+the same checkout or worktree.
 
 Grok remains the source of truth for session IDs, titles, transcripts, and
 execution. Coinor stores only local organization metadata such as pins,
-archives, manually registered projects, sidebar ordering, and the last visible
-conversation.
+archives, manually registered projects, sidebar ordering, the last visible
+conversation, and local terminal-tab labels and layout.
 
 ## Requirements
 

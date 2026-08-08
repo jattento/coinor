@@ -17,6 +17,10 @@ struct TerminalFocusLatch {
         isPending = false
         perform()
     }
+
+    mutating func cancel() {
+        isPending = false
+    }
 }
 
 @MainActor
@@ -33,6 +37,12 @@ final class TerminalSession: ObservableObject, Identifiable {
 
     weak var surface: GhosttySurfaceView?
     var onCloseRequest: (() -> Void)?
+    var onNewTabRequest: (() -> Void)?
+    var onCloseTabRequest: (() -> Void)?
+    var onTabNavigationRequest: ((TerminalTabNavigationRequest) -> Void)?
+    var onMoveTabRequest: ((Int) -> Void)?
+    var onRenameTabRequest: ((String?) -> Void)?
+    var onBecameFocused: (() -> Void)?
     private var completedRetries = 0
     private var focusLatch = TerminalFocusLatch()
     private var retryTask: Task<Void, Never>?
@@ -69,6 +79,24 @@ final class TerminalSession: ObservableObject, Identifiable {
         surface.onWorkingDirectoryChange = { [weak self] directory in
             self?.workingDirectory = directory
         }
+        surface.onNewTabRequest = { [weak self] in
+            self?.onNewTabRequest?()
+        }
+        surface.onCloseTabRequest = { [weak self] in
+            self?.onCloseTabRequest?()
+        }
+        surface.onTabNavigationRequest = { [weak self] request in
+            self?.onTabNavigationRequest?(request)
+        }
+        surface.onMoveTabRequest = { [weak self] amount in
+            self?.onMoveTabRequest?(amount)
+        }
+        surface.onRenameTabRequest = { [weak self] name in
+            self?.onRenameTabRequest?(name)
+        }
+        surface.onBecameFocused = { [weak self] in
+            self?.onBecameFocused?()
+        }
         focusLatch.consumeOnAttachment {
             surface.focusTerminal()
         }
@@ -88,6 +116,11 @@ final class TerminalSession: ObservableObject, Identifiable {
         } else {
             focusLatch.request(perform: nil)
         }
+    }
+
+    func cancelPendingFocus() {
+        focusLatch.cancel()
+        surface?.cancelPendingFocus()
     }
 
     func recreate() {
@@ -157,13 +190,37 @@ final class TerminalSession: ObservableObject, Identifiable {
 @MainActor
 struct TerminalSurfaceRepresentable: NSViewRepresentable {
     @ObservedObject var session: TerminalSession
+    let isVisible: Bool
+
+    init(session: TerminalSession, isVisible: Bool = true) {
+        self.session = session
+        self.isVisible = isVisible
+    }
+
+    func makeCoordinator() -> TerminalSession {
+        session
+    }
 
     func makeNSView(context: Context) -> NSView {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: session.launch.workingDirectory,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            let message = session.launch.workingDirectory.isEmpty
+                ? "The conversation working directory is unavailable."
+                : "The terminal working directory is unavailable:\n"
+                    + session.launch.workingDirectory
+            return TerminalErrorView(
+                message: message
+            )
+        }
         do {
             let view = try GhosttySurfaceView(
                 runtime: session.runtime,
                 launch: session.launch
             )
+            view.setHostVisibility(isVisible)
             session.attach(view)
             return view
         } catch {
@@ -171,7 +228,10 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
         }
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? GhosttySurfaceView)?
+            .setHostVisibility(isVisible)
+    }
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
@@ -183,8 +243,13 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
         )
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
-        (nsView as? GhosttySurfaceView)?.shutdown()
+    static func dismantleNSView(
+        _ nsView: NSView,
+        coordinator: TerminalSession
+    ) {
+        guard let surface = nsView as? GhosttySurfaceView else { return }
+        coordinator.detach(surface)
+        surface.shutdown()
     }
 }
 

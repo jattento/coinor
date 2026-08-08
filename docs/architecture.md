@@ -40,6 +40,7 @@ flowchart LR
     LEADER["Coinor Grok leader"]
     ROOT["Root Ghostty surface"]
     CHILD["Subagent Ghostty surfaces"]
+    SHELL["Coinor shell-tab surfaces"]
     GROK["Grok session persistence"]
 
     UI --> META
@@ -47,6 +48,7 @@ flowchart LR
     CONTROL <--> LEADER
     ROOT <--> LEADER
     CHILD <--> LEADER
+    UI --> SHELL
     LEADER <--> GROK
     CONTROL -->|"Native subagent lifecycle"| UI
 ```
@@ -115,6 +117,8 @@ Each runtime contains:
 
 - one root terminal process and Ghostty surface
 - zero or more subagent terminal processes and Ghostty surfaces
+- zero or more independent shell processes and Ghostty surfaces
+- local terminal-tab order, labels, selection, and focus state
 - current root and descendant activity
 - pane ordering and focus state
 - archive/unload state
@@ -181,8 +185,9 @@ the right click remains available to Grok.
 `GhosttyActionBridge` handles clipboard completion, close requests, cursor
 state, title and working-directory updates, URL opening, renderer health, and
 configuration reload. Ghostty actions that would create native Ghostty
-windows, tabs, or splits are ignored or mapped to Coinor behavior rather than
-creating UI outside Coinor's pane model.
+windows or splits are ignored. New-tab, close-tab, move-tab, go-to-tab, and
+explicit tab-title actions are mapped to the selected conversation's
+Coinor-owned tabs rather than creating UI outside Coinor's pane model.
 
 Ghostty wakeups can arrive off the main thread; the adapter schedules
 `ghostty_app_tick` and AppKit work on `MainActor`. Surface callback userdata is
@@ -233,15 +238,31 @@ restart, or abrupt parent death. The lifecycle reconciler therefore also:
 
 ### Pane layout
 
-`ConversationView` renders:
+Each conversation runtime renders a compact tab strip and keeps all of its
+terminal surfaces mounted:
 
-- root only: one full-width terminal
-- root plus descendants: a fixed 50/50 horizontal split
-- right side: equal-height vertical tracks in subagent start order
+- main selected, root only: one full-width Grok terminal
+- main selected with descendants: a fixed 50/50 horizontal split
+- main right side: equal-height vertical tracks in subagent start order
+- shell selected: one full-width independent Ghostty shell
+
+The main layout and every shell tab are layered in a `ZStack`; selection
+changes opacity, hit testing, accessibility visibility, and focus without
+destroying surfaces. Main remembers the last focused root or descendant pane.
+Attention can redirect focus only while main is selected.
 
 All surfaces remain mounted while their conversation runtime is live, even
 when another conversation is selected. Hidden runtimes do not lose their PTY
 or in-flight work.
+
+The first tab has stable internal identity `main`, cannot close, and remains at
+the leading edge even when shell tabs reorder. Shell tabs use local UUIDs and
+launch with no explicit command in the conversation's authoritative persisted
+working directory. New worktree conversations defer shell creation until the
+Grok roster or persisted session reports the worktree path; they never fall
+back to the source checkout. Ghostty therefore selects the user's configured
+shell. Persisted shell tabs are all recreated when their conversation runtime
+activates.
 
 ### Sidebar presentation
 
@@ -340,6 +361,8 @@ Stored metadata includes:
 - canonical conversation ordering within each project
 - last visible conversation ID
 - lightweight UI state such as expanded projects
+- per-conversation main label, shell-tab IDs and labels, tab order, selected
+  tab, and the next monotonic shell number
 
 Coinor does not store transcripts, prompts, terminal scrollback, Grok activity,
 or duplicate conversation titles.
@@ -409,6 +432,8 @@ Grok integration targets the user's custom local fork.
 8. Finder-launched applications do not inherit the user's interactive shell
    environment, so relative command lookup is unreliable.
 9. A native subagent start can race the child's first persistence write.
+10. Persisted shell tabs all remount when a conversation activates, so a large
+    number of tabs can increase process, memory, and GPU use immediately.
 
 The implementation plan gates full product work behind prototypes for the
 highest integration and lifecycle risks above.

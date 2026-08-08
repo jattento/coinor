@@ -11,11 +11,19 @@ struct StartupPaths: Sendable {
     var ghosttyTerminfo: URL
     var leaderSocket: URL
 
-    static func live(homeDirectory: URL, bundleResources: URL?) -> StartupPaths {
-        let applicationSupport = homeDirectory
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("Coinor", isDirectory: true)
+    static func live(
+        homeDirectory: URL,
+        bundleResources: URL?,
+        applicationSupportDirectory: URL? = nil
+    ) -> StartupPaths {
+        let applicationSupport = applicationSupportDirectory
+            ?? homeDirectory
+                .appendingPathComponent("Library", isDirectory: true)
+                .appendingPathComponent(
+                    "Application Support",
+                    isDirectory: true
+                )
+                .appendingPathComponent("Coinor", isDirectory: true)
         let resources = bundleResources ?? Bundle.main.bundleURL
 
         return StartupPaths(

@@ -106,6 +106,7 @@ final class GhosttyRuntime: ObservableObject {
     let resourcesDirectory: String
     let terminfoDirectory: String
     @Published private(set) var configurationDiagnostics: [String] = []
+    @Published private(set) var themeColors: GhosttyThemeColors
 
     init(bundle: Bundle = .main) throws {
         guard let resourceURL = bundle.resourceURL else {
@@ -131,6 +132,7 @@ final class GhosttyRuntime: ObservableObject {
         let configuration = try GhosttyConfiguration()
         self.configuration = configuration
         configurationDiagnostics = configuration.diagnostics
+        themeColors = configuration.themeColors
 
         var runtimeConfiguration = ghostty_runtime_config_s(
             userdata: Unmanaged.passUnretained(self).toOpaque(),
@@ -170,6 +172,7 @@ final class GhosttyRuntime: ObservableObject {
             ghostty_app_update_config(app, replacement.handle)
             configuration = replacement
             configurationDiagnostics = replacement.diagnostics
+            themeColors = replacement.themeColors
         } catch {
             configurationDiagnostics = [error.localizedDescription]
         }
@@ -263,11 +266,9 @@ final class GhosttyRuntime: ObservableObject {
 
         switch action.tag {
         case GHOSTTY_ACTION_NEW_WINDOW,
-             GHOSTTY_ACTION_NEW_TAB,
              GHOSTTY_ACTION_NEW_SPLIT,
-             GHOSTTY_ACTION_CLOSE_TAB,
              GHOSTTY_ACTION_CLOSE_ALL_WINDOWS,
-             GHOSTTY_ACTION_GOTO_TAB,
+             GHOSTTY_ACTION_TOGGLE_TAB_OVERVIEW,
              GHOSTTY_ACTION_GOTO_SPLIT,
              GHOSTTY_ACTION_GOTO_WINDOW,
              GHOSTTY_ACTION_RESIZE_SPLIT,
@@ -275,10 +276,63 @@ final class GhosttyRuntime: ObservableObject {
              GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM:
             return true
 
+        case GHOSTTY_ACTION_NEW_TAB:
+            let targetSurface = surface(from: target)
+            DispatchQueue.main.async {
+                targetSurface?.requestNewTab()
+            }
+            return true
+
+        case GHOSTTY_ACTION_CLOSE_TAB:
+            let targetSurface = surface(from: target)
+            DispatchQueue.main.async {
+                targetSurface?.requestCloseTab()
+            }
+            return true
+
+        case GHOSTTY_ACTION_MOVE_TAB:
+            let targetSurface = surface(from: target)
+            let amount = Int(action.action.move_tab.amount)
+            DispatchQueue.main.async {
+                targetSurface?.requestMoveTab(by: amount)
+            }
+            return true
+
+        case GHOSTTY_ACTION_GOTO_TAB:
+            let targetSurface = surface(from: target)
+            let request = tabNavigationRequest(
+                action.action.goto_tab
+            )
+            DispatchQueue.main.async {
+                targetSurface?.requestTabNavigation(request)
+            }
+            return true
+
         case GHOSTTY_ACTION_QUIT, GHOSTTY_ACTION_CLOSE_WINDOW:
             let targetSurface = surface(from: target)
             DispatchQueue.main.async {
                 targetSurface?.requestHostClose()
+            }
+            return true
+
+        case GHOSTTY_ACTION_SET_TAB_TITLE:
+            let title = action.action.set_tab_title.title.map(
+                String.init(cString:)
+            ) ?? ""
+            let targetSurface = surface(from: target)
+            DispatchQueue.main.async {
+                targetSurface?.requestRenameTab(title)
+            }
+            return true
+
+        case GHOSTTY_ACTION_PROMPT_TITLE:
+            guard action.action.prompt_title == GHOSTTY_PROMPT_TITLE_TAB
+            else {
+                return true
+            }
+            let targetSurface = surface(from: target)
+            DispatchQueue.main.async {
+                targetSurface?.requestRenameTab(nil)
             }
             return true
 
@@ -342,6 +396,21 @@ final class GhosttyRuntime: ObservableObject {
 
         default:
             return false
+        }
+    }
+
+    private nonisolated static func tabNavigationRequest(
+        _ value: ghostty_action_goto_tab_e
+    ) -> TerminalTabNavigationRequest {
+        switch value {
+        case GHOSTTY_GOTO_TAB_PREVIOUS:
+            .previous
+        case GHOSTTY_GOTO_TAB_NEXT:
+            .next
+        case GHOSTTY_GOTO_TAB_LAST:
+            .last
+        default:
+            .index(Int(value.rawValue))
         }
     }
 

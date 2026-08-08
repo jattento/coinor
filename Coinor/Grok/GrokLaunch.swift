@@ -74,6 +74,13 @@ struct GrokLeaderSocket: Sendable, Equatable {
         )
         let socket = support
             .appendingPathComponent("Coinor", isDirectory: true)
+        return try coinorDefault(supportDirectory: socket)
+    }
+
+    static func coinorDefault(
+        supportDirectory: URL
+    ) throws -> GrokLeaderSocket {
+        let socket = supportDirectory
             .appendingPathComponent("grok-leader.sock", isDirectory: false)
         return try GrokLeaderSocket(path: socket.path)
     }

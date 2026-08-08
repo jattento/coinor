@@ -64,6 +64,10 @@ struct AppShellView: View {
                 .padding(.top, 8)
             }
         }
+        .background {
+            TerminalTabShortcutMonitor(coordinator: coordinator)
+                .frame(width: 0, height: 0)
+        }
     }
 }
 

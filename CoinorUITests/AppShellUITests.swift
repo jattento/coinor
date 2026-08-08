@@ -14,10 +14,22 @@ private enum Identifier {
 final class AppShellUITests: XCTestCase {
     private func launchApp() -> XCUIApplication {
         continueAfterFailure = false
+        let supportDirectory = URL(
+            fileURLWithPath: "/tmp",
+            isDirectory: true
+        )
+            .appendingPathComponent(
+                "CoinorUITests-\(UUID().uuidString)",
+                isDirectory: true
+            )
         let app = XCUIApplication()
+        app.launchEnvironment[
+            "COINOR_APPLICATION_SUPPORT_DIRECTORY"
+        ] = supportDirectory.path
         app.launch()
         addTeardownBlock {
             app.terminate()
+            try? FileManager.default.removeItem(at: supportDirectory)
         }
         return app
     }
@@ -38,7 +50,12 @@ final class AppShellUITests: XCTestCase {
     func testHealthyStartupClearsDiagnosticsAfterLeaderConnects() {
         let app = launchApp()
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))
-        XCTAssertFalse(element(Identifier.startupDiagnostics, in: app).waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            element(
+                Identifier.startupDiagnostics,
+                in: app
+            ).waitForNonExistence(timeout: 30)
+        )
     }
 
     func testSidebarExposesProjectAndArchiveActions() {
