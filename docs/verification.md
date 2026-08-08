@@ -2,7 +2,69 @@
 
 Date: August 8, 2026
 
-## Terminal-Tab Release Verification
+## Conan Code 0.3.1 Verification
+
+The Conan Code presentation and interaction polish was rebased onto
+`origin/main` at `5a343ec`, prepared as version `0.3.1` build `5`, and
+validated on August 8, 2026. The repository, bundle identifier, executable,
+and application-support paths remain named Coinor for compatibility.
+
+Automated verification:
+
+- Debug arm64 build passed.
+- 191 unit tests passed with 0 failures and 0 skips.
+- 3 XCUITest passed with 0 failures and 0 skips after macOS Automation Mode
+  was re-authorized with user authentication.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed.
+- `scripts/ghostty/test-verification.sh` passed its happy path and all four
+  corruption cases.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, or the Release bundle.
+- `git diff --check` passed.
+
+Final Xcode result bundles:
+
+```text
+.build/DerivedDataReleaseValidation/Logs/Test/Test-Coinor-2026.08.08_00-15-28--0300.xcresult
+.build/DerivedDataReleaseValidation/Logs/Test/Test-Coinor-2026.08.08_00-24-25--0300.xcresult
+```
+
+Manual verification used the real Debug application, embedded Ghostty, and
+the real custom Grok binary:
+
+- The startup view showed Conan Code branding, the friendly Conan ASCII
+  portrait, live diagnostics, elapsed time, and failure recovery controls.
+- Project and conversation rows activated from their full width while pin,
+  archive, disclosure, and project actions remained independently clickable.
+- Sidebar scrolling and hover transitions remained stable across a populated
+  catalog.
+- Creating three temporary shell tabs showed one crisp tab strip with no
+  reflected duplicate above it.
+- Before resizing the sidebar, all six retained PTYs reported `58x182`.
+  After resizing, only the visible PTY changed to `58x163`; five hidden PTYs
+  remained `58x182`.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.3.1` build `5` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.3.1-arm64.zip` |
+| Archive SHA-256 | `a108f88c0699647a95edadf504f11896774acfc105fedd973f967937cf3115f0` |
+
+## v0.3.0 Terminal-Tab Release Verification
 
 Conversation terminal-tab support was rebased onto `origin/main` at
 `f597828`, prepared as Coinor `0.3.0` build `4`, and validated on August 8,
@@ -183,7 +245,7 @@ was taken full-screen on a 3456 x 2234 Retina display.
 | Notification authorization QA fix | `b2fe81d` |
 | Phase 7 quality, packaging, and documentation | `c43c1f8` |
 
-## Final Boundary Record
+## v0.3.0 Final Boundary Record
 
 | Field | Final value |
 | --- | --- |
