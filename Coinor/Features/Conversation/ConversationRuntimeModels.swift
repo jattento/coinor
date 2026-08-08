@@ -41,28 +41,6 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable {
     }
 }
 
-struct RuntimeArchiveUnloadPolicy: Equatable, Sendable {
-    private(set) var isPending = false
-
-    mutating func markArchived() {
-        isPending = true
-    }
-
-    mutating func cancel() {
-        isPending = false
-    }
-
-    func shouldUnload(
-        activity: RuntimeActivity,
-        hasShellTabs: Bool = false
-    ) -> Bool {
-        isPending
-            && !hasShellTabs
-            && activity != .working
-            && activity != .needsInput
-    }
-}
-
 enum TerminalSurfaceContext: Equatable, Sendable {
     case window
     case tab
@@ -87,6 +65,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         case newSession
         case resume
         case shell
+        case managedShell
         case command(String)
     }
 
@@ -96,6 +75,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
     let leaderSocket: String
     let mode: Mode
     let additionalArguments: [String]
+    let environment: [String: String]
+    let initialInput: String?
     let surfaceContext: TerminalSurfaceContext
 
     init(
@@ -105,6 +86,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         leaderSocket: String,
         mode: Mode,
         additionalArguments: [String] = [],
+        environment: [String: String] = [:],
+        initialInput: String? = nil,
         surfaceContext: TerminalSurfaceContext = .window
     ) {
         self.sessionID = sessionID
@@ -113,6 +96,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.leaderSocket = leaderSocket
         self.mode = mode
         self.additionalArguments = additionalArguments
+        self.environment = environment
+        self.initialInput = initialInput
         self.surfaceContext = surfaceContext
     }
 
@@ -123,6 +108,26 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.leaderSocket = ""
         self.mode = .shell
         self.additionalArguments = []
+        self.environment = [:]
+        self.initialInput = nil
+        self.surfaceContext = .tab
+    }
+
+    init(
+        managedTabID: String,
+        workingDirectory: String,
+        environment: [String: String],
+        bootstrapPath: String
+    ) {
+        self.sessionID = managedTabID
+        self.workingDirectory = workingDirectory
+        self.grokExecutable = ""
+        self.leaderSocket = ""
+        self.mode = .managedShell
+        self.additionalArguments = []
+        self.environment = environment
+        self.initialInput =
+            "source \(Self.shellQuote(bootstrapPath))\r"
         self.surfaceContext = .tab
     }
 
@@ -137,6 +142,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.leaderSocket = ""
         self.mode = .command(command)
         self.additionalArguments = []
+        self.environment = [:]
+        self.initialInput = nil
         self.surfaceContext = .split
     }
 
@@ -144,7 +151,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
 
     var arguments: [String] {
         switch mode {
-        case .shell, .command:
+        case .shell, .managedShell, .command:
             return []
         case .newSession, .resume:
             break
@@ -160,7 +167,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
             values += ["--session-id", sessionID]
         case .resume:
             values += ["--resume", sessionID]
-        case .shell, .command:
+        case .shell, .managedShell, .command:
             break
         }
         return values
@@ -170,6 +177,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         switch mode {
         case .shell:
             return ""
+        case .managedShell:
+            return "/bin/zsh -il"
         case .command(let command):
             return command
         case .newSession, .resume:
@@ -183,13 +192,13 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         switch mode {
         case .shell:
             nil
-        case .newSession, .resume, .command:
+        case .newSession, .resume, .managedShell, .command:
             shellCommand
         }
     }
 
     var waitsAfterCommand: Bool {
-        mode != .shell
+        mode != .shell && mode != .managedShell
     }
 
     private static func shellQuote(_ value: String) -> String {

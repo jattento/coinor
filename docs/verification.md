@@ -2,6 +2,82 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.0 Verification
+
+The agent-managed terminal feature was implemented in an isolated worktree,
+rebased explicitly onto local and remote `main` at `896babb`, prepared as
+version `0.5.0` build `7`, and validated on August 8, 2026.
+
+Automated verification:
+
+- Debug `build-for-testing` passed.
+- 203 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITests passed with 0 failures and 0 skips after macOS Automation Mode
+  was temporarily authorized. The no-authentication configuration was removed
+  immediately after the run; Automation Mode finished disabled and again
+  requires user authentication.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed.
+- `scripts/ghostty/test-verification.sh` passed its happy path and all four
+  corruption cases.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle and the
+  archive-extracted application.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, the Release bundle, or the
+  archive-extracted bundle.
+- `git diff --check`, Xcode project lint, and shell syntax checks passed.
+- The archive checksum verified, and `diff -qr` found no difference between
+  the built and archive-extracted application bundles.
+
+Final Xcode result bundles:
+
+```text
+.build/TestResults-0.5.0-unit-retry.xcresult
+.build/TestResults-0.5.0-ui-authorized.xcresult
+```
+
+Manual verification used the real Debug and Release applications, embedded
+Ghostty, Fresh, Lazygit, the bundled `coinorctl`, the installed Grok skill, and
+the real custom Grok binary:
+
+- A root Grok agent created a visible managed tab in the background without
+  changing the selected tab.
+- Sequential commands reused one zsh process and preserved an exported
+  variable and `/tmp` working directory.
+- Incremental reads, raw text input, Enter, Ctrl-C, status, exact exit codes,
+  explicit close, and post-close `tab_gone` behavior passed.
+- A real native subagent created, operated, and closed its own managed tab
+  using an opaque capability unavailable to other sessions.
+- Relaunch restored only permanent `main` and `IDE`; managed tabs, processes,
+  capabilities, and scrollback were not restored.
+- Running the bundled helper outside Conan Code returned the stable
+  `not running inside Conan Code` error without a fallback process.
+- Confirmed conversation archive stopped the root Grok client, subagents,
+  Fresh, Lazygit, ordinary shells, managed tabs, services, and their child
+  processes immediately. The durable Grok session remained available to
+  unarchive.
+- The final IDE view retained the larger Fresh pane and a Lazygit pane wide
+  enough to avoid its collapsed layout, with no overlap or focus regression.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.0` build `7` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.0-arm64.zip` |
+| Archive size | `5,991,757` bytes |
+| Archive SHA-256 | `50792115f473245408185a30c53455c64cda38b26ad82e358620131e74d8f7c8` |
+
 ## Conan Code 0.4.0 Verification
 
 The permanent IDE workspace was rebased onto local and remote `main` at

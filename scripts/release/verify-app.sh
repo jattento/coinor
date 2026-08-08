@@ -30,21 +30,37 @@ MANIFEST="$APP_BUNDLE/Contents/Resources/GhosttyArtifactManifest.txt"
 SOURCE_MANIFEST="$REPO_ROOT/Vendor/Ghostty/manifest.txt"
 GHOSTTY_RESOURCES="$APP_BUNDLE/Contents/Resources/ghostty"
 TERMINFO="$APP_BUNDLE/Contents/Resources/terminfo"
+CONTROL_CLIENT="$APP_BUNDLE/Contents/Resources/coinorctl"
+SKILL="$APP_BUNDLE/Contents/Resources/conan-code-long-running-SKILL.md"
+SKILL_WRAPPER="$APP_BUNDLE/Contents/Resources/conan-code-terminal.sh"
+MANAGED_BOOTSTRAP="$APP_BUNDLE/Contents/Resources/managed-terminal-bootstrap.zsh"
 
 require_file "$EXECUTABLE"
 require_file "$NOTICE"
 require_file "$MANIFEST"
 require_file "$SOURCE_MANIFEST"
+require_file "$CONTROL_CLIENT"
+require_file "$SKILL"
+require_file "$SKILL_WRAPPER"
+require_file "$MANAGED_BOOTSTRAP"
 require_directory "$GHOSTTY_RESOURCES"
 require_directory "$TERMINFO"
 
 [[ -x "$EXECUTABLE" ]] || die "Coinor executable is not runnable"
+[[ -x "$CONTROL_CLIENT" ]] || die "bundled coinorctl is not runnable"
 
 "$REPO_ROOT/scripts/ghostty/verify.sh" \
   --artifact-root "$REPO_ROOT/Vendor/Ghostty" >/dev/null
 
 cmp -s "$SOURCE_MANIFEST" "$MANIFEST" || \
   die "bundled Ghostty manifest does not match Vendor/Ghostty"
+cmp -s "$REPO_ROOT/Coinor/Resources/conan-code-long-running-SKILL.md" \
+  "$SKILL" || die "bundled Grok skill does not match its source"
+cmp -s "$REPO_ROOT/Coinor/Resources/conan-code-terminal.sh" \
+  "$SKILL_WRAPPER" || die "bundled Grok skill wrapper does not match its source"
+cmp -s "$REPO_ROOT/Coinor/Resources/managed-terminal-bootstrap.zsh" \
+  "$MANAGED_BOOTSTRAP" || \
+  die "bundled managed-terminal bootstrap does not match its source"
 
 grep -Fq 'Source tag: v1.3.1' "$NOTICE" || \
   die "Ghostty source tag is missing from ThirdPartyNotices.txt"
@@ -73,6 +89,21 @@ build_version="$(plutil -extract CFBundleVersion raw "$INFO_PLIST")"
 app_architectures="$(lipo -archs "$EXECUTABLE")"
 [[ "$app_architectures" == "arm64" ]] || \
   die "Coinor must be arm64-only, got: $app_architectures"
+control_architectures="$(lipo -archs "$CONTROL_CLIENT")"
+[[ "$control_architectures" == "arm64" ]] || \
+  die "coinorctl must be arm64-only, got: $control_architectures"
+codesign --verify --strict "$CONTROL_CLIENT"
+
+control_stderr="$(mktemp)"
+if env -u CONAN_CODE_CONTROL_SOCKET \
+  -u CONAN_CODE_CONTROL_TOKEN \
+  "$CONTROL_CLIENT" status 2>"$control_stderr"; then
+  die "coinorctl unexpectedly ran outside Conan Code"
+fi
+[[ "$(cat "$control_stderr")" == \
+  "coinorctl: not running inside Conan Code" ]] || \
+  die "coinorctl outside-app error is not stable"
+rm -f "$control_stderr"
 
 if otool -L "$EXECUTABLE" | grep -Fq '/Applications/Ghostty.app'; then
   die "Coinor unexpectedly depends on /Applications/Ghostty.app"
@@ -98,6 +129,9 @@ printf 'verified_bundle_id=%s\n' "$bundle_id"
 printf 'verified_version=%s (%s)\n' "$short_version" "$build_version"
 printf 'verified_minimum_macos=%s\n' "$minimum_system"
 printf 'verified_architecture=%s\n' "$app_architectures"
+printf 'verified_coinorctl_architecture=%s\n' "$control_architectures"
+printf 'verified_terminal_control_resources=source-matched\n'
+printf 'verified_coinorctl_outside_app_error=stable\n'
 printf 'verified_ghostty_commit=332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28\n'
 printf 'verified_codesign=deep-strict\n'
 printf 'verified_app_sandbox=false\n'

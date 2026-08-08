@@ -18,7 +18,7 @@ Status terms:
 | --- | --- | --- | --- | --- |
 | 1. Interface language | Every Coinor-owned label, menu, tooltip, warning, empty state, diagnostic, and notification is English. | `Coinor/Features/AppShell`, `AttentionNotificationService.swift`, `AppFoundationTests`, notification tests, final Swift literal scan. | Sidebar, dialogs, warnings, archived view, activity text, and error states were reviewed. Grok-rendered content is outside Coinor-owned copy. | Pass |
 | 2. Projects and conversations | List persisted Grok sessions; group main checkout and worktrees by canonical Git project; keep clones separate; retain manually added empty projects; keep conversations flat; allow local project display names and icons. | `GrokControlClient`, `GitProjectResolver`, `SessionCatalog`, `MetadataModels`; catalog, resolver, and project-presentation persistence tests. | Real project rows were inspected; the context menu exposed rename and SF Symbol choices without changing repository paths. | Pass |
-| 3. Conversation organization | Pin/unpin, dedicated archives, metadata-only archive, active archive continuity, Grok-owned conversation rename, and scoped natural drag ordering. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `SidebarReorderModel`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/reorder/runtime tests. | Project and conversation rows lifted into pointer-following previews, opened insertion spaces, persisted after relaunch, auto-scrolled at the edge, and cancelled cleanly outside valid destinations. | Pass |
+| 3. Conversation organization | Pin/unpin, dedicated archives, destructive confirmation for loaded runtimes, Grok-owned conversation rename, and scoped natural drag ordering. | `MetadataModels`, `MetadataStore`, `SessionCatalog`, `ArchivedItemsView`, `ConversationRuntimeManager`, `GrokControlClient.rename`; metadata/catalog/runtime tests. | Archive remains metadata-only for durable Grok sessions while confirmed runtime shutdown is immediate. | Pass |
 | 4. Creating conversations | `In Main Checkout`, named `In New Worktree`, remote default branch, exact local-HEAD fallback, and English warning. | `AppShellSidebar`, `AppCoordinator`, `WorktreeService`; 8 Git fixture tests. | Remote-default and no-remote fallback workflows completed without mutating the primary checkout. | Pass |
 | 5. Conversation lifetime | Activated roots remain live while Coinor is open; changing visible rows does not stop work. | `ConversationRuntimeManager`, `RuntimeHostView`, runtime tests. | Root and child PIDs stayed stable through selection changes and active archive/unarchive. | Pass |
 | 6. Relaunch behavior | Restore only the last visible session, exact resume, lazy resume for other rows, no blank shell, no promise after quit. | `AppCoordinator.start`, `TerminalLaunchRequest`, `MetadataStoreTests.relaunchRestoresPersistedState`. | Immediate selection-and-quit persisted the new session. Relaunch restored its transcript directly. | Pass |
@@ -126,7 +126,7 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 | Conversation rename is stored by Grok, not a Coinor alias | ACP rename test and real rename | Pass |
 | Project display name and icon remain local presentation metadata | Metadata round-trip/pruning tests and context-menu QA | Pass |
 | Archive never deletes Grok session | Metadata-only model and unarchive/resume QA | Pass |
-| Active archive does not interrupt work | Stable root/child PIDs and final response | Pass |
+| Loaded archive confirms before interrupting work | Destructive confirmation and immediate owned-process shutdown | Pass |
 | Attention reaches root/project and correct terminal | Activity/focus tests and real `ask_user` | Pass |
 | Notification permission is prepared before background delivery | Focused authorization test, macOS registration, and enabled Coinor notification settings | Pass |
 | Projects, pinned rows, and project conversations reorder only inside their scopes | Reorder model, custom UTI, metadata hidden-slot, catalog restore, and payload tests | Pass |
@@ -176,8 +176,19 @@ workspace while retaining the existing shell-tab contract.
 | Native and Ghostty tab shortcuts route into Conan Code | `TerminalTabCommands`, shortcut monitor, Ghostty action bridge, `Command-2` Release-app pass | Pass |
 | Attention does not switch away from a shell and main restores focus | `ConversationRuntime.focusAttentionPaneIfMainSelected`, main focus tracking, full test suite | Pass |
 | IDE restores the last-used pane without persisting it as shell metadata | IDE focus routing, derived IDE identifier, runtime and metadata tests | Pass |
-| Archived runtimes stay loaded only while shell tabs require them | `RuntimeArchiveUnloadPolicy`; IDE is excluded from shell-retention state | Pass |
+| Confirmed archive stops every loaded runtime process immediately | `AppCoordinator` confirmation and `ConversationRuntimeManager.archiveImmediately` | Pass |
 | Missing base directory remains visible as an inline error | `TerminalSurfaceRepresentable`; both IDE panes on a historical missing worktree | Pass |
+
+## Phase 9: Agent-managed Long-running Terminals
+
+| Acceptance criterion | Current implementation evidence | Status |
+| --- | --- | --- |
+| Private Conan Code-only control path | User-only Unix socket, inherited instance token, ACP invocation nonce; real outside-app failure and root/child ACP calls | Pass |
+| Visible background tab without focus theft | Transient `managedTabs` appended to the mounted tab stack; real root and child creation left `main` selected | Pass |
+| Reusable shell and interactive control | Fixed zsh bootstrap; real execute/read/write/key/interrupt/status/close with preserved export and `/tmp` cwd | Pass |
+| Root/subagent isolation and manual-close behavior | Real child-owned handle, opaque capabilities, explicit close, and post-close `tab_gone` | Pass |
+| No persistence or relaunch restoration | Managed tabs excluded from `ConversationTabMetadata`; relaunch restored only `main` and `IDE` | Pass |
+| Archive turns off all active processes | Real destructive confirmation followed by root, Fresh, Lazygit, shell, and managed-process teardown | Pass |
 
 ## V1 Definition Of Done
 

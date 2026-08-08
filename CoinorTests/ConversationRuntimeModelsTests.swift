@@ -99,6 +99,26 @@ func commandLaunchUsesTheRequestedProgramInsideASplitSurface() {
 }
 
 @Test
+func managedShellLaunchUsesFixedZshEnvironmentAndBootstrap() {
+    let request = TerminalLaunchRequest(
+        managedTabID: "managed-id",
+        workingDirectory: "/tmp/project",
+        environment: ["CONAN_CODE_TAB_ID": "managed-id"],
+        bootstrapPath: "/tmp/bootstrap script.zsh"
+    )
+
+    #expect(request.mode == .managedShell)
+    #expect(request.explicitCommand == "/bin/zsh -il")
+    #expect(request.environment["CONAN_CODE_TAB_ID"] == "managed-id")
+    #expect(
+        request.initialInput
+            == "source '/tmp/bootstrap script.zsh'\r"
+    )
+    #expect(request.surfaceContext == .tab)
+    #expect(request.waitsAfterCommand == false)
+}
+
+@Test
 func descendantsStayFlatAndOrderedByStartSequence() {
     let root = RuntimePane(
         id: "root",
@@ -181,23 +201,4 @@ func grokRosterActivityMapsToRuntimePriorityStates() {
     #expect(RuntimeActivity(grokActivity: .completed) == .idle)
     #expect(RuntimeActivity(grokActivity: .dormant) == .idle)
     #expect(RuntimeActivity(grokActivity: .unknown("future")) == .idle)
-}
-
-@Test
-func unarchivingCancelsAPendingRuntimeUnload() {
-    var policy = RuntimeArchiveUnloadPolicy()
-
-    policy.markArchived()
-    #expect(policy.shouldUnload(activity: .working) == false)
-    #expect(policy.shouldUnload(activity: .idle))
-    #expect(
-        policy.shouldUnload(
-            activity: .idle,
-            hasShellTabs: true
-        ) == false
-    )
-
-    policy.cancel()
-    #expect(policy.shouldUnload(activity: .idle) == false)
-    #expect(policy.isPending == false)
 }

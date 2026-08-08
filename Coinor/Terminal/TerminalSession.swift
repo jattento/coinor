@@ -1,6 +1,16 @@
 import AppKit
 import SwiftUI
 
+enum TerminalInputKey: String, CaseIterable, Sendable {
+    case enter
+    case escape
+    case up
+    case down
+    case left
+    case right
+    case interrupt
+}
+
 struct TerminalFocusLatch {
     private var isPending = false
 
@@ -29,11 +39,13 @@ final class TerminalSession: ObservableObject, Identifiable {
     let launch: TerminalLaunchRequest
     let runtime: GhosttyRuntime
     let resumePolicy: SubagentResumePolicy?
+    let keepsSurfaceAfterProcessExit: Bool
 
     @Published private(set) var generation = 0
     @Published private(set) var title = ""
     @Published private(set) var workingDirectory: String
     @Published private(set) var startupError: String?
+    @Published private(set) var exitCode: UInt32?
 
     weak var surface: GhosttySurfaceView?
     var onCloseRequest: (() -> Void)?
@@ -43,6 +55,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     var onMoveTabRequest: ((Int) -> Void)?
     var onRenameTabRequest: ((String?) -> Void)?
     var onBecameFocused: (() -> Void)?
+    var onProcessDidExit: ((UInt32) -> Void)?
     private var completedRetries = 0
     private var focusLatch = TerminalFocusLatch()
     private var retryTask: Task<Void, Never>?
@@ -50,12 +63,14 @@ final class TerminalSession: ObservableObject, Identifiable {
     init(
         launch: TerminalLaunchRequest,
         runtime: GhosttyRuntime,
-        resumePolicy: SubagentResumePolicy? = nil
+        resumePolicy: SubagentResumePolicy? = nil,
+        keepsSurfaceAfterProcessExit: Bool = false
     ) {
         self.id = launch.id
         self.launch = launch
         self.runtime = runtime
         self.resumePolicy = resumePolicy
+        self.keepsSurfaceAfterProcessExit = keepsSurfaceAfterProcessExit
         self.workingDirectory = launch.workingDirectory
     }
 
@@ -65,11 +80,13 @@ final class TerminalSession: ObservableObject, Identifiable {
         surface.onCloseRequest = { [weak self] in
             self?.onCloseRequest?()
         }
-        surface.onProcessExit = { [weak self, weak surface] milliseconds in
+        surface.onProcessExit = {
+            [weak self, weak surface] exitCode, milliseconds in
             guard let self, let surface else { return }
             self.processDidExit(
                 surface: surface,
                 generation: attachedGeneration,
+                exitCode: exitCode,
                 runtimeMilliseconds: milliseconds
             )
         }
@@ -123,6 +140,26 @@ final class TerminalSession: ObservableObject, Identifiable {
         surface?.cancelPendingFocus()
     }
 
+    func write(_ text: String) {
+        surface?.sendText(text)
+    }
+
+    func sendKey(_ key: TerminalInputKey) {
+        surface?.sendKey(key)
+    }
+
+    func screenText() -> String {
+        surface?.screenText() ?? ""
+    }
+
+    var isAttached: Bool {
+        surface != nil
+    }
+
+    var processHasExited: Bool {
+        surface?.processHasExited ?? (exitCode != nil)
+    }
+
     func recreate() {
         retryTask?.cancel()
         retryTask = nil
@@ -141,10 +178,16 @@ final class TerminalSession: ObservableObject, Identifiable {
     private func processDidExit(
         surface: GhosttySurfaceView,
         generation: Int,
+        exitCode: UInt32,
         runtimeMilliseconds: UInt64
     ) {
         guard self.surface === surface,
               self.generation == generation else {
+            return
+        }
+        self.exitCode = exitCode
+        onProcessDidExit?(exitCode)
+        if keepsSurfaceAfterProcessExit {
             return
         }
         guard let resumePolicy else {

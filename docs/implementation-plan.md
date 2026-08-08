@@ -186,7 +186,8 @@ Implement:
 - pin/unpin without duplicate project rows
 - project and conversation archive/unarchive
 - dedicated archived-items view
-- finish-current-work-then-unload archive behavior
+- destructive archive confirmation for loaded runtimes
+- immediate archive teardown of all runtime processes
 - sidebar rename through `x.ai/session/rename`
 - activity glyph aggregation
 - attention focus routing
@@ -206,7 +207,8 @@ Acceptance criteria:
 - pin, archive, and project registration survive relaunch
 - Grok titles update outside Coinor after rename
 - archive never deletes a Grok session
-- archived active work is not interrupted and unloads when inactive
+- archiving a loaded runtime requires confirmation and stops all owned
+  processes immediately
 - subagent attention reaches the root row and correct pane
 - rapid sidebar reorders cannot be overwritten by stale persistence
 - conversations cannot be dragged across projects or between project and
@@ -253,7 +255,7 @@ Implement:
 - Coinor and Ghostty action routing for creation, closure, navigation,
   movement, and explicit title changes
 - focus restoration between main, root/subagent panes, and shell tabs
-- archive retention while shell tabs remain open
+- transient agent-managed terminal tabs for long-running commands
 
 Acceptance criteria:
 
@@ -264,16 +266,42 @@ Acceptance criteria:
 - selecting IDE or a shell hides the other surfaces without interrupting them
 - closing or exiting a shell selects its left neighbor and never closes main
 - rename preserves exact text, including empty and duplicate labels
-- IDE cannot close, rename, or retain an archived runtime by itself
+- IDE cannot close or rename through ordinary tab controls
 - drag reorder keeps main and IDE fixed and persists shell order
 - relaunch restores labels, order, selection, numbering, and new shell
   processes without restoring scrollback
 - `Command-T`, `Command-W`, `Command-1...8`, `Command-9`, and equivalent
   Ghostty actions operate on Coinor tabs
 - attention marks main without switching away from IDE or a shell
-- an archived runtime stays live while it owns any shell tab
+- confirmed archive closes main, IDE, ordinary shells, managed tabs, root
+  Grok, and subagents immediately
 - a missing base directory produces an inline tab error without falling back
   to another directory
+
+## Phase 9: Agent-managed long-running terminals
+
+Implement:
+
+- private user-only terminal-control Unix socket
+- bundled native `coinorctl` client and zsh bootstrap
+- auto-installed Grok skill for servers, watchers, tails, and REPLs
+- ACP nonce authorization tied to the exact calling Grok session
+- opaque per-tab capabilities
+- reusable transient zsh tabs with execute, read, write, key, interrupt,
+  status, and close operations
+- pinned Ghostty v1.3.1 text-free ABI compatibility
+
+Acceptance criteria:
+
+- creation never steals focus and managed tabs are visible in the normal strip
+- arbitrary valid working directories are accepted
+- root agents and subagents control only capabilities returned to them
+- direct Grok outside Conan Code fails with a clear error
+- shell state survives sequential commands in one managed tab
+- log reads are throttled, bounded, incremental, and UTF-8 safe
+- manual closure returns `tab_gone` without recreation
+- relaunch restores no managed tabs or processes
+- agents clean up tabs unless the user explicitly keeps a service running
 
 ## Test shape
 

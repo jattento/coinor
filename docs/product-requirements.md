@@ -53,9 +53,11 @@ Conan Code can archive and unarchive individual conversations and complete
 projects. Pinning and archiving affect only Conan Code's local organization
 metadata; they do not modify or delete the underlying Grok sessions.
 
-Archiving a running conversation removes it from the normal sidebar without
-interrupting its current work. Conan Code unloads the live session after it becomes
-inactive.
+Archiving an inactive conversation or project updates organization metadata
+immediately. Archiving an item with a loaded runtime first shows a destructive
+confirmation. Confirming immediately stops root Grok, active subagents, Fresh,
+Lazygit, ordinary shell tabs, managed terminal tabs, and their child processes.
+Archiving never deletes the durable Grok session.
 
 Archived conversations and projects are managed from a dedicated view opened
 from the sidebar. Archived items are not rendered as a permanent sidebar
@@ -182,9 +184,21 @@ the last tab. `Command-1` selects main and `Command-2` selects IDE.
 `Command-W` does nothing on either permanent tab. Equivalent Ghostty tab
 actions are routed into Conan Code instead of creating native Ghostty UI.
 
-The permanent IDE processes do not keep an archived runtime loaded. Once an
-archived conversation becomes otherwise eligible for unloading, Conan Code
-closes its IDE surfaces with the rest of that runtime.
+Grok agents can create transient managed terminal tabs for long-running or
+interactive commands. These tabs use reusable zsh shells, appear without
+changing selection, accept text and key input, expose bounded incremental
+scrollback reads, and preserve shell state between sequential commands. They
+are controlled through opaque capabilities and are never persisted or restored
+after relaunch.
+
+The managed-terminal skill is available only inside Conan Code. Direct Grok
+processes outside Conan Code receive a clear error and do not fall back to
+background tasks. Agents close their managed tabs before finishing unless the
+user explicitly asks to leave a service running. A tab closed manually by the
+user remains gone.
+
+Archiving a loaded runtime closes main, IDE, ordinary shell, and managed
+terminal surfaces immediately after confirmation.
 
 ## Terminal configuration
 

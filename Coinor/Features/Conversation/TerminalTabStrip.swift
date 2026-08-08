@@ -62,6 +62,27 @@ struct ConversationTabbedView: View {
                             "terminal.shell.\(session.id)"
                         )
                 }
+
+                ForEach(runtime.managedTabs) { tab in
+                    TerminalSurfaceRepresentable(
+                        session: tab.session,
+                        isVisible: isConversationVisible
+                            && runtime.selectedTabID == tab.id
+                    )
+                        .id(
+                            "\(tab.id):\(tab.session.generation):"
+                                + tab.session.launch.workingDirectory
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(runtime.selectedTabID == tab.id ? 1 : 0)
+                        .allowsHitTesting(runtime.selectedTabID == tab.id)
+                        .accessibilityHidden(
+                            runtime.selectedTabID != tab.id
+                        )
+                        .accessibilityIdentifier(
+                            "terminal.managed.\(tab.id)"
+                        )
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -200,9 +221,13 @@ private struct TerminalTabStrip: View {
                     .frame(width: 14, height: 14)
             case .ide:
                 EmptyView()
-            case .shell:
+            case .shell, .managed:
                 Button {
-                    runtime.closeShellTab(tabID: tab.id)
+                    if tab.kind == .managed {
+                        runtime.closeManagedTab(tabID: tab.id)
+                    } else {
+                        runtime.closeShellTab(tabID: tab.id)
+                    }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .semibold))

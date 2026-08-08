@@ -383,9 +383,11 @@ final class GhosttyRuntime: ObservableObject {
 
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             let targetSurface = surface(from: target)
+            let exitCode = action.action.child_exited.exit_code
             let runtimeMilliseconds = action.action.child_exited.timetime_ms
             DispatchQueue.main.async { [weak targetSurface] in
                 targetSurface?.processDidExit(
+                    exitCode: exitCode,
                     runtimeMilliseconds: runtimeMilliseconds
                 )
             }

@@ -11,6 +11,25 @@ private struct DetachedRuntimeState {
     let leaderSocket: GrokLeaderSocket?
 }
 
+struct ArchiveConfirmation: Identifiable, Equatable {
+    enum Target: Equatable {
+        case conversation(sessionID: String)
+        case project(projectID: String)
+    }
+
+    let id = UUID()
+    let target: Target
+    let title: String
+    let message: String
+}
+
+private struct TerminalControlConfiguration {
+    let socket: TerminalControlSocket
+    let token: String
+    let clientPath: String
+    let bootstrapPath: String
+}
+
 @MainActor
 final class AppCoordinator: ObservableObject {
     private static let supportedProjectIconNames =
@@ -39,10 +58,14 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var warningMessage: String?
     @Published var selectedSessionID: String?
     @Published var showsArchivedItems = false
+    @Published var archiveConfirmation: ArchiveConfirmation?
 
     private(set) var runtimeManager: ConversationRuntimeManager?
 
     private var controlClient: GrokControlClient?
+    private var terminalControlServer: TerminalControlServer?
+    private var terminalControlConfiguration:
+        TerminalControlConfiguration?
     private var metadataStore: MetadataStore?
     private var hookCoordinator: HookCoordinator?
     private var applicationInstanceLock: ApplicationInstanceLock?
@@ -65,6 +88,8 @@ final class AppCoordinator: ObservableObject {
     private var started = false
     private let notifications = AttentionNotificationService()
     private let leaderProcessManager = GrokLeaderProcessManager()
+    private let terminalControlAuthorizer =
+        TerminalControlInvocationAuthorizer()
 
     func start() async {
         guard !started else { return }
@@ -79,7 +104,14 @@ final class AppCoordinator: ObservableObject {
                 .applicationSupportDirectory(fileManager: fileManager)
             try fileManager.createDirectory(
                 at: supportDirectory,
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
+                attributes: [
+                    .posixPermissions: NSNumber(value: 0o700),
+                ]
+            )
+            try fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o700)],
+                ofItemAtPath: supportDirectory.path
             )
             if applicationInstanceLock == nil {
                 applicationInstanceLock = try ApplicationInstanceLock(
@@ -94,13 +126,56 @@ final class AppCoordinator: ObservableObject {
                 $0.checkoutPath
             }
 
+            try GrokSkillInstaller().install()
+            guard let clientURL = Bundle.main.url(
+                forResource: "coinorctl",
+                withExtension: nil
+            ), fileManager.isExecutableFile(atPath: clientURL.path) else {
+                throw TerminalControlError.internalFailure(
+                    "the bundled coinorctl executable is unavailable"
+                )
+            }
+            guard let bootstrapURL = Bundle.main.url(
+                forResource: "managed-terminal-bootstrap",
+                withExtension: "zsh"
+            ) else {
+                throw TerminalControlError.internalFailure(
+                    "the managed terminal bootstrap is unavailable"
+                )
+            }
+            let terminalControlSocket =
+                try TerminalControlSocket.coinorDefault(
+                    supportDirectory: supportDirectory
+                )
+            let terminalControlToken = Self.randomControlToken()
+            let terminalControlConfiguration =
+                TerminalControlConfiguration(
+                    socket: terminalControlSocket,
+                    token: terminalControlToken,
+                    clientPath: clientURL.path,
+                    bootstrapPath: bootstrapURL.path
+                )
+            self.terminalControlConfiguration =
+                terminalControlConfiguration
+
             let executable = try GrokExecutable.resolve()
             let leaderSocket = try GrokLeaderSocket.coinorDefault(
                 supportDirectory: supportDirectory
             )
+            _ = try await leaderProcessManager.stop(
+                leaderSocket: leaderSocket
+            )
+            var leaderEnvironment = ProcessInfo.processInfo.environment
+            leaderEnvironment["CONAN_CODE_CONTROL_SOCKET"] =
+                terminalControlSocket.path
+            leaderEnvironment["CONAN_CODE_CONTROL_TOKEN"] =
+                terminalControlToken
+            leaderEnvironment["CONAN_CODE_CONTROL_CLIENT"] =
+                clientURL.path
             let launch = GrokControlLaunch(
                 executable: executable,
-                leaderSocket: leaderSocket
+                leaderSocket: leaderSocket,
+                environment: leaderEnvironment
             )
             let control = GrokControlClient(launch: launch)
             activeLeaderSocket = leaderSocket
@@ -137,6 +212,19 @@ final class AppCoordinator: ObservableObject {
             runtimes.onRootProcessExit = { [weak self] sessionID in
                 self?.rootProcessExited(sessionID: sessionID)
             }
+
+            let terminalControlServer = TerminalControlServer(
+                socket: terminalControlSocket
+            ) { [weak self] request in
+                guard let self else {
+                    return .failure(
+                        .internalFailure("Conan Code is shutting down")
+                    )
+                }
+                return await self.handleTerminalControl(request)
+            }
+            try terminalControlServer.start()
+            self.terminalControlServer = terminalControlServer
 
             listenForControlEvents(control, generation: generation)
             try await refresh(
@@ -545,13 +633,46 @@ final class AppCoordinator: ObservableObject {
     }
 
     func archiveConversation(_ sessionID: String) {
+        if runtimeManager?.runtime(sessionID: sessionID) != nil {
+            let title = summaries.first {
+                $0.id == sessionID
+            }?.title ?? "this conversation"
+            archiveConfirmation = ArchiveConfirmation(
+                target: .conversation(sessionID: sessionID),
+                title: "Archive Conversation?",
+                message:
+                    "Archiving \(title) will immediately stop Grok, "
+                    + "all subagents, IDE tools, shell tabs, and managed "
+                    + "services for this conversation."
+            )
+            return
+        }
+        performArchiveConversation(sessionID)
+    }
+
+    func confirmArchive() {
+        guard let confirmation = archiveConfirmation else { return }
+        archiveConfirmation = nil
+        switch confirmation.target {
+        case .conversation(let sessionID):
+            performArchiveConversation(sessionID)
+        case .project(let projectID):
+            performArchiveProject(projectID)
+        }
+    }
+
+    func cancelArchive() {
+        archiveConfirmation = nil
+    }
+
+    private func performArchiveConversation(_ sessionID: String) {
         schedulePersistence { coordinator in
             let persisted = await coordinator.persist { document in
                 document.unpin(sessionID)
                 document.setSessionArchived(sessionID, archived: true)
             }
             if persisted {
-                coordinator.runtimeManager?.markArchived(
+                coordinator.runtimeManager?.archiveImmediately(
                     sessionID: sessionID
                 )
             }
@@ -559,27 +680,35 @@ final class AppCoordinator: ObservableObject {
     }
 
     func unarchiveConversation(_ sessionID: String) {
-        let cancelsPendingUnload = summaries.first {
-            $0.id == sessionID
-        }.map {
-            !metadata.isProjectArchived($0.projectID)
-        } ?? false
-        if cancelsPendingUnload {
-            runtimeManager?.markUnarchived(sessionID: sessionID)
-        }
         schedulePersistence { coordinator in
-            let persisted = await coordinator.persist {
+            _ = await coordinator.persist {
                 $0.setSessionArchived(sessionID, archived: false)
-            }
-            if !persisted, cancelsPendingUnload {
-                coordinator.runtimeManager?.markArchived(
-                    sessionID: sessionID
-                )
             }
         }
     }
 
     func archiveProject(_ projectID: String) {
+        let hasLoadedRuntime = summaries
+            .filter { $0.projectID == projectID }
+            .contains {
+                runtimeManager?.runtime(sessionID: $0.id) != nil
+            }
+        if hasLoadedRuntime {
+            archiveConfirmation = ArchiveConfirmation(
+                target: .project(projectID: projectID),
+                title: "Archive Project?",
+                message:
+                    "Archiving \(projectDisplayName(projectID)) will "
+                    + "immediately stop Grok, all subagents, IDE tools, "
+                    + "shell tabs, and managed services for every active "
+                    + "conversation in this project."
+            )
+            return
+        }
+        performArchiveProject(projectID)
+    }
+
+    private func performArchiveProject(_ projectID: String) {
         let sessionIDs = summaries
             .filter { $0.projectID == projectID }
             .map(\.id)
@@ -589,30 +718,18 @@ final class AppCoordinator: ObservableObject {
             }
             if persisted {
                 sessionIDs.forEach {
-                    coordinator.runtimeManager?.markArchived(sessionID: $0)
+                    coordinator.runtimeManager?.archiveImmediately(
+                        sessionID: $0
+                    )
                 }
             }
         }
     }
 
     func unarchiveProject(_ projectID: String) {
-        let sessionIDs = summaries
-            .filter {
-                $0.projectID == projectID
-                    && !metadata.isSessionArchived($0.id)
-            }
-            .map(\.id)
-        sessionIDs.forEach {
-            runtimeManager?.markUnarchived(sessionID: $0)
-        }
         schedulePersistence { coordinator in
-            let persisted = await coordinator.persist {
+            _ = await coordinator.persist {
                 $0.setProjectArchived(projectID, archived: false)
-            }
-            if !persisted {
-                sessionIDs.forEach {
-                    coordinator.runtimeManager?.markArchived(sessionID: $0)
-                }
             }
         }
     }
@@ -695,6 +812,11 @@ final class AppCoordinator: ObservableObject {
         pendingMaterializationTasks.removeAll()
         pendingLifecycleCatchup.removeAll()
         completedLifecycleCatchup.removeAll()
+        terminalControlAuthorizer.reset()
+        terminalControlServer?.stop()
+        terminalControlServer = nil
+        terminalControlConfiguration = nil
+        archiveConfirmation = nil
         hookCoordinator = nil
         runtimeManager?.shutdown()
         runtimeManager = nil
@@ -1049,7 +1171,14 @@ final class AppCoordinator: ObservableObject {
                         error: error
                     )
                     return
-                case .notification(let method, _):
+                case .notification(let method, let params):
+                    if let invocation =
+                        GrokTerminalToolInvocation.parseNotification(
+                            method: method,
+                            params: params
+                        ) {
+                        self.terminalControlAuthorizer.observe(invocation)
+                    }
                     if method == GrokMethod.leaderReconnected {
                         self.restoreSubscriptionsAfterLeaderReconnect()
                     }
@@ -1570,6 +1699,253 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    private func handleTerminalControl(
+        _ request: TerminalControlRequest
+    ) async -> TerminalControlResponse {
+        do {
+            guard let configuration = terminalControlConfiguration,
+                  request.token == configuration.token else {
+                throw TerminalControlError.unauthorized
+            }
+            guard let runtimeManager else {
+                throw TerminalControlError.sessionUnavailable
+            }
+
+            switch request.method {
+            case "create":
+                guard let requestID = request.requestID,
+                      !requestID.isEmpty else {
+                    throw TerminalControlError.invalidRequest(
+                        "requestID is required"
+                    )
+                }
+                let workingDirectory = request.cwd ?? NSHomeDirectory()
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(
+                    atPath: workingDirectory,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue else {
+                    throw TerminalControlError.invalidDirectory(
+                        workingDirectory
+                    )
+                }
+                guard let ownerSessionID =
+                    await terminalControlAuthorizer.consume(
+                        requestID: requestID
+                    ) else {
+                    throw TerminalControlError.invocationNotObserved
+                }
+                guard let rootSessionID = terminalControlRootSessionID(
+                    for: ownerSessionID
+                ) else {
+                    throw TerminalControlError.sessionUnavailable
+                }
+                let title = request.title?
+                    .trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                let tab = try runtimeManager.createManagedTab(
+                    rootSessionID: rootSessionID,
+                    ownerSessionID: ownerSessionID,
+                    name: title?.isEmpty == false ? title! : "Service",
+                    workingDirectory: URL(
+                        fileURLWithPath: workingDirectory,
+                        isDirectory: true
+                    ).standardizedFileURL.path,
+                    controlSocket: configuration.socket.path,
+                    controlToken: configuration.token,
+                    controlClientPath: configuration.clientPath,
+                    bootstrapPath: configuration.bootstrapPath
+                )
+                return .success(
+                    .object([
+                        "tabID": .string(tab.id),
+                        "capability": .string(tab.capability),
+                        "state": .string(tab.state.wireValue),
+                    ])
+                )
+
+            case "execute":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                guard let command = request.command else {
+                    throw TerminalControlError.invalidRequest(
+                        "command is required"
+                    )
+                }
+                let commandID = try tab.execute(command)
+                return .success(
+                    .object([
+                        "tabID": .string(tab.id),
+                        "commandID": .string(commandID),
+                        "state": .string(tab.state.wireValue),
+                    ])
+                )
+
+            case "read":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                let result = tab.read(
+                    cursor: request.cursor,
+                    maximumBytes: request.maxBytes
+                )
+                return .success(
+                    .object([
+                        "text": .string(result.text),
+                        "cursor": .string(result.cursor),
+                        "reset": .bool(result.reset),
+                        "truncated": .bool(result.truncated),
+                    ])
+                )
+
+            case "write":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                guard let text = request.text else {
+                    throw TerminalControlError.invalidRequest(
+                        "text is required"
+                    )
+                }
+                try tab.write(text)
+                return .success()
+
+            case "key":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                guard let rawKey = request.key,
+                      let key = TerminalInputKey(rawValue: rawKey),
+                      key != .interrupt else {
+                    throw TerminalControlError.invalidRequest(
+                        "key must be enter, escape, up, down, left, or right"
+                    )
+                }
+                try tab.sendKey(key)
+                return .success()
+
+            case "interrupt":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                try tab.sendKey(.interrupt)
+                return .success()
+
+            case "status":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                return .success(tab.statusPayload)
+
+            case "close":
+                let fields = try managedTerminalFields(request)
+                try runtimeManager.closeManagedTab(
+                    tabID: fields.tabID,
+                    capability: fields.capability
+                )
+                return .success(
+                    .object(["closed": .bool(true)])
+                )
+
+            case "shell-ready":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                try tab.markShellReady()
+                return .success(tab.statusPayload)
+
+            case "fetch-command":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                guard let commandID = request.commandID else {
+                    throw TerminalControlError.invalidRequest(
+                        "commandID is required"
+                    )
+                }
+                return .success(
+                    .object([
+                        "command": .string(
+                            try tab.command(commandID: commandID)
+                        ),
+                    ])
+                )
+
+            case "command-finished":
+                let tab = try managedTerminal(
+                    request,
+                    runtimeManager: runtimeManager
+                )
+                guard let commandID = request.commandID,
+                      let exitCode = request.exitCode else {
+                    throw TerminalControlError.invalidRequest(
+                        "commandID and exitCode are required"
+                    )
+                }
+                try tab.finish(
+                    commandID: commandID,
+                    exitCode: exitCode
+                )
+                return .success(tab.statusPayload)
+
+            default:
+                throw TerminalControlError.unsupportedMethod(
+                    request.method
+                )
+            }
+        } catch let error as TerminalControlError {
+            return .failure(error)
+        } catch {
+            return .failure(
+                .internalFailure(error.localizedDescription)
+            )
+        }
+    }
+
+    private func managedTerminal(
+        _ request: TerminalControlRequest,
+        runtimeManager: ConversationRuntimeManager
+    ) throws -> ManagedTerminalTab {
+        let fields = try managedTerminalFields(request)
+        return try runtimeManager.managedTab(
+            tabID: fields.tabID,
+            capability: fields.capability
+        )
+    }
+
+    private func managedTerminalFields(
+        _ request: TerminalControlRequest
+    ) throws -> (tabID: String, capability: String) {
+        guard let tabID = request.tabID, !tabID.isEmpty,
+              let capability = request.capability,
+              !capability.isEmpty else {
+            throw TerminalControlError.invalidRequest(
+                "tabID and capability are required"
+            )
+        }
+        return (tabID, capability)
+    }
+
+    private func terminalControlRootSessionID(
+        for sessionID: String
+    ) -> String? {
+        if runtimeManager?.runtime(sessionID: sessionID) != nil {
+            return sessionID
+        }
+        return hookCoordinator?.rootSessionID(for: sessionID)
+            ?? runtimeManager?.rootSessionID(containing: sessionID)
+    }
+
     private func archivedRuntimeUnloaded(
         sessionID: String,
         nextSelectedSessionID: String?
@@ -1597,5 +1973,12 @@ final class AppCoordinator: ObservableObject {
         }
         return !metadata.isSessionArchived(sessionID)
             && !metadata.isProjectArchived(summary.projectID)
+    }
+
+    private static func randomControlToken() -> String {
+        [
+            UUID().uuidString.lowercased(),
+            UUID().uuidString.lowercased(),
+        ].joined()
     }
 }

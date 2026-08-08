@@ -111,6 +111,22 @@ Leader mode requires a Grok configuration that is eligible for leader
 operation. Coinor must surface a clear startup error if Grok refuses leader
 mode, including sandbox-policy failures.
 
+### Agent terminal control
+
+Conan Code hosts a second private Unix socket for long-running-command control.
+The app bundle supplies `coinorctl` and a zsh bootstrap, while an app-owned
+Grok skill provides the agent workflow.
+
+The private leader inherits the control socket path, bundled client path, and
+an ephemeral instance token. Tab creation additionally requires a literal
+nonce observed in the matching ACP `run_terminal_command` event. The event
+provides the exact root or subagent session ID; Coinor maps it to the loaded
+conversation runtime. Later operations require the tab's random capability.
+
+The protocol is one newline-delimited JSON request and response per Unix
+connection. The listener verifies the peer UID, keeps the socket at mode 0600,
+and performs Ghostty operations on `MainActor`.
+
 ### Conversation runtime manager
 
 `ConversationRuntimeManager` owns every conversation activated during the
@@ -122,10 +138,10 @@ Each runtime contains:
 - zero or more subagent terminal processes and Ghostty surfaces
 - two permanent IDE terminal processes and Ghostty surfaces
 - zero or more independent shell processes and Ghostty surfaces
+- zero or more transient agent-managed zsh processes and Ghostty surfaces
 - local terminal-tab order, labels, selection, and focus state
 - current root and descendant activity
 - pane ordering and focus state
-- archive/unload state
 
 Changing the selected conversation does not stop its runtime. Application
 relaunch restores only the last visible runtime; other sessions resume lazily.
@@ -251,8 +267,10 @@ terminal surfaces mounted:
 - IDE selected: a fixed 60/40 horizontal split, with `fresh .` on the left and
   `lazygit` on the right
 - shell selected: one full-width independent Ghostty shell
+- managed tab selected: one full-width reusable Ghostty zsh shell
 
-The main layout, IDE layout, and every shell tab are layered in a `ZStack`;
+The main layout, IDE layout, and every ordinary or managed shell tab are
+layered in a `ZStack`;
 selection changes opacity, hit testing, accessibility visibility, and focus
 without destroying surfaces. Main remembers the last focused root or
 descendant pane. IDE remembers the last focused IDE pane and initially focuses
@@ -273,10 +291,12 @@ conversations defer terminal command launch until the Grok roster or persisted
 session reports the worktree path; they never fall back to the source checkout.
 Ghostty therefore selects the user's configured shell for ordinary shell tabs.
 The IDE commands and persisted shell tabs are recreated when their conversation
-runtime activates.
+runtime activates. Managed tabs are appended after persisted shells, do not
+change selection when created, and are never reconstructed from metadata.
 
-IDE surfaces are excluded from archive-retention checks. An archived runtime
-therefore unloads once Grok is inactive and no ordinary shell tab remains.
+Archiving a loaded runtime requires confirmation and then shuts down root Grok,
+descendants, IDE tools, ordinary shells, and managed tabs immediately. There is
+no archive-retention grace state.
 
 ### Sidebar presentation
 
@@ -381,7 +401,8 @@ Stored metadata includes:
   tab, and the next monotonic shell number
 
 Coinor does not store transcripts, prompts, terminal scrollback, Grok activity,
-or duplicate conversation titles.
+duplicate conversation titles, managed-tab identities, managed capabilities,
+or managed command state.
 
 Subagent sessions are hidden implementation sessions rather than sidebar
 conversations. Coinor does not offer pin, archive, or rename actions for them.

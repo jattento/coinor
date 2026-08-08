@@ -18,7 +18,11 @@ conversation title, transcript, and execution state.
 
 The IDE surfaces start eagerly with their conversation runtime and use a fixed
 60/40 split. Main and IDE are non-closable fixed tabs; IDE is also
-non-renameable and does not count as a shell for archive retention. All IDE and
-shell surfaces remain mounted while their conversation runtime is live.
+non-renameable. All IDE and shell surfaces remain mounted while their
+conversation runtime is live.
 Ghostty actions that target tabs are mapped into this Coinor-owned model so
 native Ghostty windows or tab chrome never escape the application shell.
+
+ADR 0013 supersedes this ADR's archive-retention rule. After confirmation for
+a loaded runtime, Conan Code immediately closes main, IDE, ordinary shell, and
+managed terminal surfaces.

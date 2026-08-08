@@ -59,6 +59,26 @@ struct AppShellView: View {
         .sheet(isPresented: $coordinator.showsArchivedItems) {
             ArchivedItemsView(coordinator: coordinator)
         }
+        .alert(
+            coordinator.archiveConfirmation?.title ?? "Archive?",
+            isPresented: Binding(
+                get: { coordinator.archiveConfirmation != nil },
+                set: { presented in
+                    if !presented {
+                        coordinator.cancelArchive()
+                    }
+                }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                coordinator.cancelArchive()
+            }
+            Button("Archive", role: .destructive) {
+                coordinator.confirmArchive()
+            }
+        } message: {
+            Text(coordinator.archiveConfirmation?.message ?? "")
+        }
         .overlay(alignment: .top) {
             if let warning = coordinator.warningMessage {
                 WarningBanner(message: warning) {

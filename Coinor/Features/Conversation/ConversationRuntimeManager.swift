@@ -6,6 +6,7 @@ struct ConversationTerminalTab: Equatable, Identifiable, Sendable {
         case main
         case ide
         case shell
+        case managed
     }
 
     let id: String
@@ -31,6 +32,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     @Published private(set) var ideFresh: TerminalSession
     @Published private(set) var ideLazygit: TerminalSession
     @Published private(set) var shellTabs: [TerminalSession] = []
+    @Published private(set) var managedTabs: [ManagedTerminalTab] = []
     @Published private(set) var tabMetadata: ConversationTabMetadata
     @Published private(set) var pendingRenameRequest:
         ConversationTabRenameRequest?
@@ -38,14 +40,12 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     @Published var descendantActivity: [String: RuntimeActivity] = [:]
 
     var onTabMetadataChange: ((ConversationTabMetadata) -> Void)?
-    var onArchiveUnloadEligibilityChange: (() -> Void)?
-
     private var descendantOrders: [String: SubagentStartOrder] = [:]
-    private var archiveUnloadPolicy = RuntimeArchiveUnloadPolicy()
     private var lastFocusedMainPaneID: String
     private var lastFocusedIDEPaneID: String
     private var ideWorkingDirectory: String?
     private var shellBaseWorkingDirectory: String?
+    private var selectedManagedTabID: String?
 
     init(
         id: String,
@@ -103,11 +103,17 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 name: $0.name,
                 kind: .shell
             )
+        } + managedTabs.map {
+            ConversationTerminalTab(
+                id: $0.id,
+                name: $0.name,
+                kind: .managed
+            )
         }
     }
 
     var selectedTabID: String {
-        tabMetadata.selectedTabID
+        selectedManagedTabID ?? tabMetadata.selectedTabID
     }
 
     var isMainTabSelected: Bool {
@@ -119,7 +125,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     }
 
     var hasShellTabs: Bool {
-        !shellTabs.isEmpty
+        !shellTabs.isEmpty || !managedTabs.isEmpty
     }
 
     var aggregateActivity: RuntimeActivity {
@@ -232,8 +238,54 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         focusSelectedTab()
     }
 
+    func createManagedTab(
+        ownerSessionID: String,
+        name: String,
+        workingDirectory: String,
+        controlSocket: String,
+        controlToken: String,
+        controlClientPath: String,
+        bootstrapPath: String
+    ) -> ManagedTerminalTab {
+        let tabID = UUID().uuidString.lowercased()
+        let capability = Self.randomCapability()
+        let terminal = TerminalSession(
+            launch: TerminalLaunchRequest(
+                managedTabID: tabID,
+                workingDirectory: workingDirectory,
+                environment: [
+                    "CONAN_CODE_CONTROL_SOCKET": controlSocket,
+                    "CONAN_CODE_CONTROL_TOKEN": controlToken,
+                    "CONAN_CODE_CONTROL_CLIENT": controlClientPath,
+                    "CONAN_CODE_TAB_ID": tabID,
+                    "CONAN_CODE_TAB_CAPABILITY": capability,
+                ],
+                bootstrapPath: bootstrapPath
+            ),
+            runtime: root.runtime,
+            keepsSurfaceAfterProcessExit: true
+        )
+        let tab = ManagedTerminalTab(
+            id: tabID,
+            capability: capability,
+            ownerSessionID: ownerSessionID,
+            name: name,
+            session: terminal
+        )
+        bindManagedSession(terminal, tabID: tabID)
+        terminal.onCloseRequest = { [weak self] in
+            self?.closeManagedTab(tabID: tabID)
+        }
+        managedTabs.append(tab)
+        return tab
+    }
+
     func closeSelectedShellTab() {
-        closeShellTab(tabID: selectedTabID)
+        if selectedManagedTabID != nil {
+            closeManagedTab(tabID: selectedTabID)
+        } else {
+            closeShellTab(tabID: selectedTabID)
+        }
     }
 
     func closeShellTab(tabID: String) {
@@ -250,12 +302,31 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         updated.closeShell(tabID: tabID)
         tabMetadata = updated
         publishTabMetadata()
-        onArchiveUnloadEligibilityChange?()
         focusSelectedTab()
     }
 
+    func closeManagedTab(tabID: String) {
+        guard let index = managedTabs.firstIndex(where: {
+            $0.id == tabID
+        }) else {
+            return
+        }
+        managedTabs[index].session.shutdown()
+        managedTabs.remove(at: index)
+        if selectedManagedTabID == tabID {
+            selectedManagedTabID = nil
+            focusSelectedTab()
+        }
+    }
+
     func selectTab(tabID: String) {
+        if managedTabs.contains(where: { $0.id == tabID }) {
+            selectedManagedTabID = tabID
+            focusSelectedTab()
+            return
+        }
         guard tabMetadata.contains(tabID: tabID) else { return }
+        selectedManagedTabID = nil
         if selectedTabID != tabID {
             var updated = tabMetadata
             updated.select(tabID: tabID)
@@ -266,6 +337,11 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     }
 
     func renameTab(tabID: String, to name: String) {
+        if let managed = managedTabs.first(where: { $0.id == tabID }) {
+            managed.name = name
+            objectWillChange.send()
+            return
+        }
         guard tabMetadata.contains(tabID: tabID) else { return }
         var updated = tabMetadata
         updated.rename(tabID: tabID, to: name)
@@ -313,7 +389,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     }
 
     func navigateTabs(_ request: TerminalTabNavigationRequest) {
-        let ids = tabMetadata.orderedTabIDs
+        let ids = tabs.map(\.id)
         guard !ids.isEmpty,
               let selectedIndex = ids.firstIndex(of: selectedTabID)
         else {
@@ -355,9 +431,15 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             } else if selectedID == ConversationTabMetadata.ideID {
                 self.focusIDEPane()
             } else {
-                self.shellTabs.first {
-                    $0.id == selectedID
-                }?.focus()
+                if let managed = self.managedTabs.first(
+                    where: { $0.id == selectedID }
+                ) {
+                    managed.session.focus()
+                } else {
+                    self.shellTabs.first {
+                        $0.id == selectedID
+                    }?.focus()
+                }
             }
         }
     }
@@ -367,26 +449,13 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         focusMainPane()
     }
 
-    func markArchived() {
-        archiveUnloadPolicy.markArchived()
-    }
-
-    func cancelArchiveUnload() {
-        archiveUnloadPolicy.cancel()
-    }
-
-    func shouldUnloadAfterArchive() -> Bool {
-        archiveUnloadPolicy.shouldUnload(
-            activity: aggregateActivity,
-            hasShellTabs: hasShellTabs
-        )
-    }
-
     func shutdown() {
         ideFresh.shutdown()
         ideLazygit.shutdown()
         shellTabs.forEach { $0.shutdown() }
         shellTabs.removeAll()
+        managedTabs.forEach { $0.session.shutdown() }
+        managedTabs.removeAll()
         descendants.forEach { $0.shutdown() }
         descendants.removeAll()
         root.shutdown()
@@ -460,6 +529,17 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         }
     }
 
+    private func bindManagedSession(
+        _ session: TerminalSession,
+        tabID: String
+    ) {
+        bindTabActions(session, tabID: tabID)
+        session.onBecameFocused = { [weak self] in
+            guard let self, self.selectedTabID != tabID else { return }
+            self.selectTab(tabID: tabID)
+        }
+    }
+
     private func bindTabActions(
         _ session: TerminalSession,
         tabID: String
@@ -468,7 +548,12 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             self?.createShellTab()
         }
         session.onCloseTabRequest = { [weak self] in
-            self?.closeShellTab(tabID: tabID)
+            guard let self else { return }
+            if self.managedTabs.contains(where: { $0.id == tabID }) {
+                self.closeManagedTab(tabID: tabID)
+            } else {
+                self.closeShellTab(tabID: tabID)
+            }
         }
         session.onTabNavigationRequest = { [weak self] request in
             self?.navigateTabs(request)
@@ -561,6 +646,14 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         ideFresh.cancelPendingFocus()
         ideLazygit.cancelPendingFocus()
         shellTabs.forEach { $0.cancelPendingFocus() }
+        managedTabs.forEach { $0.session.cancelPendingFocus() }
+    }
+
+    private static func randomCapability() -> String {
+        [
+            UUID().uuidString.lowercased(),
+            UUID().uuidString.lowercased(),
+        ].joined()
     }
 }
 
@@ -648,11 +741,6 @@ final class ConversationRuntimeManager: ObservableObject {
             guard let runtime else { return }
             self?.onTabMetadataChange?(runtime.id, tabs)
         }
-        runtime.onArchiveUnloadEligibilityChange = {
-            [weak self, weak runtime] in
-            guard let self, let runtime else { return }
-            self.unloadIfArchivedAndInactive(runtime)
-        }
         rootSession.onCloseRequest = { [weak self, weak runtime] in
             guard let self, let runtime else { return }
             if let onRootProcessExit = self.onRootProcessExit {
@@ -698,7 +786,6 @@ final class ConversationRuntimeManager: ObservableObject {
     func closeSubagents(sessionIDs: Set<String>) {
         for runtime in runtimes {
             runtime.removeDescendants(sessionIDs: sessionIDs)
-            unloadIfArchivedAndInactive(runtime)
         }
     }
 
@@ -749,17 +836,6 @@ final class ConversationRuntimeManager: ObservableObject {
            selectedSessionID == rootSessionID {
             runtime.focusAttentionPaneIfMainSelected()
         }
-        unloadIfArchivedAndInactive(runtime)
-    }
-
-    func markArchived(sessionID: String) {
-        guard let runtime = runtime(sessionID: sessionID) else { return }
-        runtime.markArchived()
-        unloadIfArchivedAndInactive(runtime)
-    }
-
-    func markUnarchived(sessionID: String) {
-        runtime(sessionID: sessionID)?.cancelArchiveUnload()
     }
 
     func select(sessionID: String) {
@@ -802,23 +878,77 @@ final class ConversationRuntimeManager: ObservableObject {
         }
     }
 
+    func archiveImmediately(sessionID: String) {
+        guard let runtime = runtime(sessionID: sessionID) else { return }
+        runtime.shutdown()
+        runtimes.removeAll { $0.id == sessionID }
+        if selectedSessionID == sessionID {
+            selectedSessionID = runtimes.first?.id
+        }
+        onArchivedRuntimeUnload?(sessionID, selectedSessionID)
+    }
+
+    func createManagedTab(
+        rootSessionID: String,
+        ownerSessionID: String,
+        name: String,
+        workingDirectory: String,
+        controlSocket: String,
+        controlToken: String,
+        controlClientPath: String,
+        bootstrapPath: String
+    ) throws -> ManagedTerminalTab {
+        guard let runtime = runtime(sessionID: rootSessionID) else {
+            throw TerminalControlError.sessionUnavailable
+        }
+        return runtime.createManagedTab(
+            ownerSessionID: ownerSessionID,
+            name: name,
+            workingDirectory: workingDirectory,
+            controlSocket: controlSocket,
+            controlToken: controlToken,
+            controlClientPath: controlClientPath,
+            bootstrapPath: bootstrapPath
+        )
+    }
+
+    func managedTab(
+        tabID: String,
+        capability: String
+    ) throws -> ManagedTerminalTab {
+        for runtime in runtimes {
+            if let tab = runtime.managedTabs.first(where: {
+                $0.id == tabID
+            }) {
+                guard tab.capability == capability else {
+                    throw TerminalControlError.forbidden
+                }
+                return tab
+            }
+        }
+        throw TerminalControlError.tabGone
+    }
+
+    func closeManagedTab(
+        tabID: String,
+        capability: String
+    ) throws {
+        let tab = try managedTab(
+            tabID: tabID,
+            capability: capability
+        )
+        guard let runtime = runtimes.first(where: {
+            $0.managedTabs.contains(where: { $0 === tab })
+        }) else {
+            throw TerminalControlError.tabGone
+        }
+        runtime.closeManagedTab(tabID: tabID)
+    }
+
     func shutdown() {
         runtimes.forEach { $0.shutdown() }
         runtimes.removeAll()
         ghosttyRuntime.shutdown()
     }
 
-    private func unloadIfArchivedAndInactive(
-        _ runtime: ConversationRuntime
-    ) {
-        guard runtime.shouldUnloadAfterArchive() else {
-            return
-        }
-        runtime.shutdown()
-        runtimes.removeAll { $0.id == runtime.id }
-        if selectedSessionID == runtime.id {
-            selectedSessionID = runtimes.first?.id
-        }
-        onArchivedRuntimeUnload?(runtime.id, selectedSessionID)
-    }
 }

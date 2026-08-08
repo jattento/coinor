@@ -289,7 +289,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var focusesWhenAttached = false
 
     var onCloseRequest: (() -> Void)?
-    var onProcessExit: ((UInt64) -> Void)?
+    var onProcessExit: ((UInt32, UInt64) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
     var onNewTabRequest: (() -> Void)?
@@ -320,7 +320,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             ("GHOSTTY_RESOURCES_DIR", runtime.resourcesDirectory),
             ("TERMINFO", runtime.terminfoDirectory),
             ("PATH", Self.terminalPath()),
-        ]
+        ] + launch.environment.sorted { $0.key < $1.key }
         guard let app = runtime.app else {
             throw GhosttyRuntimeError.applicationCreation
         }
@@ -329,8 +329,11 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             environmentPointer,
             environmentCount in
             try launch.workingDirectory.withCString { workingDirectory in
-                let createSurface: (UnsafePointer<CChar>?) throws
-                    -> ghostty_surface_t = { command in
+                let createSurface: (
+                    UnsafePointer<CChar>?,
+                    UnsafePointer<CChar>?
+                ) throws
+                    -> ghostty_surface_t = { command, initialInput in
                     var configuration = ghostty_surface_config_new()
                     configuration.platform_tag = GHOSTTY_PLATFORM_MACOS
                     configuration.platform = ghostty_platform_u(
@@ -348,6 +351,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                     configuration.command = command
                     configuration.env_vars = environmentPointer
                     configuration.env_var_count = environmentCount
+                    configuration.initial_input = initialInput
                     configuration.wait_after_command = launch.waitsAfterCommand
                     configuration.context = Self.context(
                         for: launch.surfaceContext
@@ -361,12 +365,22 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                     }
                     return surface
                 }
-                if let command = launch.explicitCommand {
-                    return try command.withCString {
-                        try createSurface($0)
+                let withInitialInput:
+                    ((UnsafePointer<CChar>?) throws -> ghostty_surface_t)
+                    throws -> ghostty_surface_t = { body in
+                        if let initialInput = launch.initialInput {
+                            return try initialInput.withCString(body)
+                        }
+                        return try body(nil)
                     }
+                return try withInitialInput { initialInput in
+                    if let command = launch.explicitCommand {
+                        return try command.withCString {
+                            try createSurface($0, initialInput)
+                        }
+                    }
+                    return try createSurface(nil, initialInput)
                 }
-                return try createSurface(nil)
             }
         }
 
@@ -660,18 +674,68 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     func requestHostClose() {
-        guard launch.mode != .shell else { return }
+        guard launch.mode != .shell,
+              launch.mode != .managedShell else {
+            return
+        }
         onCloseRequest?()
     }
 
     func processDidRequestClose(processAlive: Bool) {
+        if launch.mode == .managedShell {
+            return
+        }
         if !processAlive || launch.mode == .shell {
             onCloseRequest?()
         }
     }
 
-    func processDidExit(runtimeMilliseconds: UInt64) {
-        onProcessExit?(runtimeMilliseconds)
+    func processDidExit(
+        exitCode: UInt32,
+        runtimeMilliseconds: UInt64
+    ) {
+        onProcessExit?(exitCode, runtimeMilliseconds)
+    }
+
+    func sendText(_ text: String) {
+        guard let surfaceHandle, !text.isEmpty else { return }
+        let bytes = Array(text.utf8)
+        bytes.withUnsafeBytes {
+            guard let baseAddress = $0.baseAddress else { return }
+            ghostty_surface_text(
+                surfaceHandle,
+                baseAddress.assumingMemoryBound(to: CChar.self),
+                UInt(bytes.count)
+            )
+        }
+    }
+
+    func sendKey(_ key: TerminalInputKey) {
+        switch key {
+        case .enter:
+            sendSyntheticKey(keyCode: UInt32(kVK_Return))
+        case .escape:
+            sendSyntheticKey(keyCode: UInt32(kVK_Escape))
+        case .up:
+            sendSyntheticKey(keyCode: UInt32(kVK_UpArrow))
+        case .down:
+            sendSyntheticKey(keyCode: UInt32(kVK_DownArrow))
+        case .left:
+            sendSyntheticKey(keyCode: UInt32(kVK_LeftArrow))
+        case .right:
+            sendSyntheticKey(keyCode: UInt32(kVK_RightArrow))
+        case .interrupt:
+            sendSyntheticKey(
+                keyCode: UInt32(kVK_ANSI_C),
+                modifiers: GHOSTTY_MODS_CTRL,
+                text: "c",
+                unshiftedCodepoint: 99
+            )
+        }
+    }
+
+    var processHasExited: Bool {
+        surfaceHandle.map(ghostty_surface_process_exited) ?? true
     }
 
     func screenText() -> String {
@@ -699,7 +763,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         ) else {
             return ""
         }
-        defer { ghostty_surface_free_text(surfaceHandle, &text) }
+        defer { GhosttyPinnedTextAPI.free(&text) }
         guard let pointer = text.text else { return "" }
         return String(
             data: Data(bytes: pointer, count: Int(text.text_len)),
@@ -981,6 +1045,33 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
     }
 
+    private func sendSyntheticKey(
+        keyCode: UInt32,
+        modifiers: ghostty_input_mods_e = GHOSTTY_MODS_NONE,
+        text: String? = nil,
+        unshiftedCodepoint: UInt32 = 0
+    ) {
+        guard let surfaceHandle else { return }
+        var key = ghostty_input_key_s()
+        key.action = GHOSTTY_ACTION_PRESS
+        key.mods = modifiers
+        key.consumed_mods = GHOSTTY_MODS_NONE
+        key.keycode = keyCode
+        key.composing = false
+        key.unshifted_codepoint = unshiftedCodepoint
+        if let text {
+            text.withCString {
+                key.text = $0
+                _ = ghostty_surface_key(surfaceHandle, key)
+            }
+        } else {
+            _ = ghostty_surface_key(surfaceHandle, key)
+        }
+        key.action = GHOSTTY_ACTION_RELEASE
+        key.text = nil
+        _ = ghostty_surface_key(surfaceHandle, key)
+    }
+
     private func makeKeyEvent(
         _ event: NSEvent,
         action: ghostty_input_action_e
@@ -1126,5 +1217,18 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         return try variables.withUnsafeMutableBufferPointer {
             try body($0.baseAddress, $0.count)
         }
+    }
+}
+
+/// Ghostty v1.3.1's exported function takes only the text pointer even though
+/// the pinned public header still declares a leading surface argument.
+@_silgen_name("ghostty_surface_free_text")
+private func ghosttySurfaceFreeTextV131(
+    _ text: UnsafeMutablePointer<ghostty_text_s>
+)
+
+private enum GhosttyPinnedTextAPI {
+    static func free(_ text: UnsafeMutablePointer<ghostty_text_s>) {
+        ghosttySurfaceFreeTextV131(text)
     }
 }

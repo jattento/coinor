@@ -159,6 +159,34 @@ final class AppFoundationTests: XCTestCase {
         )
     }
 
+    func testApplicationBundleContainsTerminalControlResources() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let expectedFiles = [
+            "coinorctl",
+            "conan-code-long-running-SKILL.md",
+            "conan-code-terminal.sh",
+            "managed-terminal-bootstrap.zsh",
+        ]
+
+        for filename in expectedFiles {
+            XCTAssertTrue(
+                FileManager.default.fileExists(
+                    atPath: resources
+                        .appendingPathComponent(filename)
+                        .path
+                ),
+                "Missing bundled terminal-control resource: \(filename)"
+            )
+        }
+        XCTAssertTrue(
+            FileManager.default.isExecutableFile(
+                atPath: resources
+                    .appendingPathComponent("coinorctl")
+                    .path
+            )
+        )
+    }
+
     func testRuntimeEnvironmentCanIsolateApplicationSupport() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Coinor-Isolated", isDirectory: true)

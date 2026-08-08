@@ -197,9 +197,16 @@ The Release application contains:
 - `Contents/Resources/terminfo`
 - `Contents/Resources/GhosttyArtifactManifest.txt`
 - `Contents/Resources/ThirdPartyNotices.txt`
+- `Contents/Resources/coinorctl`
+- `Contents/Resources/conan-code-long-running-SKILL.md`
+- `Contents/Resources/conan-code-terminal.sh`
+- `Contents/Resources/managed-terminal-bootstrap.zsh`
 
 Coinor does not bundle Grok itself. It resolves the user's compatible
-executable from `~/bin/grok`.
+executable from `~/bin/grok`. At startup, Conan Code installs its bundled skill
+and wrapper into `~/.grok/skills/conan-code-long-running` with private
+permissions. The managed-terminal bootstrap remains inside the application
+bundle and is sourced only by Conan Code-owned terminal tabs.
 
 An optional local archive can be created after verification:
 
