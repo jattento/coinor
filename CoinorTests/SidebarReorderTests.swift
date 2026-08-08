@@ -1,3 +1,5 @@
+import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 import Testing
 
@@ -178,5 +180,140 @@ struct SidebarConversationActivationTests {
                 isReordering: true
             )
         )
+    }
+}
+
+@Suite
+struct SidebarConversationNavigationTests {
+    private let visibleIDs = [
+        "pinned-a",
+        "project-a-1",
+        "project-a-2",
+        "project-b-1",
+    ]
+
+    @Test
+    func movesToTheAdjacentVisibleConversation() {
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "project-a-1",
+                direction: .previous
+            ) == "pinned-a"
+        )
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "project-a-1",
+                direction: .next
+            ) == "project-a-2"
+        )
+    }
+
+    @Test
+    func stopsAtTheVisibleListBoundaries() {
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "pinned-a",
+                direction: .previous
+            ) == nil
+        )
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "project-b-1",
+                direction: .next
+            ) == nil
+        )
+    }
+
+    @Test
+    func entersTheVisibleListWhenTheSelectionIsHidden() {
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "collapsed-project",
+                direction: .previous
+            ) == "project-b-1"
+        )
+        #expect(
+            SidebarConversationNavigation.target(
+                in: visibleIDs,
+                selectedConversationID: "collapsed-project",
+                direction: .next
+            ) == "pinned-a"
+        )
+    }
+
+    @Test
+    func emptyVisibleListHasNoTarget() {
+        #expect(
+            SidebarConversationNavigation.target(
+                in: [],
+                selectedConversationID: nil,
+                direction: .next
+            ) == nil
+        )
+    }
+
+    @Test
+    func shortcutRequiresCommandOptionAndAnArrowKey() {
+        #expect(
+            ConversationNavigationShortcut.direction(
+                keyCode: UInt16(kVK_UpArrow),
+                modifiers: [.command, .option]
+            ) == .previous
+        )
+        #expect(
+            ConversationNavigationShortcut.direction(
+                keyCode: UInt16(kVK_DownArrow),
+                modifiers: [.command, .option, .capsLock, .function]
+            ) == .next
+        )
+        #expect(
+            ConversationNavigationShortcut.direction(
+                keyCode: UInt16(kVK_DownArrow),
+                modifiers: .command
+            ) == nil
+        )
+        #expect(
+            ConversationNavigationShortcut.direction(
+                keyCode: UInt16(kVK_LeftArrow),
+                modifiers: [.command, .option]
+            ) == nil
+        )
+    }
+
+    @MainActor
+    @Test
+    func windowMonitorConsumesConversationNavigationIncludingRepeats() throws {
+        let coordinator = AppCoordinator()
+        let view = TerminalTabShortcutView(coordinator: coordinator)
+        let event = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [.command, .option, .function],
+                timestamp: 0,
+                windowNumber: 1,
+                context: nil,
+                characters: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)),
+                charactersIgnoringModifiers:
+                    String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)),
+                isARepeat: true,
+                keyCode: UInt16(kVK_DownArrow)
+            )
+        )
+
+        #expect(!view.handle(event))
+
+        coordinator.setVisibleConversationNavigationIDs([
+            "session-a",
+            "session-b",
+        ])
+        coordinator.selectedSessionID = "session-a"
+
+        #expect(view.handle(event))
     }
 }

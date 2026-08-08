@@ -324,6 +324,13 @@ and color choices come from Coinor metadata and do not alter the repository.
 The new-conversation control is always mounted in a fixed slot but visually
 appears only for hover or keyboard/accessibility focus.
 
+The sidebar publishes its currently rendered conversation IDs to the app
+coordinator. The app shell's window-local AppKit key monitor uses that order
+for `Command-Option-Up Arrow` and `Command-Option-Down Arrow`, including active
+search results even when a terminal has focus. Collapsed project contents are
+excluded, and navigation is suspended while a drag owns the sidebar
+interaction.
+
 ### Session and project catalog
 
 `SessionCatalog` combines Grok data with Coinor metadata.

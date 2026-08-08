@@ -83,6 +83,7 @@ final class AppCoordinator: ObservableObject {
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
+    private var visibleConversationNavigationIDs: [String] = []
     private var reorderGeneration = 0
     private var lifecycleGeneration = 0
     private var started = false
@@ -375,6 +376,25 @@ final class AppCoordinator: ObservableObject {
                 $0.setLastVisibleSession(sessionID)
             }
         }
+    }
+
+    func setVisibleConversationNavigationIDs(_ conversationIDs: [String]) {
+        visibleConversationNavigationIDs = conversationIDs
+    }
+
+    @discardableResult
+    func navigateConversation(
+        _ direction: SidebarConversationNavigation.Direction
+    ) -> Bool {
+        guard !visibleConversationNavigationIDs.isEmpty else { return false }
+        if let target = SidebarConversationNavigation.target(
+            in: visibleConversationNavigationIDs,
+            selectedConversationID: selectedSessionID,
+            direction: direction
+        ) {
+            selectConversation(target)
+        }
+        return true
     }
 
     func createConversation(in projectID: String) {

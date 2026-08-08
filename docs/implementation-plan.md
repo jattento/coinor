@@ -199,6 +199,7 @@ Implement:
 - 30-symbol and eight-color project appearance picker
 - fuzzy conversation search above `Pinned`
 - advisory Grok fork update warning
+- global previous and next conversation keyboard navigation
 - Retina-correct mouse hover, click, double-click, selection, and clipboard
 - Voice microphone purpose declaration
 
@@ -215,6 +216,8 @@ Acceptance criteria:
   `Pinned` scopes
 - dropping outside a valid destination restores the pre-drag order
 - exact and closer search matches rank before older fuzzy matches
+- `Command-Option-Up Arrow` and `Command-Option-Down Arrow` follow visible
+  sidebar order while terminal panes have focus
 - ordinary drag selects text while Grok click and double-click actions remain
   interactive
 - Voice prompts for Coinor microphone access when first used

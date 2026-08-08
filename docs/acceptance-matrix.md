@@ -132,6 +132,7 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 | Projects, pinned rows, and project conversations reorder only inside their scopes | Reorder model, custom UTI, metadata hidden-slot, catalog restore, and payload tests | Pass |
 | Drag preview follows the pointer and opens the destination space before release | Real Debug-app project and conversation drags with full-screen captures | Pass |
 | Cancelled drag restores the original order without a metadata write | Release-monitor unit coverage and byte-identical real metadata QA | Pass |
+| Global previous and next conversation shortcuts follow visible sidebar order | `SidebarConversationNavigation`, window shortcut monitor, focused navigation and modifier tests | Pass |
 
 ## Phase 7: Quality And Packaging
 

@@ -187,6 +187,17 @@ struct AppShellSidebar: View {
                 reorder.cancel()
             }
         }
+        .onAppear {
+            coordinator.setVisibleConversationNavigationIDs(
+                keyboardNavigationConversationIDs
+            )
+        }
+        .onChange(of: keyboardNavigationConversationIDs) { conversationIDs in
+            coordinator.setVisibleConversationNavigationIDs(conversationIDs)
+        }
+        .onDisappear {
+            coordinator.setVisibleConversationNavigationIDs([])
+        }
     }
 
     private var selection: Binding<String?> {
@@ -264,6 +275,19 @@ struct AppShellSidebar: View {
             coordinator.catalog.pinned,
             scope: .pinned
         )
+    }
+
+    private var keyboardNavigationConversationIDs: [String] {
+        guard !reorder.isActive else { return [] }
+        if isSearching {
+            return searchResults.map(\.id)
+        }
+        return displayPinnedConversations.map(\.id)
+            + displayProjects.flatMap { project in
+                project.isExpanded
+                    ? displayConversations(in: project).map(\.id)
+                    : []
+            }
     }
 
     private var searchField: some View {

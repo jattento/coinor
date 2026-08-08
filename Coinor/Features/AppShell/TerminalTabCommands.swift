@@ -1,5 +1,24 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
+
+struct ConversationCommands: Commands {
+    @ObservedObject var coordinator: AppCoordinator
+
+    var body: some Commands {
+        CommandMenu("Conversations") {
+            Button("Previous Conversation") {
+                coordinator.navigateConversation(.previous)
+            }
+            .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+
+            Button("Next Conversation") {
+                coordinator.navigateConversation(.next)
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
+    }
+}
 
 struct TerminalTabCommands: Commands {
     @ObservedObject var coordinator: AppCoordinator
@@ -44,6 +63,28 @@ struct TerminalTabShortcutMonitor: NSViewRepresentable {
         coordinator: ()
     ) {
         nsView.removeMonitor()
+    }
+}
+
+enum ConversationNavigationShortcut {
+    static func direction(
+        keyCode: UInt16,
+        modifiers eventModifiers: NSEvent.ModifierFlags
+    ) -> SidebarConversationNavigation.Direction? {
+        var modifiers = eventModifiers.intersection(
+            .deviceIndependentFlagsMask
+        )
+        modifiers.remove([.capsLock, .numericPad, .function])
+        guard modifiers == [.command, .option] else { return nil }
+
+        switch Int(keyCode) {
+        case kVK_UpArrow:
+            return .previous
+        case kVK_DownArrow:
+            return .next
+        default:
+            return nil
+        }
     }
 }
 
@@ -93,7 +134,14 @@ final class TerminalTabShortcutView: NSView {
         self.eventMonitor = nil
     }
 
-    private func handle(_ event: NSEvent) -> Bool {
+    func handle(_ event: NSEvent) -> Bool {
+        if let direction = ConversationNavigationShortcut.direction(
+            keyCode: event.keyCode,
+            modifiers: event.modifierFlags
+        ) {
+            return coordinator.navigateConversation(direction)
+        }
+
         guard !event.isARepeat else { return false }
         var modifiers = event.modifierFlags.intersection(
             .deviceIndependentFlagsMask

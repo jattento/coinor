@@ -35,3 +35,44 @@ enum SidebarConversationActivation {
         isHovered && !isReordering
     }
 }
+
+/// Keyboard navigation follows the conversation rows currently visible in the
+/// sidebar rather than the complete catalog.
+enum SidebarConversationNavigation {
+    enum Direction: Equatable {
+        case previous
+        case next
+    }
+
+    static func target(
+        in visibleConversationIDs: [String],
+        selectedConversationID: String?,
+        direction: Direction
+    ) -> String? {
+        guard !visibleConversationIDs.isEmpty else { return nil }
+        guard let selectedConversationID,
+              let selectedIndex = visibleConversationIDs.firstIndex(
+                  of: selectedConversationID
+              ) else {
+            return direction == .previous
+                ? visibleConversationIDs.last
+                : visibleConversationIDs.first
+        }
+
+        switch direction {
+        case .previous:
+            guard selectedIndex > visibleConversationIDs.startIndex else {
+                return nil
+            }
+            return visibleConversationIDs[
+                visibleConversationIDs.index(before: selectedIndex)
+            ]
+        case .next:
+            let nextIndex = visibleConversationIDs.index(after: selectedIndex)
+            guard nextIndex < visibleConversationIDs.endIndex else {
+                return nil
+            }
+            return visibleConversationIDs[nextIndex]
+        }
+    }
+}

@@ -91,6 +91,13 @@ the normal sections. Textual closeness is the primary ranking signal; more
 recent activity breaks ties, and archived conversations or projects never
 appear.
 
+`Command-Option-Up Arrow` and `Command-Option-Down Arrow` select the previous
+or next conversation in the sidebar's current visible order, even while a
+terminal has focus. Navigation includes pinned conversations, conversations
+inside expanded projects, and the current search results. It skips project and
+section headers, stops at the first and last visible conversations, and is
+disabled while a drag reorder is active.
+
 ## Creating conversations
 
 The add button on a project opens a compact menu with two actions:
