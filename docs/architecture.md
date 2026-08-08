@@ -202,6 +202,14 @@ Ghostty's `(-1, -1)` sentinel when no button is pressed. A right click with an
 active selection opens Coinor's standard Copy/Paste/Select All menu; otherwise
 the right click remains available to Grok.
 
+Scroll events preserve AppKit's high-precision flag and momentum phase in
+Ghostty's packed scroll-modifier bitmask. Precise deltas are forwarded without
+Ghostty.app's optional 2x multiplier, allowing Ghostty to accumulate trackpad
+movement in pixels before advancing terminal rows. Discrete mouse-wheel events
+remain unmarked and continue to use Ghostty's wheel-tick behavior. This routing
+exists only in `GhosttySurfaceView`, so the SwiftUI sidebar retains native
+scroll behavior.
+
 `GhosttyActionBridge` handles clipboard completion, close requests, cursor
 state, title and working-directory updates, URL opening, renderer health, and
 configuration reload. Ghostty actions that would create native Ghostty

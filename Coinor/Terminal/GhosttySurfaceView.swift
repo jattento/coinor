@@ -254,6 +254,60 @@ enum GhosttyMouseCoordinateMapper {
     }
 }
 
+struct GhosttyScrollEvent: Equatable {
+    let deltaX: Double
+    let deltaY: Double
+    let modifiers: ghostty_input_scroll_mods_t
+}
+
+enum GhosttyScrollEventMapper {
+    private enum Momentum: Int32 {
+        case none = 0
+        case began = 1
+        case stationary = 2
+        case changed = 3
+        case ended = 4
+        case cancelled = 5
+        case mayBegin = 6
+    }
+
+    static func event(
+        deltaX: Double,
+        deltaY: Double,
+        hasPreciseScrollingDeltas: Bool,
+        momentumPhase: NSEvent.Phase
+    ) -> GhosttyScrollEvent {
+        let precisionBit: Int32 = hasPreciseScrollingDeltas ? 1 : 0
+        let momentumBits = momentum(for: momentumPhase).rawValue << 1
+        return GhosttyScrollEvent(
+            deltaX: deltaX,
+            deltaY: deltaY,
+            modifiers: precisionBit | momentumBits
+        )
+    }
+
+    private static func momentum(
+        for phase: NSEvent.Phase
+    ) -> Momentum {
+        switch phase {
+        case .began:
+            .began
+        case .stationary:
+            .stationary
+        case .changed:
+            .changed
+        case .ended:
+            .ended
+        case .cancelled:
+            .cancelled
+        case .mayBegin:
+            .mayBegin
+        default:
+            .none
+        }
+    }
+}
+
 struct GhosttySurfaceResizePolicy: Equatable {
     private(set) var lastAppliedSize = CGSize.zero
     private(set) var pendingSize: CGSize?
@@ -596,11 +650,17 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surfaceHandle else { return }
+        let scrollEvent = GhosttyScrollEventMapper.event(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            momentumPhase: event.momentumPhase
+        )
         ghostty_surface_mouse_scroll(
             surfaceHandle,
-            event.scrollingDeltaX,
-            event.scrollingDeltaY,
-            0
+            scrollEvent.deltaX,
+            scrollEvent.deltaY,
+            scrollEvent.modifiers
         )
     }
 

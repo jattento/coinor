@@ -208,6 +208,12 @@ to launch the correct Grok session in the correct working directory through
 Conan Code's isolated leader, plus the mouse-capture setting required for native
 text selection.
 
+Trackpad and Magic Mouse scrolling inside every embedded terminal preserves
+AppKit's high-precision and momentum metadata. Conan Code forwards the original
+unamplified deltas so Ghostty accumulates precise movement in pixels instead of
+treating each event as a discrete wheel tick. Sidebar scrolling remains native
+and unchanged.
+
 Mouse coordinates, hover, clicks, double clicks, and drag selection remain
 fully interactive inside Grok. A normal drag selects terminal text even while
 Grok has mouse reporting enabled; normal clicks and double clicks continue to
