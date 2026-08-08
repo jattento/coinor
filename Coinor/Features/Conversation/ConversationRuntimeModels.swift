@@ -41,6 +41,33 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable {
     }
 }
 
+/// How a conversation's activity change affects its sidebar indicator.
+///
+/// Grok reports `needs_input` only while a conversation is blocked on a
+/// question and reports a finished turn as plain `idle`, so a completed run is
+/// invisible unless the settle edge itself is treated as attention.
+enum ConversationAttention {
+    enum Transition: Equatable {
+        /// The conversation now wants the user.
+        case raised
+        /// The conversation went back to work and no longer wants anything.
+        case settled
+        case unchanged
+    }
+
+    static func transition(
+        from previous: RuntimeActivity?,
+        to current: RuntimeActivity
+    ) -> Transition {
+        if current == .working { return .settled }
+        if current == .needsInput {
+            return previous == .needsInput ? .unchanged : .raised
+        }
+        if current == .idle, previous == .working { return .raised }
+        return .unchanged
+    }
+}
+
 enum TerminalSurfaceContext: Equatable, Sendable {
     case window
     case tab

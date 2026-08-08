@@ -202,3 +202,45 @@ func grokRosterActivityMapsToRuntimePriorityStates() {
     #expect(RuntimeActivity(grokActivity: .dormant) == .idle)
     #expect(RuntimeActivity(grokActivity: .unknown("future")) == .idle)
 }
+
+@Test
+func aFinishedRunRaisesAttentionEvenWithoutNeedsInput() {
+    #expect(
+        ConversationAttention.transition(from: .working, to: .idle)
+            == .raised
+    )
+    #expect(
+        ConversationAttention.transition(from: .working, to: .needsInput)
+            == .raised
+    )
+    #expect(
+        ConversationAttention.transition(from: .idle, to: .needsInput)
+            == .raised
+    )
+}
+
+@Test
+func attentionSettlesWhileWorkingAndHoldsOtherwise() {
+    #expect(
+        ConversationAttention.transition(from: .idle, to: .working)
+            == .settled
+    )
+    #expect(
+        ConversationAttention.transition(from: .needsInput, to: .working)
+            == .settled
+    )
+    #expect(
+        ConversationAttention.transition(from: .needsInput, to: .needsInput)
+            == .unchanged
+    )
+    #expect(
+        ConversationAttention.transition(from: .idle, to: .idle) == .unchanged
+    )
+    #expect(
+        ConversationAttention.transition(from: nil, to: .idle) == .unchanged
+    )
+    #expect(
+        ConversationAttention.transition(from: .working, to: .failed)
+            == .unchanged
+    )
+}

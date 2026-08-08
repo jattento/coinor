@@ -79,8 +79,8 @@ final class AppCoordinator: ObservableObject {
     private var pendingSessions: [String: SessionSummary] = [:]
     private var projectIDBySessionID: [String: String] = [:]
     private var mainCheckoutByProjectID: [String: String] = [:]
-    private var attentionNotifiedSessionIDs: Set<String> = []
-    @Published private var acknowledgedAttentionSessionIDs: Set<String> = []
+    @Published private var pendingAttentionSessionIDs: Set<String> = []
+    private var lastAggregateActivity: [String: RuntimeActivity] = [:]
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
@@ -89,6 +89,8 @@ final class AppCoordinator: ObservableObject {
     private var lifecycleGeneration = 0
     private var started = false
     private let notifications = AttentionNotificationService()
+    private let isApplicationActive: () -> Bool = { NSApp.isActive }
+    private var activationObserver: (any NSObjectProtocol)?
     private let leaderProcessManager = GrokLeaderProcessManager()
     private let terminalControlAuthorizer =
         TerminalControlInvocationAuthorizer()
@@ -96,6 +98,7 @@ final class AppCoordinator: ObservableObject {
     func start() async {
         guard !started else { return }
         started = true
+        observeApplicationActivation()
         lifecycleGeneration += 1
         let generation = lifecycleGeneration
         status = .starting
@@ -849,8 +852,8 @@ final class AppCoordinator: ObservableObject {
         activeLeaderSocket = nil
         metadataStore = nil
         roster.removeAll()
-        attentionNotifiedSessionIDs.removeAll()
-        acknowledgedAttentionSessionIDs.removeAll()
+        pendingAttentionSessionIDs.removeAll()
+        lastAggregateActivity.removeAll()
         return DetachedRuntimeState(
             controlClient: control,
             leaderSocket: leaderSocket
@@ -977,10 +980,12 @@ final class AppCoordinator: ObservableObject {
 
     func activity(for sessionID: String) -> RuntimeActivity {
         let activity = rawActivity(for: sessionID)
-        guard activity == .needsInput else { return activity }
-        return acknowledgedAttentionSessionIDs.contains(sessionID)
-            ? .idle
-            : activity
+        if activity == .failed { return activity }
+        if pendingAttentionSessionIDs.contains(sessionID) { return .needsInput }
+        // A raw needs_input only reaches the sidebar through the pending set,
+        // so opening the conversation keeps the indicator down until the next
+        // time the conversation asks for the user.
+        return activity == .needsInput ? .idle : activity
     }
 
     private func rawActivity(for sessionID: String) -> RuntimeActivity {
@@ -991,7 +996,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func acknowledgeAttention(_ sessionID: String) {
-        acknowledgedAttentionSessionIDs.insert(sessionID)
+        pendingAttentionSessionIDs.remove(sessionID)
     }
 
     func searchConversations(_ query: String) -> [ConversationRow] {
@@ -1251,21 +1256,70 @@ final class AppCoordinator: ObservableObject {
                     rootSessionID: runtime.id
                 )
             }
-            if runtime.aggregateActivity == .needsInput {
-                if attentionNotifiedSessionIDs.insert(runtime.id).inserted {
-                    let title = summaries.first(where: {
-                        $0.id == runtime.id
-                    })?.title ?? "Grok Conversation"
-                    Task {
-                        await notifications.notifyIfNeeded(
-                            sessionID: runtime.id,
-                            conversationTitle: title
-                        )
-                    }
+            updateAttention(for: runtime)
+        }
+    }
+
+    /// Raises the sidebar indicator when a conversation stops needing the CPU
+    /// and starts needing the user.
+    ///
+    /// Grok reports `needs_input` only while it is blocked on a question, and
+    /// reports a finished turn as plain `idle`, so waiting for `needs_input`
+    /// alone would leave a completed run silent. The working-to-settled edge is
+    /// therefore what raises attention, and a conversation the user is already
+    /// watching raises nothing.
+    private func updateAttention(for runtime: ConversationRuntime) {
+        let sessionID = runtime.id
+        let current = runtime.aggregateActivity
+        let previous = lastAggregateActivity[sessionID]
+        lastAggregateActivity[sessionID] = current
+
+        switch ConversationAttention.transition(
+            from: previous,
+            to: current
+        ) {
+        case .unchanged:
+            return
+        case .settled:
+            pendingAttentionSessionIDs.remove(sessionID)
+            return
+        case .raised:
+            break
+        }
+
+        guard !isWatching(sessionID) else { return }
+        guard pendingAttentionSessionIDs.insert(sessionID).inserted else {
+            return
+        }
+
+        let title = summaries.first { $0.id == sessionID }?.title
+            ?? "Grok Conversation"
+        Task {
+            await notifications.notifyIfNeeded(
+                sessionID: sessionID,
+                conversationTitle: title
+            )
+        }
+    }
+
+    /// Whether the user is looking at this conversation right now.
+    private func isWatching(_ sessionID: String) -> Bool {
+        selectedSessionID == sessionID && isApplicationActive()
+    }
+
+    /// Returning to Conan Code counts as reading whatever is on screen, so the
+    /// open conversation lowers its indicator without a second click.
+    private func observeApplicationActivation() {
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let sessionID = self.selectedSessionID else {
+                    return
                 }
-            } else {
-                attentionNotifiedSessionIDs.remove(runtime.id)
-                acknowledgedAttentionSessionIDs.remove(runtime.id)
+                self.acknowledgeAttention(sessionID)
             }
         }
     }
