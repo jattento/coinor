@@ -2,6 +2,71 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.1 Verification
+
+The precise terminal-scroll correction and automatic long-running terminal
+policy were integrated as version `0.5.1` build `8` and validated on August 8,
+2026.
+
+Automated verification:
+
+- 207 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITests passed with 0 failures and 0 skips.
+- Focused scroll mapping tests covered precise and discrete input, including
+  every Ghostty momentum phase.
+- A natural service request selected a managed tab automatically, started a
+  real Python HTTP server, returned HTTP 200, exposed logs, interrupted the
+  process, closed the tab, and left no listener behind.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed for Ghostty
+  tag `v1.3.1`, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/ghostty/test-verification.sh` passed its happy path and all four
+  corruption cases.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle and the
+  archive-extracted application.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, or the Release bundle.
+- `git diff --check`, Xcode project lint, and shell syntax checks passed.
+- The archive checksum verified, and `diff -qr` found no difference between
+  the built and archive-extracted application bundles.
+
+Final Xcode result bundles:
+
+```text
+.build/DerivedData-0.5.1-final/Logs/Test/Test-Coinor-2026.08.08_11-47-55--0300.xcresult
+.build/DerivedData-0.5.1-final/Logs/Test/Test-Coinor-2026.08.08_11-53-34--0300.xcresult
+```
+
+Manual verification used the real Release application with isolated
+Application Support, embedded Ghostty, and the real custom Grok binary:
+
+- Native sidebar scrolling moved through the populated project catalog and
+  returned to its original position without a behavior change.
+- A `0.05`-page precise upward gesture in populated main scrollback advanced
+  only a few terminal lines instead of being treated as a discrete wheel tick.
+- Main, IDE, and ordinary shell tabs were selected in the Release build. Their
+  Ghostty surfaces share the single verified scroll-event mapper.
+- The QA application quit cleanly with no Coinor or Grok child processes left.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.1` build `8` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.1-arm64.zip` |
+| Archive size | `5,992,388` bytes |
+| Archive SHA-256 | `21c16c167fa8d172ba9d1e5712a575e32486edbb06f475401b84dc053f2683a3` |
+
 ## Conan Code 0.5.0 Verification
 
 The agent-managed terminal feature was implemented in an isolated worktree,

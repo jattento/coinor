@@ -204,7 +204,7 @@ the right click remains available to Grok.
 
 Scroll events preserve AppKit's high-precision flag and momentum phase in
 Ghostty's packed scroll-modifier bitmask. Precise deltas are forwarded without
-Ghostty.app's optional 2x multiplier, allowing Ghostty to accumulate trackpad
+Ghostty.app's hardcoded 2x multiplier, allowing Ghostty to accumulate trackpad
 movement in pixels before advancing terminal rows. Discrete mouse-wheel events
 remain unmarked and continue to use Ghostty's wheel-tick behavior. This routing
 exists only in `GhosttySurfaceView`, so the SwiftUI sidebar retains native

@@ -29,6 +29,15 @@ struct GhosttyScrollEventMapperTests {
         )
 
         #expect(event.modifiers == 0)
+
+        let momentumEvent = GhosttyScrollEventMapper.event(
+            deltaX: 0,
+            deltaY: -1,
+            hasPreciseScrollingDeltas: false,
+            momentumPhase: .changed
+        )
+
+        #expect(momentumEvent.modifiers == 0b0000_0110)
     }
 
     @Test
