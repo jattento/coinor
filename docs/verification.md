@@ -2,6 +2,56 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.2 Verification
+
+Global previous and next conversation keyboard navigation was integrated as
+version `0.5.2` build `9` and validated on August 8, 2026.
+
+Automated verification:
+
+- 179 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITests passed with 0 failures and 0 skips.
+- `SidebarConversationNavigation` and `ConversationNavigationShortcut` tests
+  covered adjacent movement, list boundaries, a hidden selection, an empty
+  visible list, and the window-local shortcut monitor including event
+  repeats.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed for
+  Ghostty tag `v1.3.1`, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle and the
+  archive-extracted application.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history or the publishable source snapshot.
+- `git diff --check` and shell syntax checks passed.
+- The archive checksum verified, and `diff -qr` found no difference between
+  the built and archive-extracted application bundles.
+
+Manual verification confirmed the Release build launches and exposes its
+main window to Accessibility automation with the new commands installed; the
+shortcut's navigation logic itself is exercised by the automated
+`SidebarConversationNavigation`, `ConversationNavigationShortcut`, and
+window-monitor tests, which drive the exact runtime `handle()` dispatch path
+with real `NSEvent` instances rather than a UI double.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.2` build `9` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.2-arm64.zip` |
+| Archive size | `5,984,633` bytes |
+| Archive SHA-256 | `9e253fe29da0b410669139d6686d0ffde80971c1da6f3ffff4514f8916115003` |
+
 ## Conan Code 0.5.1 Verification
 
 The precise terminal-scroll correction and automatic long-running terminal
