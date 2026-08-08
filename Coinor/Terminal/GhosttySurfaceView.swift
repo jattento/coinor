@@ -254,6 +254,26 @@ enum GhosttyMouseCoordinateMapper {
     }
 }
 
+struct GhosttySurfaceResizePolicy: Equatable {
+    private(set) var lastAppliedSize = CGSize.zero
+    private(set) var pendingSize: CGSize?
+
+    mutating func requestedSize(
+        _ size: CGSize,
+        hostVisible: Bool
+    ) -> CGSize? {
+        guard hostVisible else {
+            pendingSize = size
+            return nil
+        }
+
+        pendingSize = nil
+        guard size != lastAppliedSize else { return nil }
+        lastAppliedSize = size
+        return size
+    }
+}
+
 @MainActor
 final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     nonisolated(unsafe) private(set) var surfaceHandle: ghostty_surface_t?
@@ -261,7 +281,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private let launch: TerminalLaunchRequest
     private var tracking: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []
-    private var lastPixelSize = CGSize.zero
+    private var resizePolicy = GhosttySurfaceResizePolicy()
     private var isShuttingDown = false
     private var mouseRouter = GhosttyMouseRouter()
     private var secondaryClickRouter = GhosttySecondaryClickRouter()
@@ -701,12 +721,14 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             cancelMouseInteraction()
         }
         hostVisible = visible
+        if visible {
+            // Apply the latest deferred geometry while the surface is still
+            // hidden, so its grid is current before the first visible frame.
+            updateDisplayProperties()
+        }
         isHidden = !visible
         updateOcclusion()
         updateFocus()
-        if visible {
-            updateDisplayProperties()
-        }
         if visible, focusesWhenAttached, let window {
             focusesWhenAttached = false
             window.makeFirstResponder(self)
@@ -927,12 +949,16 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             width: max(1, pixelRect.width.rounded()),
             height: max(1, pixelRect.height.rounded())
         )
-        guard size != lastPixelSize else { return }
-        lastPixelSize = size
+        guard let requestedSize = resizePolicy.requestedSize(
+            size,
+            hostVisible: hostVisible
+        ) else {
+            return
+        }
         ghostty_surface_set_size(
             surfaceHandle,
-            UInt32(size.width),
-            UInt32(size.height)
+            UInt32(requestedSize.width),
+            UInt32(requestedSize.height)
         )
     }
 

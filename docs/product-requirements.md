@@ -36,11 +36,12 @@ The new-conversation `+` control is visible only while its project row is
 hovered or the control has keyboard or accessibility focus. Its reserved layout
 space remains stable so rows do not move when it appears.
 
-On macOS 26 or newer, Conan Code uses the native Liquid Glass sidebar supplied by
-`NavigationSplitView` and subtly extends terminal content beneath it with
-`backgroundExtensionEffect()`. Conan Code does not add a second glass layer, tint,
-or opaque background. Earlier macOS versions retain the standard system
-sidebar presentation.
+On macOS 26 or newer, Conan Code uses the native Liquid Glass sidebar supplied
+by `NavigationSplitView`. Terminal content and tab controls are not extended
+into the titlebar because background extension reflects interactive content
+and can produce duplicate-looking controls. Conan Code does not add a second
+glass layer, tint, or opaque sidebar background. Earlier macOS versions retain
+the standard system sidebar presentation.
 
 ## Conversation organization
 

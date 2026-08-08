@@ -15,7 +15,6 @@ struct AppShellView: View {
                     model: model,
                     coordinator: coordinator
                 )
-                    .coinorBackgroundExtension()
                 if case .ready = coordinator.status,
                    model.unresolvedStartupCheckCount > 0 {
                     Divider()
@@ -71,17 +70,6 @@ struct AppShellView: View {
         .background {
             TerminalTabShortcutMonitor(coordinator: coordinator)
                 .frame(width: 0, height: 0)
-        }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func coinorBackgroundExtension() -> some View {
-        if #available(macOS 26.0, *) {
-            backgroundExtensionEffect()
-        } else {
-            self
         }
     }
 }

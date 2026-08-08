@@ -270,11 +270,13 @@ activates.
 ### Sidebar presentation
 
 `NavigationSplitView` owns the sidebar structure and system material. On macOS
-26 or newer, `ConversationContentView` uses `backgroundExtensionEffect()` so
-the terminal edge continues subtly beneath the system Liquid Glass. Coinor
-does not stack `glassEffect`, `NSGlassEffectView`, `NSVisualEffectView`, custom
-tints, or opaque list backgrounds over the navigation sidebar. On earlier
-macOS versions, the same structure falls back to the platform's standard
+26 or newer, the detail hierarchy deliberately avoids
+`backgroundExtensionEffect()` because extending live terminal tabs into the
+titlebar reflects interactive content and produces duplicate-looking controls.
+Coinor does not stack `glassEffect`, `NSGlassEffectView`,
+`NSVisualEffectView`, custom tints, or opaque list backgrounds over the
+navigation sidebar. On earlier macOS versions, the same structure falls back
+to the platform's standard
 sidebar material.
 
 Sidebar action icons use adaptive label colors. Project and conversation row

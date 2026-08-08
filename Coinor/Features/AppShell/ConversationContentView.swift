@@ -144,49 +144,48 @@ private struct StartupExperienceView: View {
 
 private struct ConanASCIIView: View {
     private static let face = #"""
-      .------------.
-   __/ .-.      .-. \__
-  /   / o \    / o \   \
- |    \___/ /\ \___/    |
- |        /____\         |
-  \     .' \__/ '.      /
-   '.__/          \___.'
+        / \__
+       (    o\___
+       /         O
+      /   (_____/
+     /_____/
 """#
 
     private static let tongue = #"""
-         |    |
-         |    |
-         \____/
+               |  |
+               |  |
+               \__/
 """#
 
     private static let harness = #"""
-     ___/| /\ |\___
-    /___/|/  \|\___\
+        /  \
+      _/ /\ \_
+     /__/  \__\
 """#
 
     var body: some View {
         VStack(spacing: 0) {
             Text(verbatim: Self.face)
                 .foregroundStyle(.primary)
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 156, alignment: .leading)
             Text(verbatim: Self.tongue)
                 .foregroundStyle(Color(nsColor: .systemPink))
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 156, alignment: .leading)
             Text(verbatim: Self.harness)
                 .foregroundStyle(Color(nsColor: .systemTeal))
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 156, alignment: .leading)
 
             Text("CONAN")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
         }
-        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+        .font(.system(size: 10, weight: .regular, design: .monospaced))
         .lineSpacing(0)
         .fixedSize(horizontal: true, vertical: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "Conan, a smiling black dog wearing a blue harness"
+            "Conan, a happy black dog with floppy ears and his tongue out"
         )
     }
 }
