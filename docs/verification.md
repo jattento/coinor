@@ -2,6 +2,66 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.3 Verification
+
+The embedded Ghostty theme rework was integrated as version `0.5.3` build
+`10` and validated on August 8, 2026.
+
+Automated verification:
+
+- 216 unit, integration, and XCUITest cases passed with 0 failures and 0
+  skips.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed for
+  Ghostty tag `v1.3.1`, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, or the Release bundle.
+- `git diff --check` passed.
+- The archive checksum verified, and `diff -qr` found no difference between
+  the built and archive-extracted application bundles.
+
+`GhosttyOverrides.conf` was validated independently of the shipped bundle
+before it was ever built into it: a standalone probe linked against the
+real GhosttyKit static library loaded the machine's actual Ghostty config
+(XDG `theme = Monokai Pro` plus the standalone Ghostty.app's own violet
+Application Support override) and then applied `GhosttyOverrides.conf` on
+top, exactly matching `GhosttyConfiguration.swift`'s load order. Result: 0
+diagnostics, and background/foreground/cursor/selection/palette all
+resolved to the new theme's exact intended values, proving the override
+fully wins over the shared host config. A second, isolated GhosttyKit-linked
+preview window (not the shipped Phase 0 spike, not the installed
+application) rendered the palette with the real Metal renderer for visual
+review.
+
+Manual verification opened the exact Release bundle with the running
+`Coinor.app` quit first (Conan Code holds a single-instance lock, which also
+blocks the XCUITest runner from launching its own copy while another
+instance is up). The IDE pane (`fresh` + `lazygit`) rendered the new neutral
+palette cleanly against the sidebar. Quitting and relaunching Conan Code did
+not disturb any live Grok leader or session process: all Grok processes
+remained running throughout, and the app reconnected to the same
+conversations it had open before the rebuild.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.3` build `10` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.3-arm64.zip` |
+| Archive size | `5,998,921` bytes |
+| Archive SHA-256 | `997d219bc9edc28a4e462bcd29ec38c49d691b7e4c2304793449e5a1c461db42` |
+
 ## Conan Code 0.5.2 Verification
 
 Global previous and next conversation keyboard navigation was integrated as
