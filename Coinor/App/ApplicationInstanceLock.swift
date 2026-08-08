@@ -9,11 +9,11 @@ enum ApplicationInstanceLockError: Error, LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .alreadyRunning:
-            "Coinor is already running."
+            "Conan Code is already running."
         case let .openFailed(path, errorNumber):
-            "Coinor could not open its instance lock at \(path) (errno \(errorNumber))."
+            "Conan Code could not open its instance lock at \(path) (errno \(errorNumber))."
         case let .lockFailed(path, errorNumber):
-            "Coinor could not acquire its instance lock at \(path) (errno \(errorNumber))."
+            "Conan Code could not acquire its instance lock at \(path) (errno \(errorNumber))."
         }
     }
 }

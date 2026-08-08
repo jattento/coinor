@@ -2,6 +2,9 @@
 
 ## Purpose
 
+The user-visible product name is Conan Code. The repository, module, app
+bundle, and compatibility identifiers retain the internal name Coinor.
+
 Coinor is a personal, native macOS application that gives Grok conversations a
 Codex-like project sidebar and a Herdr-like multi-pane experience without
 embedding either Paseo or Herdr.

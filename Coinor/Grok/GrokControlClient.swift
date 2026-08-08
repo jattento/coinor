@@ -406,7 +406,7 @@ actor GrokControlClient {
                 .map(String.init) ?? "missing"
             throw GrokControlError.incompatibleAgent(
                 "ACP protocol version \(reported) was reported; "
-                    + "Coinor requires version "
+                    + "Conan Code requires version "
                     + "\(Configuration.supportedProtocolVersion)"
             )
         }
@@ -454,7 +454,7 @@ actor GrokControlClient {
                 GrokMethod.sessionRename,
                 [
                     "sessionId": .string(missingSessionID),
-                    "title": "Coinor compatibility probe",
+                    "title": "Conan Code compatibility probe",
                     "cwd": .string(launch.workingDirectory.path),
                 ],
                 true
@@ -712,7 +712,7 @@ actor GrokControlClient {
               let payload = try? GrokRPC.errorResponse(
                   id: id,
                   code: GrokRPC.methodNotFoundCode,
-                  message: "Coinor's control client does not serve \(method)"
+                  message: "Conan Code's control client does not serve \(method)"
               ).encoded()
         else { return }
         try? transport.send(GrokFraming.encode(payload))

@@ -12,17 +12,17 @@ enum GrokLeaderTerminationError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case let .lockOpen(path, code):
-            "Coinor could not open its Grok leader lock at \(path) (\(code))."
+            "Conan Code could not open its Grok leader lock at \(path) (\(code))."
         case let .lockInspection(path, code):
-            "Coinor could not inspect its Grok leader lock at \(path) (\(code))."
+            "Conan Code could not inspect its Grok leader lock at \(path) (\(code))."
         case let .invalidPID(path):
-            "Coinor's Grok leader lock at \(path) does not contain a valid process ID."
+            "Conan Code's Grok leader lock at \(path) does not contain a valid process ID."
         case let .unexpectedProcess(pid):
-            "Coinor refused to terminate PID \(pid) because it is not a Grok process."
+            "Conan Code refused to terminate PID \(pid) because it is not a Grok process."
         case let .signal(pid, code):
-            "Coinor could not terminate its Grok leader at PID \(pid) (\(code))."
+            "Conan Code could not terminate its Grok leader at PID \(pid) (\(code))."
         case let .didNotExit(pid):
-            "Coinor's Grok leader at PID \(pid) did not exit."
+            "Conan Code's Grok leader at PID \(pid) did not exit."
         }
     }
 }

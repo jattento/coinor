@@ -162,7 +162,7 @@ final class AppCoordinator: ObservableObject {
             guard generation == lifecycleGeneration else { return }
             let detached = detachRuntimeState()
             await stop(detached)
-            status = .failed("Coinor startup was cancelled.")
+            status = .failed("Conan Code startup was cancelled.")
         } catch {
             guard generation == lifecycleGeneration else { return }
             let message = error.localizedDescription
@@ -709,7 +709,7 @@ final class AppCoordinator: ObservableObject {
             )
         } catch {
             warningMessage =
-                "Coinor could not stop its private Grok leader: "
+                "Conan Code could not stop its private Grok leader: "
                 + error.localizedDescription
         }
     }
@@ -1216,7 +1216,7 @@ final class AppCoordinator: ObservableObject {
                     forKey: rootSessionID
                 )
                 self.warningMessage =
-                    "Coinor could not restore subagent panels: \(error.localizedDescription)"
+                    "Conan Code could not restore subagent panels: \(error.localizedDescription)"
             }
         }
     }

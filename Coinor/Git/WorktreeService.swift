@@ -220,6 +220,6 @@ struct WorktreeService: Sendable {
 
     private static func fallbackWarning(for error: Error) -> String {
         let detail = error.localizedDescription
-        return "Coinor could not update the remote default branch. The new worktree will start from local HEAD instead. \(detail)"
+        return "Conan Code could not update the remote default branch. The new worktree will start from local HEAD instead. \(detail)"
     }
 }

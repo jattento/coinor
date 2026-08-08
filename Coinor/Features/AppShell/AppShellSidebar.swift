@@ -11,8 +11,6 @@ struct AppShellSidebar: View {
     @State private var renameProjectText = ""
     @State private var worktreeProjectID: String?
     @State private var worktreeName = ""
-    @State private var hoveredConversationID: String?
-    @State private var hoveredProjectID: String?
     @State private var appearanceProjectID: String?
     @State private var searchText = ""
     @FocusState private var focusedProjectMenuID: String?
@@ -164,7 +162,7 @@ struct AppShellSidebar: View {
                     .isEmpty
             )
         } message: {
-            Text("This changes only how the project appears in Coinor.")
+            Text("This changes only how the project appears in Conan Code.")
         }
         .alert("New Worktree", isPresented: worktreePresented) {
             TextField("Worktree name", text: $worktreeName)
@@ -200,6 +198,25 @@ struct AppShellSidebar: View {
                 }
             }
         )
+    }
+
+    /// Opens a conversation from a primary click on its row.
+    ///
+    /// `List` only reports a selection that actually changed, so clicking the
+    /// current row, or clicking after a selection attempt left the coordinator
+    /// unchanged, would otherwise never reach the coordinator. Calling it here
+    /// is safe because `selectConversation` reuses an existing runtime instead
+    /// of launching a second one.
+    private func activateConversation(_ conversationID: String) {
+        switch SidebarConversationActivation.primaryClick(
+            conversationID: conversationID,
+            isReordering: reorder.isActive
+        ) {
+        case let .activate(sessionID):
+            coordinator.selectConversation(sessionID)
+        case .ignore:
+            break
+        }
     }
 
     private var renamePresented: Binding<Bool> {
@@ -300,11 +317,7 @@ struct AppShellSidebar: View {
     private func projectDisclosureGroup(
         _ project: ProjectRow
     ) -> some View {
-        let showsNewConversation =
-            hoveredProjectID == project.projectID
-                || focusedProjectMenuID == project.projectID
-
-        return DisclosureGroup(
+        DisclosureGroup(
             isExpanded: Binding(
                 get: { project.isExpanded },
                 set: {
@@ -324,12 +337,16 @@ struct AppShellSidebar: View {
                 )
             }
         } label: {
-            HStack(spacing: 7) {
-                Image(
-                    systemName: coordinator.projectIconName(
-                        project.projectID
+            SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
+                let showsNewConversation =
+                    isHovered || focusedProjectMenuID == project.projectID
+
+                HStack(spacing: 7) {
+                    Image(
+                        systemName: coordinator.projectIconName(
+                            project.projectID
+                        )
                     )
-                )
                     .symbolRenderingMode(.monochrome)
                     .frame(width: 20, alignment: .center)
                     .foregroundStyle(
@@ -339,130 +356,119 @@ struct AppShellSidebar: View {
                             )
                         ).color
                     )
-                Text(coordinator.projectDisplayName(project.projectID))
-                    .font(.system(size: 13, weight: .light))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                activityIndicator(coordinator.projectActivity(project))
-                    .frame(width: 12, height: 12)
-                Menu {
-                    Button("In Main Checkout") {
-                        coordinator.createConversation(
-                            in: project.projectID
-                        )
-                    }
-                    Button("In New Worktree") {
-                        worktreeName = ""
-                        worktreeProjectID = project.projectID
-                    }
-                } label: {
-                    HStack(spacing: 2) {
-                        Image(systemName: "plus")
-                            .font(
-                                .system(
-                                    size: 11,
-                                    weight: .medium
-                                )
+                    Text(coordinator.projectDisplayName(project.projectID))
+                        .font(.system(size: 13, weight: .light))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    activityIndicator(coordinator.projectActivity(project))
+                        .frame(width: 12, height: 12)
+                    Menu {
+                        Button("In Main Checkout") {
+                            coordinator.createConversation(
+                                in: project.projectID
                             )
-                        Image(systemName: "chevron.down")
-                            .font(
-                                .system(
-                                    size: 7,
-                                    weight: .semibold
+                        }
+                        Button("In New Worktree") {
+                            worktreeName = ""
+                            worktreeProjectID = project.projectID
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "plus")
+                                .font(
+                                    .system(
+                                        size: 11,
+                                        weight: .medium
+                                    )
                                 )
-                            )
+                            Image(systemName: "chevron.down")
+                                .font(
+                                    .system(
+                                        size: 7,
+                                        weight: .semibold
+                                    )
+                                )
+                        }
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(sidebarControlColor)
+                        .frame(width: 26, height: 18)
+                        .contentShape(Rectangle())
                     }
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(sidebarControlColor)
-                    .frame(width: 26, height: 18)
-                    .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .tint(sidebarControlColor)
-                .fixedSize()
-                .opacity(showsNewConversation ? 1 : 0)
-                .focused(
-                    $focusedProjectMenuID,
-                    equals: project.projectID
-                )
-                .help("New Conversation")
-                .accessibilityLabel("New Conversation")
-                .accessibilityHint(
-                    "Choose where to start the conversation"
-                )
-            }
-            .frame(height: SidebarReorderMetrics.projectHeaderHeight)
-            .contentShape(Rectangle())
-            .onDrag {
-                hoveredProjectID = nil
-                return reorder.begin(
-                    scope: .projects,
-                    itemID: project.projectID,
-                    currentOrder: currentOrder(for: .projects)
-                )
-            } preview: {
-                projectDragPreview(project)
-            }
-            .onDrop(
-                of: [.coinorProjectReorder],
-                delegate: projectDropDelegate(
-                    targetProjectID: project.projectID
-                )
-            )
-            .onHover { hovering in
-                guard !reorder.isActive else {
-                    hoveredProjectID = nil
-                    return
-                }
-                if hovering {
-                    hoveredProjectID = project.projectID
-                } else if hoveredProjectID == project.projectID {
-                    hoveredProjectID = nil
-                }
-            }
-            .contextMenu {
-                Button("Rename Project") {
-                    renameProjectText = coordinator.projectDisplayName(
-                        project.projectID
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .tint(sidebarControlColor)
+                    .fixedSize()
+                    .opacity(showsNewConversation ? 1 : 0)
+                    .focused(
+                        $focusedProjectMenuID,
+                        equals: project.projectID
                     )
-                    renameProjectID = project.projectID
+                    .help("New Conversation")
+                    .accessibilityLabel("New Conversation")
+                    .accessibilityHint(
+                        "Choose where to start the conversation"
+                    )
                 }
-                if coordinator.projectHasCustomDisplayName(project.projectID) {
-                    Button("Use Folder Name") {
-                        coordinator.useFolderName(for: project.projectID)
-                    }
+                .frame(height: SidebarReorderMetrics.projectHeaderHeight)
+                .contentShape(Rectangle())
+                .onDrag {
+                    reorder.begin(
+                        scope: .projects,
+                        itemID: project.projectID,
+                        currentOrder: currentOrder(for: .projects)
+                    )
+                } preview: {
+                    projectDragPreview(project)
                 }
-                Button("Change Icon") {
-                    appearanceProjectID = project.projectID
-                }
-                Divider()
-                Button("Archive Project") {
-                    coordinator.archiveProject(project.projectID)
-                }
-            }
-            .popover(
-                isPresented: projectAppearancePresented(project.projectID),
-                arrowEdge: .trailing
-            ) {
-                ProjectAppearancePicker(
-                    initialIconName: coordinator.projectIconName(
-                        project.projectID
-                    ),
-                    initialColorName: coordinator.projectIconColorName(
-                        project.projectID
-                    ),
-                    apply: { iconName, colorName in
-                        coordinator.setProjectAppearance(
-                            project.projectID,
-                            iconName: iconName,
-                            colorName: colorName
-                        )
-                    },
-                    dismiss: {
-                        appearanceProjectID = nil
-                    }
+                .onDrop(
+                    of: [.coinorProjectReorder],
+                    delegate: projectDropDelegate(
+                        targetProjectID: project.projectID
+                    )
                 )
+                .contextMenu {
+                    Button("Rename Project") {
+                        renameProjectText = coordinator.projectDisplayName(
+                            project.projectID
+                        )
+                        renameProjectID = project.projectID
+                    }
+                    if coordinator.projectHasCustomDisplayName(project.projectID) {
+                        Button("Use Folder Name") {
+                            coordinator.useFolderName(for: project.projectID)
+                        }
+                    }
+                    Button("Change Icon") {
+                        appearanceProjectID = project.projectID
+                    }
+                    Divider()
+                    Button("Archive Project") {
+                        coordinator.archiveProject(project.projectID)
+                    }
+                }
+                .popover(
+                    isPresented: projectAppearancePresented(project.projectID),
+                    arrowEdge: .trailing
+                ) {
+                    ProjectAppearancePicker(
+                        initialIconName: coordinator.projectIconName(
+                            project.projectID
+                        ),
+                        initialColorName: coordinator.projectIconColorName(
+                            project.projectID
+                        ),
+                        apply: { iconName, colorName in
+                            coordinator.setProjectAppearance(
+                                project.projectID,
+                                iconName: iconName,
+                                colorName: colorName
+                            )
+                        },
+                        dismiss: {
+                            appearanceProjectID = nil
+                        }
+                    )
+                }
             }
         }
     }
@@ -498,11 +504,13 @@ struct AppShellSidebar: View {
                 scope: reorderScope,
                 projectDropTargetID: projectDropTargetID
             )
+            .tag(conversation.id)
         } else {
             conversationRowContent(
                 conversation,
                 pinned: pinned
             )
+            .tag(conversation.id)
         }
     }
 
@@ -510,65 +518,116 @@ struct AppShellSidebar: View {
         _ conversation: ConversationRow,
         pinned: Bool
     ) -> some View {
-        HStack(spacing: 7) {
-            Text(conversation.session.title)
-                .font(.system(size: 13, weight: .light))
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            activityIndicator(coordinator.activity(for: conversation.id))
-            if hoveredConversationID == conversation.id {
-                Button {
-                    if pinned {
+        let pinSymbol = pinned ? "pin.slash" : "pin"
+
+        // The activation button is the base layer and owns the whole row, so a
+        // primary click anywhere that a control does not claim opens the
+        // conversation. The controls sit in a sibling overlay above it rather
+        // than inside its label, so neither one is nested in the other.
+        return SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
+            let showsControls = SidebarConversationActivation.showsRowControls(
+                isHovered: isHovered,
+                isReordering: reorder.isActive
+            )
+
+            Button {
+                activateConversation(conversation.id)
+            } label: {
+                HStack(spacing: 7) {
+                    Text(conversation.session.title)
+                        .font(.system(size: 13, weight: .light))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    activityIndicator(coordinator.activity(for: conversation.id))
+                        .frame(width: 12, height: 12)
+                    conversationControlFootprint(pinSymbol: pinSymbol)
+                }
+                .frame(height: SidebarReorderMetrics.conversationHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .trailing) {
+                conversationControls(
+                    conversation,
+                    pinned: pinned,
+                    pinSymbol: pinSymbol
+                )
+                .opacity(showsControls ? 1 : 0)
+                .allowsHitTesting(showsControls)
+                .accessibilityHidden(!showsControls)
+            }
+            .contextMenu {
+                if pinned {
+                    Button("Unpin") {
                         coordinator.unpin(conversation.id)
-                    } else {
+                    }
+                } else {
+                    Button("Pin") {
                         coordinator.pin(conversation.id)
                     }
-                } label: {
-                    Image(systemName: pinned ? "pin.slash" : "pin")
                 }
-                .buttonStyle(.plain)
-                .help(pinned ? "Unpin" : "Pin")
-                .accessibilityLabel(pinned ? "Unpin" : "Pin")
-
-                Button {
+                Button("Rename") {
+                    renameText = conversation.session.title
+                    renameSessionID = conversation.id
+                }
+                Divider()
+                Button("Archive") {
                     coordinator.archiveConversation(conversation.id)
-                } label: {
-                    Image(systemName: "archivebox")
                 }
-                .buttonStyle(.plain)
-                .help("Archive")
-                .accessibilityLabel("Archive")
             }
         }
-        .tag(conversation.id)
-        .frame(height: SidebarReorderMetrics.conversationHeight)
-        .contentShape(Rectangle())
-        .onHover { hovered in
-            if reorder.isActive {
-                hoveredConversationID = nil
-            } else {
-                hoveredConversationID = hovered ? conversation.id : nil
-            }
-        }
-        .contextMenu {
-            if pinned {
-                Button("Unpin") {
+    }
+
+    /// The trailing pin and archive controls for a conversation row.
+    ///
+    /// These live in the row's overlay, above the activation button and beside
+    /// it in the view tree, so each one claims only its own icon and a click
+    /// on a control never doubles as a row activation.
+    private func conversationControls(
+        _ conversation: ConversationRow,
+        pinned: Bool,
+        pinSymbol: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Button {
+                if pinned {
                     coordinator.unpin(conversation.id)
-                }
-            } else {
-                Button("Pin") {
+                } else {
                     coordinator.pin(conversation.id)
                 }
+            } label: {
+                Image(systemName: pinSymbol)
             }
-            Button("Rename") {
-                renameText = conversation.session.title
-                renameSessionID = conversation.id
-            }
-            Divider()
-            Button("Archive") {
+            .buttonStyle(.plain)
+            .help(pinned ? "Unpin" : "Pin")
+            .accessibilityLabel(pinned ? "Unpin" : "Pin")
+
+            Button {
                 coordinator.archiveConversation(conversation.id)
+            } label: {
+                Image(systemName: "archivebox")
             }
+            .buttonStyle(.plain)
+            .help("Archive")
+            .accessibilityLabel("Archive")
         }
+    }
+
+    /// Inert stand-in that holds the trailing controls' width inside the
+    /// activation button's label.
+    ///
+    /// It mirrors the control icons instead of a fixed number so the reserved
+    /// space cannot drift from the real controls, and it stays out of the view
+    /// tree's interactive and accessibility surfaces.
+    private func conversationControlFootprint(
+        pinSymbol: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: pinSymbol)
+            Image(systemName: "archivebox")
+        }
+        .hidden()
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -588,8 +647,7 @@ struct AppShellSidebar: View {
                     : 1
             )
             .onDrag {
-                hoveredConversationID = nil
-                return reorder.begin(
+                reorder.begin(
                     scope: scope,
                     itemID: conversation.id,
                     currentOrder: currentOrder(for: scope)
@@ -811,6 +869,34 @@ struct AppShellSidebar: View {
         if panel.runModal() == .OK, let url = panel.url {
             coordinator.addProject(url: url)
         }
+    }
+}
+
+/// Row-local hover tracking that keeps a single row's `.onHover` state from
+/// invalidating the rest of the sidebar.
+///
+/// SwiftUI scopes `@State` invalidation to the view that owns the property,
+/// not to wherever a modifier happens to be attached. Reading and writing
+/// hover through a `@State` declared on `AppShellSidebar` itself made every
+/// hover change anywhere in the sidebar re-diff the whole `List`, which is
+/// what made scrolling and resizing feel coarse. This wrapper is its own
+/// `View`, so a hover flip here only recomputes this one row.
+private struct SidebarHoverState<Content: View>: View {
+    let isDisabled: Bool
+    @ViewBuilder let content: (Bool) -> Content
+
+    @State private var isHovered = false
+
+    var body: some View {
+        content(isDisabled ? false : isHovered)
+            .onHover { hovering in
+                isHovered = isDisabled ? false : hovering
+            }
+            .onChange(of: isDisabled) { disabled in
+                if disabled {
+                    isHovered = false
+                }
+            }
     }
 }
 

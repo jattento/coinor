@@ -10,16 +10,16 @@ enum MetadataStoreError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case let .unreadable(url, reason):
-            return "Coinor could not read its metadata file at \(url.path): \(reason). "
+            return "Conan Code could not read its metadata file at \(url.path): \(reason). "
                 + "The file was left untouched."
         case let .corrupt(url, reason):
-            return "Coinor's metadata file at \(url.path) is not valid JSON: \(reason). "
-                + "The file was left untouched; back it up or delete it to reset Coinor's "
+            return "Conan Code's metadata file at \(url.path) is not valid JSON: \(reason). "
+                + "The file was left untouched; back it up or delete it to reset Conan Code's "
                 + "organization metadata."
         case let .unsupportedSchemaVersion(found, supported, url):
-            return "Coinor's metadata file at \(url.path) was written by a newer version of "
-                + "Coinor (schema \(found); this build supports up to \(supported)). "
-                + "The file was left untouched; use a newer build of Coinor to open it."
+            return "Conan Code's metadata file at \(url.path) was written by a newer version of "
+                + "Conan Code (schema \(found); this build supports up to \(supported)). "
+                + "The file was left untouched; use a newer build of Conan Code to open it."
         }
     }
 }

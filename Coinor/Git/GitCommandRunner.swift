@@ -23,20 +23,20 @@ extension GitServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .executablePathNotAbsolute(path):
-            return "The Git executable path must be absolute, but Coinor was given \(path)."
+            return "The Git executable path must be absolute, but Conan Code was given \(path)."
         case let .executableNotFound(path):
             return "No Git executable exists at \(path)."
         case let .executableNotExecutable(path):
             return "The file at \(path) is not executable."
         case let .commandLaunchFailed(arguments, detail):
-            return "Coinor could not start Git (\(arguments.joined(separator: " "))): \(detail)"
+            return "Conan Code could not start Git (\(arguments.joined(separator: " "))): \(detail)"
         case let .commandFailed(arguments, directory, status, detail):
             let suffix = detail.isEmpty ? "" : " Git reported: \(detail)"
             return "Git \(arguments.joined(separator: " ")) failed in \(directory) with status \(status).\(suffix)"
         case let .invalidRepository(path, detail):
-            return "Coinor could not resolve the Git repository at \(path): \(detail)"
+            return "Conan Code could not resolve the Git repository at \(path): \(detail)"
         case let .malformedOutput(command, detail):
-            return "Coinor could not read the output of \(command): \(detail)"
+            return "Conan Code could not read the output of \(command): \(detail)"
         case let .invalidWorktreeName(name):
             return "The worktree name \"\(name)\" must be 1-64 characters, start with a letter or number, use only letters, numbers, dots, underscores, or hyphens, and be valid as a Git branch name."
         }

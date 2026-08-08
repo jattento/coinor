@@ -59,10 +59,10 @@ final class ApplicationInstanceLockTests: XCTestCase {
     func testAlreadyRunningErrorHasStableEnglishCopy() {
         let error = ApplicationInstanceLockError.alreadyRunning
 
-        XCTAssertEqual(error.errorDescription, "Coinor is already running.")
+        XCTAssertEqual(error.errorDescription, "Conan Code is already running.")
         XCTAssertEqual(
             (error as LocalizedError).errorDescription,
-            "Coinor is already running."
+            "Conan Code is already running."
         )
     }
 }

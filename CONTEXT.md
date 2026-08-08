@@ -1,13 +1,15 @@
-# Coinor
+# Conan Code
 
-Coinor is a personal macOS application that organizes durable Grok
+Conan Code is a personal macOS application that organizes durable Grok
 conversations by project while preserving the native Grok terminal experience.
+The repository, module, app bundle, and compatibility identifiers retain the
+internal name `Coinor`.
 
 ## Language
 
 **Project**:
 A logical Git repository discovered from Grok conversations or registered
-manually in Coinor. It includes conversations from the main checkout and from
+manually in Conan Code. It includes conversations from the main checkout and from
 any worktree belonging to the same repository. Independent clones remain
 separate projects even when they share a remote URL.
 _Avoid_: Folder, workspace, worktree group
@@ -18,14 +20,14 @@ appear directly under their project regardless of their working directory.
 _Avoid_: Task, pane, Herdr session
 
 **Pinned Conversation**:
-A conversation promoted to Coinor's top-level Pinned section for quick access.
-Pinning changes only Coinor's organization metadata.
+A conversation promoted to Conan Code's top-level Pinned section for quick access.
+Pinning changes only Conan Code's organization metadata.
 _Avoid_: Pinned session, favorite Grok session
 
 **Grok Session**:
-The durable technical conversation state owned and persisted by Grok. Coinor
+The durable technical conversation state owned and persisted by Grok. Conan Code
 references it without duplicating its transcript or execution lifecycle.
-_Avoid_: Coinor task, conversation record
+_Avoid_: Conan Code task, conversation record
 
 **Worktree**:
 An alternate checkout belonging to a project that determines where a
@@ -44,7 +46,7 @@ active subagent panes share the right half.
 _Avoid_: Window, project
 
 **Terminal Tab**:
-A Coinor-owned tab within one conversation view. The permanent first tab
+A Conan Code-owned tab within one conversation view. The permanent first tab
 contains the Grok conversation layout; additional tabs contain independent
 Ghostty shells rooted at the conversation's original checkout or worktree.
 _Avoid_: Conversation, Grok session, native Ghostty tab
@@ -57,7 +59,7 @@ _Avoid_: Root conversation, sidebar title
 
 **Shell Tab**:
 A closable terminal tab backed by an independent Ghostty shell. Its process and
-scrollback live only while Coinor is running; its local name, order, and
+scrollback live only while Conan Code is running; its local name, order, and
 selection metadata survive relaunch.
 _Avoid_: Grok session, subagent pane
 

@@ -87,11 +87,11 @@ enum GhosttyRuntimeError: LocalizedError {
         case .initialization(let code):
             "Ghostty initialization failed with status \(code)."
         case .configurationCreation:
-            "Coinor could not load the Ghostty configuration."
+            "Conan Code could not load the Ghostty configuration."
         case .applicationCreation:
-            "Coinor could not create the embedded Ghostty runtime."
+            "Conan Code could not create the embedded Ghostty runtime."
         case .surfaceCreation:
-            "Coinor could not create an embedded terminal surface."
+            "Conan Code could not create an embedded terminal surface."
         }
     }
 }

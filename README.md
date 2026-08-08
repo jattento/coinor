@@ -1,6 +1,6 @@
-# Coinor
+# Conan Code
 
-Coinor is a personal, native macOS workspace for organizing durable Grok
+Conan Code is a personal, native macOS workspace for organizing durable Grok
 conversations by local Git project. It embeds interactive Ghostty terminals,
 restores exact Grok sessions, and shows active subagents beside the root
 conversation in a fixed 50/50 layout. Each conversation also has persistent
@@ -8,9 +8,12 @@ terminal tabs: a permanent Grok `main` view plus independent Ghostty shells in
 the same checkout or worktree.
 
 Grok remains the source of truth for session IDs, titles, transcripts, and
-execution. Coinor stores only local organization metadata such as pins,
+execution. Conan Code stores only local organization metadata such as pins,
 archives, manually registered projects, sidebar ordering, the last visible
 conversation, and local terminal-tab labels and layout.
+
+The repository, Xcode target, app bundle, bundle identifiers, and local data
+paths retain the internal name Coinor for compatibility.
 
 ## Requirements
 
@@ -21,10 +24,10 @@ conversation, and local terminal-tab labels and layout.
 - Internet access and Xcode's optional Metal Toolchain only when rebuilding
   the pinned Ghostty artifact
 
-Coinor runs outside App Sandbox and uses a local ad-hoc signature. It is not
+Conan Code runs outside App Sandbox and uses a local ad-hoc signature. It is not
 notarized and is not intended for App Store distribution.
 
-Coinor does not require Herdr, Paseo, `/Applications/Ghostty.app`, or a global
+Conan Code does not require Herdr, Paseo, `/Applications/Ghostty.app`, or a global
 Grok `use_leader` setting.
 
 ## First Build
@@ -42,7 +45,7 @@ The Ghostty build is pinned to commit
 `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`. Its public header, static
 XCFramework, resources, and terminfo are treated as one indivisible artifact.
 
-Build Coinor:
+Build Conan Code:
 
 ```sh
 xcodebuild -project Coinor.xcodeproj -scheme Coinor \
@@ -95,22 +98,22 @@ open "$HOME/Applications/Coinor.app"
 
 ## Local Data
 
-- `~/Library/Application Support/Coinor/metadata.json`: Coinor organization
+- `~/Library/Application Support/Coinor/metadata.json`: Conan Code organization
   and UI metadata
 - `~/Library/Application Support/Coinor/grok-leader.sock`: private Grok leader
-  socket while Coinor is running
+  socket while Conan Code is running
 
 Grok's own storage remains authoritative for conversation content. Removing
-Coinor metadata does not delete Grok sessions.
+Conan Code metadata does not delete Grok sessions.
 
 ## Limits And Licensing
 
-Coinor is Apple Silicon only, local-only, non-sandboxed, ad-hoc signed, and
-not notarized. Conversations are not guaranteed to continue after Coinor
+Conan Code is Apple Silicon only, local-only, non-sandboxed, ad-hoc signed, and
+not notarized. Conversations are not guaranteed to continue after Conan Code
 quits. The application intentionally targets the compatible custom Grok build
 at `~/bin/grok`, not arbitrary Grok releases.
 
-Coinor copies no Herdr or Paseo source. Embedded terminal support uses the
+Conan Code copies no Herdr or Paseo source. Embedded terminal support uses the
 pinned Ghostty v1.3.1 source under its MIT license; the application bundle
 includes the corresponding third-party notice and artifact manifest.
 

@@ -11,9 +11,13 @@ struct AppShellView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
         } detail: {
             VStack(spacing: 0) {
-                ConversationContentView(coordinator: coordinator)
+                ConversationContentView(
+                    model: model,
+                    coordinator: coordinator
+                )
                     .coinorBackgroundExtension()
-                if model.unresolvedStartupCheckCount > 0 {
+                if case .ready = coordinator.status,
+                   model.unresolvedStartupCheckCount > 0 {
                     Divider()
                     StartupDiagnosticsPanel(
                         checks: model.startupChecks,

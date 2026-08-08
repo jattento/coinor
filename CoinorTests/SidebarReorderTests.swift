@@ -129,3 +129,54 @@ struct SidebarReorderModelTests {
         )
     }
 }
+
+@Suite
+struct SidebarConversationActivationTests {
+    @Test
+    func primaryClickActivatesEvenTheAlreadySelectedRow() {
+        #expect(
+            SidebarConversationActivation.primaryClick(
+                conversationID: "session-a",
+                isReordering: false
+            ) == .activate("session-a")
+        )
+    }
+
+    @Test
+    func primaryClickIsIgnoredWhileAReorderOwnsThePointer() {
+        #expect(
+            SidebarConversationActivation.primaryClick(
+                conversationID: "session-a",
+                isReordering: true
+            ) == .ignore
+        )
+    }
+
+    @Test
+    func rowControlsFollowHoverAndStayHiddenDuringAReorder() {
+        #expect(
+            SidebarConversationActivation.showsRowControls(
+                isHovered: true,
+                isReordering: false
+            )
+        )
+        #expect(
+            !SidebarConversationActivation.showsRowControls(
+                isHovered: false,
+                isReordering: false
+            )
+        )
+        #expect(
+            !SidebarConversationActivation.showsRowControls(
+                isHovered: true,
+                isReordering: true
+            )
+        )
+        #expect(
+            !SidebarConversationActivation.showsRowControls(
+                isHovered: false,
+                isReordering: true
+            )
+        )
+    }
+}

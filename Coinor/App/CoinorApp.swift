@@ -31,7 +31,7 @@ struct CoinorApp: App {
     @StateObject private var coordinator = AppCoordinator()
 
     var body: some Scene {
-        Window("Coinor", id: "coinor.main") {
+        Window("Conan Code", id: "coinor.main") {
             AppShellView(model: shell, coordinator: coordinator)
                 .onAppear {
                     applicationDelegate.coordinator = coordinator

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Coinor</string>
+	<string>Conan Code</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Conan Code</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Coinor uses the microphone only when you start Voice to transcribe speech into your Grok prompt.</string>
+	<string>Conan Code uses the microphone only when you start Voice to transcribe speech into your Grok prompt.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticTermination</key>
@@ -38,13 +38,13 @@
 	<false/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
-			<dict>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Coinor Project Reorder</string>
+			<string>Conan Code Project Reorder</string>
 			<key>UTTypeIdentifier</key>
 			<string>dev.coinor.project-reorder</string>
 		</dict>
@@ -54,20 +54,20 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Coinor Conversation Reorder</string>
-				<key>UTTypeIdentifier</key>
-				<string>dev.coinor.conversation-reorder</string>
-			</dict>
-			<dict>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
-				</array>
-				<key>UTTypeDescription</key>
-				<string>Coinor Terminal Tab</string>
-				<key>UTTypeIdentifier</key>
-				<string>dev.coinor.terminal-tab</string>
-			</dict>
-		</array>
+			<string>Conan Code Conversation Reorder</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.coinor.conversation-reorder</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Conan Code Terminal Tab</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.coinor.terminal-tab</string>
+		</dict>
+	</array>
 </dict>
 </plist>
