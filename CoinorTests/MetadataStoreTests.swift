@@ -181,6 +181,32 @@ func projectMetadataWithoutConversationOrderStillDecodes() throws {
 }
 
 @Test
+func projectMetadataWithMissingFlagsStillDecodes() throws {
+    let json = """
+    {
+      "schemaVersion": 3,
+      "sessions": { "session-a": {} },
+      "projects": {
+        "project-a": { "archived": true },
+        "project-b": {}
+      },
+      "pinnedSessionIDs": [],
+      "projectOrder": ["project-a", "project-b"]
+    }
+    """
+
+    let decoded = try JSONDecoder().decode(
+        MetadataDocument.self,
+        from: Data(json.utf8)
+    )
+
+    #expect(decoded.isProjectArchived("project-a"))
+    #expect(decoded.isProjectManuallyRegistered("project-a") == false)
+    #expect(decoded.isProjectExpanded("project-b") == false)
+    #expect(decoded.isSessionArchived("session-a") == false)
+}
+
+@Test
 func reorderingVisibleConversationsPreservesHiddenSlots() {
     var document = MetadataDocument.empty
     document.reorderVisibleConversations(

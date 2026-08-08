@@ -182,7 +182,7 @@ extension SessionMetadata: Codable {
 
 /// Coinor's local, versioned organization state for one project (a local Git
 /// repository identity, including any of its worktrees).
-struct ProjectMetadata: Codable, Equatable, Sendable {
+struct ProjectMetadata: Equatable, Sendable {
     var manuallyRegistered: Bool = false
     var archived: Bool = false
     var expanded: Bool = false
@@ -191,6 +191,66 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var iconName: String?
     var iconColorName: String?
     var conversationOrder: [String]?
+}
+
+extension ProjectMetadata: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case manuallyRegistered, archived, expanded, checkoutPath
+        case displayName, iconName, iconColorName, conversationOrder
+    }
+
+    /// Decodes leniently so a document written by an older schema, or edited
+    /// by hand, parses instead of failing the whole app launch.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        manuallyRegistered = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .manuallyRegistered
+        ) ?? false
+        archived = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .archived
+        ) ?? false
+        expanded = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .expanded
+        ) ?? false
+        checkoutPath = try container.decodeIfPresent(
+            String.self,
+            forKey: .checkoutPath
+        )
+        displayName = try container.decodeIfPresent(
+            String.self,
+            forKey: .displayName
+        )
+        iconName = try container.decodeIfPresent(
+            String.self,
+            forKey: .iconName
+        )
+        iconColorName = try container.decodeIfPresent(
+            String.self,
+            forKey: .iconColorName
+        )
+        conversationOrder = try container.decodeIfPresent(
+            [String].self,
+            forKey: .conversationOrder
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(manuallyRegistered, forKey: .manuallyRegistered)
+        try container.encode(archived, forKey: .archived)
+        try container.encode(expanded, forKey: .expanded)
+        try container.encodeIfPresent(checkoutPath, forKey: .checkoutPath)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
+        try container.encodeIfPresent(iconName, forKey: .iconName)
+        try container.encodeIfPresent(iconColorName, forKey: .iconColorName)
+        try container.encodeIfPresent(
+            conversationOrder,
+            forKey: .conversationOrder
+        )
+    }
 }
 
 /// The single JSON document Coinor persists.
