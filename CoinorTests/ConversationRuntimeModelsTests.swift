@@ -84,6 +84,21 @@ func shellLaunchLeavesCommandSelectionToGhostty() {
 }
 
 @Test
+func commandLaunchUsesTheRequestedProgramInsideASplitSurface() {
+    let request = TerminalLaunchRequest(
+        commandID: "conversation.ide.fresh",
+        workingDirectory: "/tmp/project",
+        command: "fresh ."
+    )
+
+    #expect(request.mode == .command("fresh ."))
+    #expect(request.explicitCommand == "fresh .")
+    #expect(request.arguments.isEmpty)
+    #expect(request.surfaceContext == .split)
+    #expect(request.waitsAfterCommand)
+}
+
+@Test
 func descendantsStayFlatAndOrderedByStartSequence() {
     let root = RuntimePane(
         id: "root",

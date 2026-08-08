@@ -3,11 +3,16 @@ import Testing
 @testable import Coinor
 
 @Test
-func conversationStartsWithPermanentMainTab() {
+func conversationStartsWithPermanentMainAndIDETabs() {
     let tabs = ConversationTabMetadata.initial
 
     #expect(tabs.mainName == "main")
-    #expect(tabs.orderedTabIDs == [ConversationTabMetadata.mainID])
+    #expect(
+        tabs.orderedTabIDs == [
+            ConversationTabMetadata.mainID,
+            ConversationTabMetadata.ideID,
+        ]
+    )
     #expect(tabs.selectedTabID == ConversationTabMetadata.mainID)
     #expect(tabs.nextTabNumber == 1)
 }
@@ -35,7 +40,7 @@ func closingTheSelectedTabMovesSelectionLeft() {
     #expect(tabs.selectedTabID == "first")
 
     tabs.closeShell(tabID: "first")
-    #expect(tabs.selectedTabID == ConversationTabMetadata.mainID)
+    #expect(tabs.selectedTabID == ConversationTabMetadata.ideID)
 }
 
 @Test
@@ -53,7 +58,34 @@ func renamePreservesExactTextIncludingEmptyAndDuplicates() {
 }
 
 @Test
-func mainRemainsFirstWhileShellTabsReorder() {
+func ideNameIsFixed() {
+    var tabs = ConversationTabMetadata.initial
+    let original = tabs
+
+    tabs.rename(tabID: ConversationTabMetadata.ideID, to: "editor")
+
+    #expect(tabs == original)
+}
+
+@Test
+func permanentTabsIgnoreShellCloseRequests() {
+    var tabs = ConversationTabMetadata.initial
+    tabs.select(tabID: ConversationTabMetadata.ideID)
+
+    tabs.closeShell(tabID: ConversationTabMetadata.mainID)
+    tabs.closeShell(tabID: ConversationTabMetadata.ideID)
+
+    #expect(
+        tabs.orderedTabIDs == [
+            ConversationTabMetadata.mainID,
+            ConversationTabMetadata.ideID,
+        ]
+    )
+    #expect(tabs.selectedTabID == ConversationTabMetadata.ideID)
+}
+
+@Test
+func permanentTabsRemainFirstWhileShellTabsReorder() {
     var tabs = ConversationTabMetadata.initial
     _ = tabs.appendShell(id: "first")
     _ = tabs.appendShell(id: "second")
@@ -64,6 +96,7 @@ func mainRemainsFirstWhileShellTabsReorder() {
     #expect(
         tabs.orderedTabIDs == [
             ConversationTabMetadata.mainID,
+            ConversationTabMetadata.ideID,
             "third",
             "first",
             "second",
@@ -82,6 +115,10 @@ func normalizationDropsDuplicateOrReservedShellIDs() {
                 id: ConversationTabMetadata.mainID,
                 name: "reserved"
             ),
+            ShellTabMetadata(
+                id: ConversationTabMetadata.ideID,
+                name: "also-reserved"
+            ),
         ],
         selectedTabID: "missing",
         nextTabNumber: 0
@@ -94,4 +131,15 @@ func normalizationDropsDuplicateOrReservedShellIDs() {
     )
     #expect(tabs.selectedTabID == ConversationTabMetadata.mainID)
     #expect(tabs.nextTabNumber == 1)
+}
+
+@Test
+func ideSelectionSurvivesNormalization() {
+    var tabs = ConversationTabMetadata.initial
+    tabs.select(tabID: ConversationTabMetadata.ideID)
+
+    #expect(
+        tabs.normalized().selectedTabID
+            == ConversationTabMetadata.ideID
+    )
 }

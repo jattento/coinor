@@ -4,8 +4,9 @@ Conan Code is a personal, native macOS workspace for organizing durable Grok
 conversations by local Git project. It embeds interactive Ghostty terminals,
 restores exact Grok sessions, and shows active subagents beside the root
 conversation in a fixed 50/50 layout. Each conversation also has persistent
-terminal tabs: a permanent Grok `main` view plus independent Ghostty shells in
-the same checkout or worktree.
+terminal tabs: a permanent Grok `main` view, a permanent two-pane `IDE` view
+with Fresh and Lazygit, plus independent Ghostty shells in the same checkout
+or worktree.
 
 Grok remains the source of truth for session IDs, titles, transcripts, and
 execution. Conan Code stores only local organization metadata such as pins,
@@ -21,6 +22,8 @@ paths retain the internal name Coinor for compatibility.
 - Xcode with Swift 6 and the macOS command-line tools
 - Git and Python 3
 - A compatible custom Grok executable at `~/bin/grok`
+- Fresh available as `fresh`
+- Lazygit available as `lazygit`
 - Internet access and Xcode's optional Metal Toolchain only when rebuilding
   the pinned Ghostty artifact
 

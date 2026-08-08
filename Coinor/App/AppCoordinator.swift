@@ -228,6 +228,12 @@ final class AppCoordinator: ObservableObject {
                     directory: directory
                 )
             }
+            if let directory = session.gitRootDirectory ?? session.cwd {
+                runtimeManager?.resolveIDEWorkingDirectory(
+                    sessionID: session.id.rawValue,
+                    directory: directory
+                )
+            }
         }
         pendingSessions = refreshedPendingSessions
         projectIDBySessionID = locations.projectIDBySessionID
@@ -262,6 +268,11 @@ final class AppCoordinator: ObservableObject {
             mode: .resume,
             shellDirectorySource: session.cwd.map {
                 .explicit($0)
+            } ?? .unavailable,
+            ideDirectorySource: (
+                session.gitRootDirectory ?? session.cwd
+            ).map {
+                ConversationShellDirectorySource.explicit($0)
             } ?? .unavailable,
             tabMetadata: metadata.conversationTabs(sessionID)
         )
@@ -1019,6 +1030,11 @@ final class AppCoordinator: ObservableObject {
                                     sessionID: entry.id.rawValue,
                                     directory: directory
                                 )
+                            self.runtimeManager?
+                                .resolveIDEWorkingDirectory(
+                                    sessionID: entry.id.rawValue,
+                                    directory: directory
+                                )
                         }
                         self.materializePendingSessionIfNeeded(entry)
                         self.startLifecycleCatchupIfReady(entry)
@@ -1516,6 +1532,14 @@ final class AppCoordinator: ObservableObject {
                     if let directory = persisted.cwd {
                         self.runtimeManager?
                             .resolveShellBaseWorkingDirectory(
+                                sessionID: sessionID,
+                                directory: directory
+                            )
+                    }
+                    if let directory =
+                        persisted.gitRootDirectory ?? persisted.cwd {
+                        self.runtimeManager?
+                            .resolveIDEWorkingDirectory(
                                 sessionID: sessionID,
                                 directory: directory
                             )

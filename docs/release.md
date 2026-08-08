@@ -21,6 +21,8 @@ distribution.
 Runtime dependencies are deliberately narrow:
 
 - a compatible custom Grok executable at `~/bin/grok`
+- Fresh available as `fresh`
+- Lazygit available as `lazygit`
 - Coinor's private Grok leader socket
 - statically linked Ghostty v1.3.1 at commit
   `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`
@@ -38,6 +40,8 @@ ACP stream and does not install files in `~/.grok/hooks`.
 - Git
 - Python 3
 - executable compatible Grok at `~/bin/grok`
+- executable Fresh available as `fresh`
+- executable Lazygit available as `lazygit`
 
 Rebuilding Ghostty additionally requires internet access and Xcode's optional
 Metal Toolchain. Normal Coinor builds do not require either after
@@ -146,11 +150,16 @@ older application bundle.
 
 ## Install
 
-Quit any running copy of Coinor, then install the verified bundle locally:
+Quit any running copy of Conan Code, then replace the installed bundle with the
+verified application:
 
 ```sh
 APP=.build/DerivedData/Build/Products/Release/Coinor.app
 mkdir -p "$HOME/Applications"
+if [ -e "$HOME/Applications/Coinor.app" ]; then
+  OLD_APP="$(mktemp -d)/Coinor.app"
+  mv "$HOME/Applications/Coinor.app" "$OLD_APP"
+fi
 ditto "$APP" "$HOME/Applications/Coinor.app"
 ```
 
@@ -256,7 +265,7 @@ ditto -c -k --sequesterRsrc --keepParent \
 
 ```sh
 git push origin main
-git tag -a "v${VERSION}" -m "Coinor ${VERSION}"
+git tag -a "v${VERSION}" -m "Conan Code ${VERSION}"
 git push origin "v${VERSION}"
 ```
 
@@ -264,10 +273,10 @@ git push origin "v${VERSION}"
 
 ```sh
 gh release create "v${VERSION}" \
-  "Artifacts/Coinor-${VERSION}-arm64.zip#Coinor macOS arm64 application" \
+  "Artifacts/Coinor-${VERSION}-arm64.zip#Conan Code macOS arm64 application" \
   "Artifacts/SHA256SUMS#SHA-256 checksums" \
   --repo jattento/coinor \
-  --title "Coinor ${VERSION}" \
+  --title "Conan Code ${VERSION}" \
   --notes-file "docs/releases/${VERSION}.md" \
   --verify-tag
 ```
@@ -275,8 +284,9 @@ gh release create "v${VERSION}" \
 6. Verify that GitHub's asset digests match the local checksums, that `main`
    and the annotated tag resolve to the release commit, and that the release is
    public rather than draft or prerelease.
-7. Quit Coinor, install the exact verified release bundle, reopen it, and
-   confirm the installed version and primary workflow.
+7. Quit Conan Code, replace the installed application with the exact verified
+   release bundle, reopen it, and confirm the installed version and primary
+   workflow.
 
 Never move a published tag or replace an existing release asset. A correction
 gets a new version and release; the previous one remains the rollback point.

@@ -46,9 +46,10 @@ active subagent panes share the right half.
 _Avoid_: Window, project
 
 **Terminal Tab**:
-A Conan Code-owned tab within one conversation view. The permanent first tab
-contains the Grok conversation layout; additional tabs contain independent
-Ghostty shells rooted at the conversation's original checkout or worktree.
+A Conan Code-owned tab within one conversation view. The permanent first two tabs
+contain the Grok conversation layout and the local IDE layout; additional tabs
+contain independent Ghostty shells rooted at the conversation's original
+checkout or worktree.
 _Avoid_: Conversation, Grok session, native Ghostty tab
 
 **Main Tab**:
@@ -56,6 +57,12 @@ The permanent, non-closable terminal tab that contains the root Grok pane and
 any active subagent panes. Its local label defaults to `main` and can be
 renamed without changing the Grok conversation title.
 _Avoid_: Root conversation, sidebar title
+
+**IDE Tab**:
+The permanent, non-closable second terminal tab. It contains a 60/40 horizontal
+split with `fresh .` on the left and `lazygit` on the right, both running at
+the Git root of the conversation's checkout or worktree.
+_Avoid_: Shell tab, editor session, project view
 
 **Shell Tab**:
 A closable terminal tab backed by an independent Ghostty shell. Its process and

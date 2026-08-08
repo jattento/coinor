@@ -87,6 +87,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         case newSession
         case resume
         case shell
+        case command(String)
     }
 
     let sessionID: String
@@ -125,10 +126,29 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.surfaceContext = .tab
     }
 
+    init(
+        commandID: String,
+        workingDirectory: String,
+        command: String
+    ) {
+        self.sessionID = commandID
+        self.workingDirectory = workingDirectory
+        self.grokExecutable = ""
+        self.leaderSocket = ""
+        self.mode = .command(command)
+        self.additionalArguments = []
+        self.surfaceContext = .split
+    }
+
     var id: String { sessionID }
 
     var arguments: [String] {
-        guard mode != .shell else { return [] }
+        switch mode {
+        case .shell, .command:
+            return []
+        case .newSession, .resume:
+            break
+        }
         var values = [
             "--leader-socket", leaderSocket,
             "--leader",
@@ -140,21 +160,32 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
             values += ["--session-id", sessionID]
         case .resume:
             values += ["--resume", sessionID]
-        case .shell:
+        case .shell, .command:
             break
         }
         return values
     }
 
     var shellCommand: String {
-        guard mode != .shell else { return "" }
-        return ([grokExecutable] + arguments)
-            .map(Self.shellQuote)
-            .joined(separator: " ")
+        switch mode {
+        case .shell:
+            return ""
+        case .command(let command):
+            return command
+        case .newSession, .resume:
+            return ([grokExecutable] + arguments)
+                .map(Self.shellQuote)
+                .joined(separator: " ")
+        }
     }
 
     var explicitCommand: String? {
-        mode == .shell ? nil : shellCommand
+        switch mode {
+        case .shell:
+            nil
+        case .newSession, .resume, .command:
+            shellCommand
+        }
     }
 
     var waitsAfterCommand: Bool {

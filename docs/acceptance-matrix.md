@@ -162,19 +162,22 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 ## Phase 8: Conversation Terminal Tabs
 
 The implementation was rebased onto `origin/main` and fully validated on
-August 8, 2026.
+August 8, 2026. Conan Code `0.4.0` extends the permanent tab set with an IDE
+workspace while retaining the existing shell-tab contract.
 
 | Acceptance criterion | Current implementation evidence | Status |
 | --- | --- | --- |
-| Permanent main plus independent shells in the base checkout or worktree | `ConversationRuntime`, `TerminalLaunchRequest`, `ConversationTabbedView`; real shell `pwd` | Pass |
+| Permanent main and IDE plus independent shells in the base checkout or worktree | `ConversationRuntime`, `TerminalLaunchRequest`, `ConversationTabbedView`; real Fresh/Lazygit `cwd` | Pass |
+| IDE runs Fresh left and Lazygit right in a fixed responsive 60/40 layout | `IDEPaneView`, command launch mode, wide and compact Release-app visual QA | Pass |
 | Labels, order, selection, and monotonic numbering survive relaunch | `ConversationTabMetadata`, metadata schema 3, metadata tests, isolated relaunch | Pass |
-| Hidden main, descendants, shells, and conversations remain mounted | `RuntimeHostView`, `ConversationTabbedView`; hidden background command and conversation switch | Pass |
-| Close, exit, left-neighbor selection, rename, and fixed-main reorder | Runtime tab mutations, direct UI interaction, and Ghostty `move_tab` | Pass |
+| Hidden main, IDE, descendants, shells, and conversations remain mounted | `RuntimeHostView`, `ConversationTabbedView`; retained IDE processes and conversation switch | Pass |
+| Close, exit, left-neighbor selection, rename, and fixed-tab reorder rules | Runtime tab mutations, metadata tests, direct `Command-W` and shell-close interaction | Pass |
 | Ghostty-themed strip and horizontal overflow | `GhosttyConfiguration.themeColors`; 20-tab visual pass | Pass |
-| Native and Ghostty tab shortcuts route into Coinor | `TerminalTabCommands`, shortcut monitor, Ghostty action bridge, manual shortcut pass | Pass |
+| Native and Ghostty tab shortcuts route into Conan Code | `TerminalTabCommands`, shortcut monitor, Ghostty action bridge, `Command-2` Release-app pass | Pass |
 | Attention does not switch away from a shell and main restores focus | `ConversationRuntime.focusAttentionPaneIfMainSelected`, main focus tracking, full test suite | Pass |
-| Archived runtimes stay loaded while shell tabs remain | `RuntimeArchiveUnloadPolicy`; archived shell remained interactive | Pass |
-| Missing base directory remains visible as an inline error | `TerminalSurfaceRepresentable`; historical missing-worktree session | Pass |
+| IDE restores the last-used pane without persisting it as shell metadata | IDE focus routing, derived IDE identifier, runtime and metadata tests | Pass |
+| Archived runtimes stay loaded only while shell tabs require them | `RuntimeArchiveUnloadPolicy`; IDE is excluded from shell-retention state | Pass |
+| Missing base directory remains visible as an inline error | `TerminalSurfaceRepresentable`; both IDE panes on a historical missing worktree | Pass |
 
 ## V1 Definition Of Done
 

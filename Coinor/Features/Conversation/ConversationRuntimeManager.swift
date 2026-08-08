@@ -4,6 +4,7 @@ import SwiftUI
 struct ConversationTerminalTab: Equatable, Identifiable, Sendable {
     enum Kind: Equatable, Sendable {
         case main
+        case ide
         case shell
     }
 
@@ -27,6 +28,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     let root: TerminalSession
 
     @Published private(set) var descendants: [TerminalSession] = []
+    @Published private(set) var ideFresh: TerminalSession
+    @Published private(set) var ideLazygit: TerminalSession
     @Published private(set) var shellTabs: [TerminalSession] = []
     @Published private(set) var tabMetadata: ConversationTabMetadata
     @Published private(set) var pendingRenameRequest:
@@ -40,20 +43,46 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private var descendantOrders: [String: SubagentStartOrder] = [:]
     private var archiveUnloadPolicy = RuntimeArchiveUnloadPolicy()
     private var lastFocusedMainPaneID: String
+    private var lastFocusedIDEPaneID: String
+    private var ideWorkingDirectory: String?
     private var shellBaseWorkingDirectory: String?
 
     init(
         id: String,
         root: TerminalSession,
+        ideWorkingDirectory: String?,
         shellBaseWorkingDirectory: String?,
         tabMetadata: ConversationTabMetadata
     ) {
+        let resolvedIDEWorkingDirectory = ideWorkingDirectory ?? ""
+        let ideFresh = TerminalSession(
+            launch: TerminalLaunchRequest(
+                commandID: "\(id).ide.fresh",
+                workingDirectory: resolvedIDEWorkingDirectory,
+                command: "fresh ."
+            ),
+            runtime: root.runtime
+        )
+        let ideLazygit = TerminalSession(
+            launch: TerminalLaunchRequest(
+                commandID: "\(id).ide.lazygit",
+                workingDirectory: resolvedIDEWorkingDirectory,
+                command: "lazygit"
+            ),
+            runtime: root.runtime
+        )
         self.id = id
         self.root = root
+        self.ideFresh = ideFresh
+        self.ideLazygit = ideLazygit
+        self.ideWorkingDirectory = ideWorkingDirectory
         self.shellBaseWorkingDirectory = shellBaseWorkingDirectory
         self.tabMetadata = tabMetadata.normalized()
         self.lastFocusedMainPaneID = root.id
+        self.lastFocusedIDEPaneID = ideFresh.id
         bindMainSession(root)
+        bindIDESession(ideFresh)
+        bindIDESession(ideLazygit)
     }
 
     var tabs: [ConversationTerminalTab] {
@@ -62,6 +91,11 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 id: ConversationTabMetadata.mainID,
                 name: tabMetadata.mainName,
                 kind: .main
+            ),
+            ConversationTerminalTab(
+                id: ConversationTabMetadata.ideID,
+                name: "IDE",
+                kind: .ide
             ),
         ] + tabMetadata.shellTabs.map {
             ConversationTerminalTab(
@@ -78,6 +112,10 @@ final class ConversationRuntime: ObservableObject, Identifiable {
 
     var isMainTabSelected: Bool {
         selectedTabID == ConversationTabMetadata.mainID
+    }
+
+    var isIDETabSelected: Bool {
+        selectedTabID == ConversationTabMetadata.ideID
     }
 
     var hasShellTabs: Bool {
@@ -114,6 +152,30 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         shellTabs.forEach { $0.shutdown() }
         shellTabs = tabMetadata.shellTabs.map(makeShellSession)
         focusSelectedTab()
+    }
+
+    func resolveIDEWorkingDirectory(_ directory: String) {
+        guard ideWorkingDirectory == nil, !directory.isEmpty else {
+            return
+        }
+        ideWorkingDirectory = directory
+        ideFresh.shutdown()
+        ideLazygit.shutdown()
+        ideFresh = makeIDESession(
+            suffix: "fresh",
+            command: "fresh .",
+            workingDirectory: directory
+        )
+        ideLazygit = makeIDESession(
+            suffix: "lazygit",
+            command: "lazygit",
+            workingDirectory: directory
+        )
+        bindIDESession(ideFresh)
+        bindIDESession(ideLazygit)
+        if isIDETabSelected {
+            focusSelectedTab()
+        }
     }
 
     func addDescendant(
@@ -176,6 +238,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
 
     func closeShellTab(tabID: String) {
         guard tabID != ConversationTabMetadata.mainID,
+              tabID != ConversationTabMetadata.ideID,
               let sessionIndex = shellTabs.firstIndex(where: {
                   $0.id == tabID
               }) else {
@@ -218,7 +281,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             return
         }
         let finalIndex: Int
-        if targetTabID == ConversationTabMetadata.mainID {
+        if targetTabID == ConversationTabMetadata.mainID
+            || targetTabID == ConversationTabMetadata.ideID {
             finalIndex = 0
         } else if let targetTabID,
                   let targetIndex = tabMetadata.shellTabs.firstIndex(
@@ -288,6 +352,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             }
             if selectedID == ConversationTabMetadata.mainID {
                 self.focusMainPane()
+            } else if selectedID == ConversationTabMetadata.ideID {
+                self.focusIDEPane()
             } else {
                 self.shellTabs.first {
                     $0.id == selectedID
@@ -317,6 +383,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     }
 
     func shutdown() {
+        ideFresh.shutdown()
+        ideLazygit.shutdown()
         shellTabs.forEach { $0.shutdown() }
         shellTabs.removeAll()
         descendants.forEach { $0.shutdown() }
@@ -341,6 +409,21 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         return terminal
     }
 
+    private func makeIDESession(
+        suffix: String,
+        command: String,
+        workingDirectory: String
+    ) -> TerminalSession {
+        TerminalSession(
+            launch: TerminalLaunchRequest(
+                commandID: "\(id).ide.\(suffix)",
+                workingDirectory: workingDirectory,
+                command: command
+            ),
+            runtime: root.runtime
+        )
+    }
+
     private func bindMainSession(_ session: TerminalSession) {
         bindTabActions(
             session,
@@ -349,6 +432,20 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         session.onBecameFocused = { [weak self, weak session] in
             guard let self, let session else { return }
             self.lastFocusedMainPaneID = session.id
+        }
+    }
+
+    private func bindIDESession(_ session: TerminalSession) {
+        bindTabActions(
+            session,
+            tabID: ConversationTabMetadata.ideID
+        )
+        session.onBecameFocused = { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.lastFocusedIDEPaneID = session.id
+            if self.selectedTabID != ConversationTabMetadata.ideID {
+                self.selectTab(tabID: ConversationTabMetadata.ideID)
+            }
         }
     }
 
@@ -377,11 +474,17 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             self?.navigateTabs(request)
         }
         session.onMoveTabRequest = { [weak self] amount in
-            guard tabID != ConversationTabMetadata.mainID else { return }
-            self?.moveShellTab(tabID: tabID, by: amount)
+            guard let self,
+                  self.tabMetadata.shellTabs.contains(where: {
+                      $0.id == tabID
+                  }) else {
+                return
+            }
+            self.moveShellTab(tabID: tabID, by: amount)
         }
         session.onRenameTabRequest = { [weak self] name in
             guard let self else { return }
+            guard tabID != ConversationTabMetadata.ideID else { return }
             if let name {
                 self.renameTab(tabID: tabID, to: name)
             } else {
@@ -438,6 +541,16 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         }
     }
 
+    private func focusIDEPane() {
+        cancelPendingFocusRequests()
+        if lastFocusedIDEPaneID == ideLazygit.id {
+            ideLazygit.focus()
+        } else {
+            lastFocusedIDEPaneID = ideFresh.id
+            ideFresh.focus()
+        }
+    }
+
     private func publishTabMetadata() {
         onTabMetadataChange?(tabMetadata)
     }
@@ -445,6 +558,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private func cancelPendingFocusRequests() {
         root.cancelPendingFocus()
         descendants.forEach { $0.cancelPendingFocus() }
+        ideFresh.cancelPendingFocus()
+        ideLazygit.cancelPendingFocus()
         shellTabs.forEach { $0.cancelPendingFocus() }
     }
 }
@@ -484,6 +599,7 @@ final class ConversationRuntimeManager: ObservableObject {
         additionalArguments: [String] = [],
         shellDirectorySource: ConversationShellDirectorySource =
             .rootLaunchDirectory,
+        ideDirectorySource: ConversationShellDirectorySource? = nil,
         tabMetadata: ConversationTabMetadata = .initial
     ) -> ConversationRuntime {
         if let existing = runtime(sessionID: sessionID) {
@@ -512,9 +628,19 @@ final class ConversationRuntimeManager: ObservableObject {
         case .unavailable:
             shellBaseWorkingDirectory = nil
         }
+        let ideWorkingDirectory: String?
+        switch ideDirectorySource ?? shellDirectorySource {
+        case .rootLaunchDirectory:
+            ideWorkingDirectory = workingDirectory
+        case .explicit(let directory):
+            ideWorkingDirectory = directory
+        case .unavailable:
+            ideWorkingDirectory = nil
+        }
         let runtime = ConversationRuntime(
             id: sessionID,
             root: rootSession,
+            ideWorkingDirectory: ideWorkingDirectory,
             shellBaseWorkingDirectory: shellBaseWorkingDirectory,
             tabMetadata: tabMetadata
         )
@@ -598,6 +724,14 @@ final class ConversationRuntimeManager: ObservableObject {
     ) {
         runtime(sessionID: sessionID)?
             .resolveShellBaseWorkingDirectory(directory)
+    }
+
+    func resolveIDEWorkingDirectory(
+        sessionID: String,
+        directory: String
+    ) {
+        runtime(sessionID: sessionID)?
+            .resolveIDEWorkingDirectory(directory)
     }
 
     func setActivity(

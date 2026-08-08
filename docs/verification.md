@@ -2,6 +2,79 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.4.0 Verification
+
+The permanent IDE workspace was rebased onto local and remote `main` at
+`f0c6177`, prepared as version `0.4.0` build `6`, and validated on August 8,
+2026. The release keeps the repository, bundle identifier, executable, and
+application-support paths named Coinor for compatibility.
+
+Automated verification:
+
+- Fresh and Lazygit resolved from a clean Finder-compatible PATH as
+  `/opt/homebrew/bin/fresh` and `/opt/homebrew/bin/lazygit`.
+- Debug and Release arm64 builds passed from the versioned candidate.
+- 195 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITest passed with 0 failures and 0 skips.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed.
+- `scripts/ghostty/test-verification.sh` passed its happy path and all four
+  corruption cases.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle and for
+  the application extracted from the final archive.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, the Release bundle, or the
+  archive-extracted bundle.
+- `git diff --check` passed for staged and unstaged changes.
+- The archive checksum verified, and `diff -qr` found no difference between
+  the built and archive-extracted application bundles.
+
+The final Xcode result bundle is:
+
+```text
+.build/DerivedData-0.4.0/Logs/Test/Test-Coinor-2026.08.08_01-03-56--0300.xcresult
+```
+
+Manual verification used the real Debug and Release applications, embedded
+Ghostty, Fresh, Lazygit, and the real custom Grok binary:
+
+- Every loaded conversation displayed fixed `main` and `IDE` tabs before any
+  shell tabs.
+- `Command-2` selected IDE, `Command-W` was inert there, and `Command-T`
+  created a shell in the third position. Closing that shell selected IDE.
+- Fresh ran `fresh .` in the larger left pane and Lazygit ran in the right
+  pane. The wide layout measured approximately 59.6/40.4 and remained stable;
+  the existing compact layout activated when the window was narrow.
+- Fresh and Lazygit both used the persisted Git root for the Coinor and
+  rent-roll-debugger conversations.
+- A historical deleted worktree displayed its exact missing-directory error in
+  both panes without crashing or starting orphan processes.
+- Switching conversations preserved the hidden Fresh and Lazygit processes.
+  Two retained IDE pairs remained near 0% CPU, with observed child RSS of
+  roughly 20-34 MB each.
+- Normal quit stopped the application, Grok clients, Fresh, Lazygit, the
+  private leader, and removed the private leader socket.
+- The exact Release candidate restored the catalog, selected IDE state, and
+  rendered the two-pane workspace without overlap.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.4.0` build `6` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.4.0-arm64.zip` |
+| Archive size | `5,910,717` bytes |
+| Archive SHA-256 | `22883d645b82c5e6a090978d2266f7a68cafcc990a65b7a3b4e21ccb6f3b13be` |
+
 ## Conan Code 0.3.1 Verification
 
 The Conan Code presentation and interaction polish was rebased onto

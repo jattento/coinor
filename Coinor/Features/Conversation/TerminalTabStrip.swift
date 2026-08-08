@@ -30,6 +30,16 @@ struct ConversationTabbedView: View {
                 .allowsHitTesting(runtime.isMainTabSelected)
                 .accessibilityHidden(!runtime.isMainTabSelected)
 
+                IDEPaneView(
+                    fresh: runtime.ideFresh,
+                    lazygit: runtime.ideLazygit,
+                    isVisible: isConversationVisible
+                        && runtime.isIDETabSelected
+                )
+                .opacity(runtime.isIDETabSelected ? 1 : 0)
+                .allowsHitTesting(runtime.isIDETabSelected)
+                .accessibilityHidden(!runtime.isIDETabSelected)
+
                 ForEach(runtime.shellTabs) { session in
                     TerminalSurfaceRepresentable(
                         session: session,
@@ -184,10 +194,13 @@ private struct TerminalTabStrip: View {
             }
             .font(.system(size: 12, weight: .regular))
 
-            if tab.kind == .main {
+            switch tab.kind {
+            case .main:
                 mainActivityIndicator
                     .frame(width: 14, height: 14)
-            } else {
+            case .ide:
+                EmptyView()
+            case .shell:
                 Button {
                     runtime.closeShellTab(tabID: tab.id)
                 } label: {
@@ -295,7 +308,8 @@ private struct TerminalTabStrip: View {
     }
 
     private func beginRename(tabID: String) {
-        guard let tab = runtime.tabs.first(where: { $0.id == tabID }) else {
+        guard let tab = runtime.tabs.first(where: { $0.id == tabID }),
+              tab.kind != .ide else {
             return
         }
         runtime.selectTab(tabID: tabID)

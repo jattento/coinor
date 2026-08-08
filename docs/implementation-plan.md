@@ -243,6 +243,7 @@ Package:
 Implement:
 
 - a permanent, locally renameable `main` tab for every conversation
+- a permanent, fixed `IDE` tab with eager `fresh .` and `lazygit` surfaces
 - independent Ghostty shell tabs rooted at the conversation's base checkout or
   worktree
 - persistent labels, ordering, selection, and monotonic numbering
@@ -256,17 +257,20 @@ Implement:
 
 Acceptance criteria:
 
-- every new and existing conversation exposes main before any shell tab
+- every new and existing conversation exposes main and IDE before any shell tab
+- IDE launches Fresh and Lazygit in the conversation checkout or worktree
+- IDE uses a non-draggable 60/40 split and restores its last focused pane
 - `+` creates and focuses `Tab N` in the base checkout or worktree
-- selecting a shell hides main and descendants without interrupting them
+- selecting IDE or a shell hides the other surfaces without interrupting them
 - closing or exiting a shell selects its left neighbor and never closes main
 - rename preserves exact text, including empty and duplicate labels
-- drag reorder keeps main fixed and persists shell order
+- IDE cannot close, rename, or retain an archived runtime by itself
+- drag reorder keeps main and IDE fixed and persists shell order
 - relaunch restores labels, order, selection, numbering, and new shell
   processes without restoring scrollback
 - `Command-T`, `Command-W`, `Command-1...8`, `Command-9`, and equivalent
   Ghostty actions operate on Coinor tabs
-- attention marks main without switching away from a shell
+- attention marks main without switching away from IDE or a shell
 - an archived runtime stays live while it owns any shell tab
 - a missing base directory produces an inline tab error without falling back
   to another directory

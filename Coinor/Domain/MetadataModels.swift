@@ -14,6 +14,7 @@ struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
 
 struct ConversationTabMetadata: Equatable, Sendable {
     static let mainID = "main"
+    static let ideID = "ide"
 
     var mainName: String
     var shellTabs: [ShellTabMetadata]
@@ -28,11 +29,13 @@ struct ConversationTabMetadata: Equatable, Sendable {
     )
 
     var orderedTabIDs: [String] {
-        [Self.mainID] + shellTabs.map(\.id)
+        [Self.mainID, Self.ideID] + shellTabs.map(\.id)
     }
 
     func contains(tabID: String) -> Bool {
-        tabID == Self.mainID || shellTabs.contains { $0.id == tabID }
+        tabID == Self.mainID
+            || tabID == Self.ideID
+            || shellTabs.contains { $0.id == tabID }
     }
 
     mutating func appendShell(id: String) -> ShellTabMetadata {
@@ -56,6 +59,7 @@ struct ConversationTabMetadata: Equatable, Sendable {
             mainName = name
             return
         }
+        guard tabID != Self.ideID else { return }
         guard let index = shellTabs.firstIndex(where: { $0.id == tabID })
         else {
             return
@@ -69,7 +73,7 @@ struct ConversationTabMetadata: Equatable, Sendable {
         }) else {
             return
         }
-        let orderedIndex = shellIndex + 1
+        let orderedIndex = shellIndex + 2
         shellTabs.remove(at: shellIndex)
         if selectedTabID == tabID {
             selectedTabID = orderedTabIDs[
@@ -93,11 +97,11 @@ struct ConversationTabMetadata: Equatable, Sendable {
     }
 
     func normalized() -> ConversationTabMetadata {
-        var seen = Set([Self.mainID])
+        var seen = Set([Self.mainID, Self.ideID])
         let shells = shellTabs.filter {
             seen.insert($0.id).inserted
         }
-        let validIDs = Set([Self.mainID] + shells.map(\.id))
+        let validIDs = Set([Self.mainID, Self.ideID] + shells.map(\.id))
         return ConversationTabMetadata(
             mainName: mainName,
             shellTabs: shells,

@@ -136,39 +136,55 @@ is named `main` by default and displays the root Grok pane plus any active
 subagent panes. It cannot be closed, remains first when tabs are reordered, and
 can be renamed locally without changing the Grok conversation title.
 
+The permanent second tab is named `IDE`. It cannot be closed, renamed, or
+reordered. Activating a conversation immediately launches two embedded Ghostty
+surfaces at the Git root of its checkout or worktree: `fresh .` on the left
+and `lazygit` on the right. The IDE layout uses a fixed, responsive 60/40
+horizontal split with a one-point separator. It preserves Conan Code's
+existing minimum window size, so Lazygit may choose its compact layout when
+the window is narrow.
+
 The add button immediately after the last tab creates and selects an independent
 Ghostty shell in the conversation's original checkout or worktree directory.
 Conan Code supplies no command for these surfaces, so Ghostty uses the user's normal
 shell configuration. New shells receive monotonically increasing names such as
 `Tab 1` and `Tab 2`; closed numbers are not reused.
 
-Selecting a shell tab gives it the complete terminal content area. The Grok
-root and subagents remain mounted and continue running while hidden. Shell tabs
-also remain mounted when another tab or conversation is selected. Executing
-`exit`, pressing the close button, or using the close-tab shortcut terminates
-the shell immediately and selects the tab to its left.
+Selecting IDE hides main and the shell tabs without stopping them. Returning to
+IDE restores focus to the last IDE pane used, defaulting to Fresh. Selecting a
+shell tab gives it the complete terminal content area. Main, IDE, and all shell
+surfaces remain mounted and continue running while hidden. Executing `exit`,
+pressing the close button, or using the close-tab shortcut terminates a shell
+immediately and selects the tab to its left.
 
-Double-clicking any tab starts inline rename. Enter or losing focus stores the
-text exactly as entered; Escape cancels. Empty and duplicate labels are valid.
-Shell tabs can be reordered by dragging, but cannot move between conversations.
-The strip scrolls horizontally rather than shrinking labels without limit.
+Double-clicking main or a shell tab starts inline rename. Enter or losing focus
+stores the text exactly as entered; Escape cancels. Empty and duplicate labels
+are valid. Shell tabs can be reordered by dragging, but cannot move before IDE
+or between conversations. The strip scrolls horizontally rather than shrinking
+labels without limit.
 
 Conan Code stores each conversation's tab labels, order, selected tab, and next
-number in local metadata. On relaunch it recreates all persisted shell tabs as
-new shell processes in the base checkout or worktree; terminal processes and
-scrollback do not survive application exit. A missing base directory leaves
-the tab visible with an inline error instead of silently using another path.
+number in local metadata. On relaunch it recreates the IDE commands and all
+persisted shell tabs as new processes in the base checkout or worktree;
+terminal processes and scrollback do not survive application exit. A missing
+base directory leaves the affected surfaces visible with an inline error
+instead of silently using another path.
 
 The tab strip derives its background and foreground from the active Ghostty
 configuration. The main tab shows aggregated working, attention, and failure
-state. Attention never switches away from a selected shell automatically;
-returning to main focuses the pane needing input, or otherwise the last root or
-subagent pane used.
+state. Attention never switches away from IDE or a selected shell
+automatically; returning to main focuses the pane needing input, or otherwise
+the last root or subagent pane used.
 
 Conan Code supports `Command-T` to create a tab, `Command-W` to close a selected
 shell, `Command-1` through `Command-8` for exact positions, and `Command-9` for
-the last tab. `Command-W` does nothing on main. Equivalent Ghostty tab actions
-are routed into Conan Code instead of creating native Ghostty UI.
+the last tab. `Command-1` selects main and `Command-2` selects IDE.
+`Command-W` does nothing on either permanent tab. Equivalent Ghostty tab
+actions are routed into Conan Code instead of creating native Ghostty UI.
+
+The permanent IDE processes do not keep an archived runtime loaded. Once an
+archived conversation becomes otherwise eligible for unloading, Conan Code
+closes its IDE surfaces with the rest of that runtime.
 
 ## Terminal configuration
 
