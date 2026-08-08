@@ -2,6 +2,56 @@
 
 Date: August 8, 2026
 
+## Conan Code 0.5.4 Verification
+
+The startup loading screen's ASCII mascot artwork was replaced as version
+`0.5.4` build `11` and validated on August 8, 2026.
+
+Automated verification:
+
+- 34 unit and integration tests passed with 0 failures and 0 skips.
+- 3 XCUITests passed with 0 failures and 0 skips.
+- Release arm64 build passed.
+- `scripts/ghostty/verify.sh --artifact-root Vendor/Ghostty` passed for Ghostty
+  tag `v1.3.1`, commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/phase0/check-boundaries.sh` passed with the canonical sibling
+  `grok-build` checkout supplied through `GROK_BUILD_ROOT`.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle.
+- `scripts/release/security-scan.sh` found no secrets or private local paths
+  in Git history, the publishable source snapshot, or the Release bundle.
+- `git diff --check` passed.
+- The archive checksum verified.
+
+Final Xcode result bundle:
+
+```text
+.build/DerivedData/Logs/Test/Test-Coinor-2026.08.08_15-02-15--0300.xcresult
+```
+
+Manual verification used the real Release application:
+
+- The new ASCII artwork rendered cleanly on the startup screen in place of
+  the previous dog drawing, with the "CONAN" caption, "Connecting to Grok"
+  status text, and startup diagnostics panel unaffected.
+- No other view, layout, or behavior changed.
+
+Release artifact:
+
+| Field | Final value |
+| --- | --- |
+| Display name | `Conan Code` |
+| Bundle | `Coinor.app` |
+| Bundle identifier | `dev.coinor.Coinor` |
+| Version | `0.5.4` build `11` |
+| Architecture | `arm64` |
+| Minimum macOS | `13.0` |
+| Signature | Ad-hoc, deep strict verification passed |
+| App Sandbox | Disabled |
+| `get-task-allow` | Absent |
+| Archive | `Artifacts/Coinor-0.5.4-arm64.zip` |
+| Archive size | `5,999,162` bytes |
+| Archive SHA-256 | `03405903ddd898afb4bf6d644714960f777770947b34ba5f530c85aedd6ec1b5` |
+
 ## Conan Code 0.5.3 Verification
 
 The embedded Ghostty theme rework was integrated as version `0.5.3` build

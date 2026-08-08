@@ -143,37 +143,41 @@ private struct StartupExperienceView: View {
 }
 
 private struct ConanASCIIView: View {
-    private static let face = #"""
-        / \__
-       (    o\___
-       /         O
-      /   (_____/
-     /_____/
-"""#
-
-    private static let tongue = #"""
-               |  |
-               |  |
-               \__/
-"""#
-
-    private static let harness = #"""
-        /  \
-      _/ /\ \_
-     /__/  \__\
+    private static let art = #"""
+                            ..,,,,,,,,,..
+                     .,;%%%%%%%%%%%%%%%%%%%%;,.
+                   %%%%%%%%%%%%%%%%%%%%////%%%%%%, .,;%%;,
+            .,;%/,%%%%%/////%%%%%%%%%%%%%%////%%%%,%%//%%%,
+        .,;%%%%/,%%%///%%%%%%%%%%%%%%%%%%%%%%%%%%%%,////%%%%;,
+     .,%%%%%%//,%%%%%%%%%%%%%%%%@@%a%%%%%%%%%%%%%%%%,%%/%%%%%%%;,
+   .,%//%%%%//,%%%%///////%%%%%%%@@@%%%%%%///////%%%%,%%//%%%%%%%%,
+ ,%%%%%///%%//,%%//%%%%%///%%%%%@@@%%%%%////%%%%%%%%%,/%%%%%%%%%%%%%
+.%%%%%%%%%////,%%%%%%%//%///%%%%@@@@%%%////%%/////%%%,/;%%%%%%%%/%%%
+%/%%%%%%%/////,%%%%///%%////%%%@@@@@%%%///%%/%%%%%//%,////%%%%//%%%'
+%//%%%%%//////,%/%a`  'a%///%%%@@@@@@%%////a`  'a%%%%,//%///%/%%%%%
+%///%%%%%%///,%%%%@@aa@@%//%%%@@@@S@@@%%///@@aa@@%%%%%,/%////%%%%%
+%%//%%%%%%%//,%%%%%///////%%%@S@@@@SS@@@%%/////%%%%%%%,%////%%%%%'
+%%//%%%%%%%//,%%%%/////%%@%@SS@@@@@@@S@@@@%%%%/////%%%,////%%%%%'
+`%/%%%%//%%//,%%%///%%%%@@@S@@@@@@@@@@@@@@@S%%%%////%%,///%%%%%'
+  %%%%//%%%%/,%%%%%%%%@@@@@@@@@@@@@@@@@@@@@SS@%%%%%%%%,//%%%%%'
+  `%%%//%%%%/,%%%%@%@@@@@@@@@@@@@@@@@@@@@@@@@S@@%%%%%,/////%%'
+   `%%%//%%%/,%%%@@@SS@@SSs@@@@@@@@@@@@@sSS@@@@@@%%%,//%%//%'
+    `%%%%%%/  %%S@@SS@@@@@Ss` .,,.    'sS@@@S@@@@%'  ///%/%'
+      `%%%/    %SS@@@@SSS@@S.         .S@@SSS@@@@'    //%%'
+               /`S@@@@@@SSSSSs,     ,sSSSSS@@@@@'
+             %%//`@@@@@@@@@@@@@Ss,sS@@@@@@@@@@@'/
+           %%%%@@00`@@@@@@@@@@@@@'@@@@@@@@@@@'//%%
+       %%%%%%a%@@@@000aaaaaaaaa00a00aaaaaaa00%@%%%%%
+    %%%%%%a%%@@@@@@@@@@000000000000000000@@@%@@%%%@%%%
+ %%%%%%a%%@@@%@@@@@@@@@@@00000000000000@@@@@@@@@%@@%%@%%
+%%%aa%@@@@@@@@@@@@@@0000000000000000000000@@@@@@@@%@@@%%%%
+%%@@@@@@@@@@@@@@@00000000000000000000000000000@@@@@@@@@%%%%%
 """#
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(verbatim: Self.face)
+            Text(verbatim: Self.art)
                 .foregroundStyle(.primary)
-                .frame(width: 156, alignment: .leading)
-            Text(verbatim: Self.tongue)
-                .foregroundStyle(Color(nsColor: .systemPink))
-                .frame(width: 156, alignment: .leading)
-            Text(verbatim: Self.harness)
-                .foregroundStyle(Color(nsColor: .systemTeal))
-                .frame(width: 156, alignment: .leading)
 
             Text("CONAN")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -184,8 +188,6 @@ private struct ConanASCIIView: View {
         .lineSpacing(0)
         .fixedSize(horizontal: true, vertical: true)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "Conan, a happy black dog with floppy ears and his tongue out"
-        )
+        .accessibilityLabel("Conan, the Coinor mascot")
     }
 }
