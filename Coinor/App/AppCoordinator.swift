@@ -80,6 +80,7 @@ final class AppCoordinator: ObservableObject {
     private var projectIDBySessionID: [String: String] = [:]
     private var mainCheckoutByProjectID: [String: String] = [:]
     private var attentionNotifiedSessionIDs: Set<String> = []
+    @Published private var acknowledgedAttentionSessionIDs: Set<String> = []
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
@@ -339,6 +340,7 @@ final class AppCoordinator: ObservableObject {
         if runtimeManager.runtime(sessionID: sessionID) != nil {
             runtimeManager.select(sessionID: sessionID)
             selectedSessionID = sessionID
+            acknowledgeAttention(sessionID)
             schedulePersistence { coordinator in
                 await coordinator.persist {
                     $0.setLastVisibleSession(sessionID)
@@ -368,6 +370,7 @@ final class AppCoordinator: ObservableObject {
         hookCoordinator?.activateRoot(sessionID: sessionID)
         runtimeManager.select(sessionID: sessionID)
         selectedSessionID = sessionID
+        acknowledgeAttention(sessionID)
         reconcileRuntimeActivity()
         requestLifecycleCatchup(for: sessionID)
 
@@ -847,6 +850,7 @@ final class AppCoordinator: ObservableObject {
         metadataStore = nil
         roster.removeAll()
         attentionNotifiedSessionIDs.removeAll()
+        acknowledgedAttentionSessionIDs.removeAll()
         return DetachedRuntimeState(
             controlClient: control,
             leaderSocket: leaderSocket
@@ -972,10 +976,24 @@ final class AppCoordinator: ObservableObject {
     }
 
     func activity(for sessionID: String) -> RuntimeActivity {
+        let activity = rawActivity(for: sessionID)
+        guard activity == .needsInput else { return activity }
+        if sessionID == selectedSessionID
+            || acknowledgedAttentionSessionIDs.contains(sessionID) {
+            return .idle
+        }
+        return activity
+    }
+
+    private func rawActivity(for sessionID: String) -> RuntimeActivity {
         if let runtime = runtimeManager?.runtime(sessionID: sessionID) {
             return runtime.aggregateActivity
         }
         return authoritativeActivity(for: sessionID) ?? .idle
+    }
+
+    private func acknowledgeAttention(_ sessionID: String) {
+        acknowledgedAttentionSessionIDs.insert(sessionID)
     }
 
     func searchConversations(_ query: String) -> [ConversationRow] {
@@ -1249,6 +1267,7 @@ final class AppCoordinator: ObservableObject {
                 }
             } else {
                 attentionNotifiedSessionIDs.remove(runtime.id)
+                acknowledgedAttentionSessionIDs.remove(runtime.id)
             }
         }
     }
