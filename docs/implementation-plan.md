@@ -301,7 +301,11 @@ Acceptance criteria:
 - log reads are throttled, bounded, incremental, and UTF-8 safe
 - manual closure returns `tab_gone` without recreation
 - relaunch restores no managed tabs or processes
-- agents clean up tabs unless the user explicitly keeps a service running
+- natural requests for servers, databases, stacks, watchers, logs, REPLs,
+  daemons, or services select managed tabs automatically without asking
+- agents interrupt commands and close their tabs before the final response,
+  including after failures, unless the user explicitly keeps a named service
+  running
 
 ## Test shape
 

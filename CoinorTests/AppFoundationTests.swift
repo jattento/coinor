@@ -187,6 +187,36 @@ final class AppFoundationTests: XCTestCase {
         )
     }
 
+    func testLongRunningSkillRequiresAutomaticUseAndCleanup() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let skillURL = resources.appendingPathComponent(
+            "conan-code-long-running-SKILL.md"
+        )
+        let skill = try String(contentsOf: skillURL, encoding: .utf8)
+            .lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        let requiredPolicy = [
+            "automatically create and control visible conan code terminal tabs",
+            "even when the user does not mention tabs or this skill",
+            "development server",
+            "database",
+            "docker compose stack",
+            "do not ask the user whether to open a tab",
+            "does not by itself mean to leave it running after the task",
+            "before sending the final response",
+            "close every managed tab you created",
+            "even when the command or wider task failed",
+        ]
+
+        for policy in requiredPolicy {
+            XCTAssertTrue(
+                skill.contains(policy),
+                "Missing long-running skill policy: \(policy)"
+            )
+        }
+    }
+
     func testRuntimeEnvironmentCanIsolateApplicationSupport() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Coinor-Isolated", isDirectory: true)

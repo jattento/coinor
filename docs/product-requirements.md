@@ -193,9 +193,18 @@ after relaunch.
 
 The managed-terminal skill is available only inside Conan Code. Direct Grok
 processes outside Conan Code receive a clear error and do not fall back to
-background tasks. Agents close their managed tabs before finishing unless the
-user explicitly asks to leave a service running. A tab closed manually by the
-user remains gone.
+background tasks. When a user asks to start a server, database, container
+stack, watcher, streaming log, REPL, daemon, service, or another persistent
+command, the agent uses a managed tab automatically without asking whether to
+open one and without requiring the user to mention tabs or the skill. Finite
+setup, build, test, and migration commands continue to use the ordinary
+terminal path.
+
+Before its final response, the agent interrupts remaining commands and closes
+every managed tab it created, including after task failure. Asking to start a
+service for the task does not by itself request that it remain running. The
+agent leaves a tab open only when the user explicitly asks to keep that
+specific service running. A tab closed manually by the user remains gone.
 
 Archiving a loaded runtime closes main, IDE, ordinary shell, and managed
 terminal surfaces immediately after confirmation.

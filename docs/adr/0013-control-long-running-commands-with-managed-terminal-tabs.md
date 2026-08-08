@@ -16,6 +16,12 @@ watchers, streaming logs, REPLs, and other commands that need repeated reads or
 input. Finite builds, tests, and migrations continue to use Grok's ordinary
 terminal tool unless the user explicitly requests a tab.
 
+Service-like requests select this skill automatically. Grok does not ask
+whether to open a tab and does not require the user to mention Conan Code tabs
+or the skill. This applies to development servers, databases, container
+stacks, local emulators, watchers, tails, REPLs, daemons, and other persistent
+foreground commands.
+
 The private Grok leader inherits the socket path, client path, and an ephemeral
 application-instance token. A `create` request also carries a literal nonce.
 Conan Code authorizes that nonce only after observing the matching
@@ -41,6 +47,12 @@ Managed tabs appear after persisted shell tabs without changing selection or
 stealing focus. They remain mounted while hidden, but their labels, order,
 processes, capabilities, and scrollback are transient and are never restored
 after application relaunch.
+
+Before the agent sends its final response, it interrupts remaining commands
+and closes every managed tab it created, including when the task failed. A
+request to start a service for the task does not imply that it should remain
+running. The only exception is an explicit user request to leave a specific
+service running.
 
 Archiving is an immediate destructive runtime action. If a conversation or
 project has a loaded runtime, Conan Code confirms before archiving. After
