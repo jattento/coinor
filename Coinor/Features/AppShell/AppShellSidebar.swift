@@ -331,11 +331,17 @@ struct AppShellSidebar: View {
 
     @ViewBuilder
     private func projectRow(_ project: ProjectRow) -> some View {
-        if reorder.isDragging(project.projectID, in: .projects) {
-            projectReorderPlaceholder(project)
-        } else {
-            projectDisclosureGroup(project)
+        Group {
+            if reorder.isDragging(project.projectID, in: .projects) {
+                projectReorderPlaceholder(project)
+            } else {
+                projectDisclosureGroup(project)
+            }
         }
+        // Recycled sidebar rows cross-fade their labels when an ambient
+        // animation reaches them, which paints two project names on top of
+        // each other. Row content updates stay instantaneous.
+        .transaction { $0.animation = nil }
     }
 
     private func projectDisclosureGroup(
@@ -529,12 +535,14 @@ struct AppShellSidebar: View {
                 projectDropTargetID: projectDropTargetID
             )
             .tag(conversation.id)
+            .transaction { $0.animation = nil }
         } else {
             conversationRowContent(
                 conversation,
                 pinned: pinned
             )
             .tag(conversation.id)
+            .transaction { $0.animation = nil }
         }
     }
 

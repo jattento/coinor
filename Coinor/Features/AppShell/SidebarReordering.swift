@@ -288,8 +288,13 @@ struct SidebarReorderDropDelegate: DropDelegate {
         let dropY = forceAfterTarget
             ? targetHeight
             : info.location.y
-        _ = withAnimation(.easeInOut(duration: 0.16)) {
-            model.updatePreview(
+        // The sidebar list recycles row views, so animating an order change
+        // cross-fades one project's label over another instead of moving the
+        // row. Apply preview reorders without animation.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            _ = model.updatePreview(
                 scope: scope,
                 targetID: targetID,
                 dropY: dropY,
