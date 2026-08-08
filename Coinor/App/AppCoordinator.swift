@@ -978,11 +978,9 @@ final class AppCoordinator: ObservableObject {
     func activity(for sessionID: String) -> RuntimeActivity {
         let activity = rawActivity(for: sessionID)
         guard activity == .needsInput else { return activity }
-        if sessionID == selectedSessionID
-            || acknowledgedAttentionSessionIDs.contains(sessionID) {
-            return .idle
-        }
-        return activity
+        return acknowledgedAttentionSessionIDs.contains(sessionID)
+            ? .idle
+            : activity
     }
 
     private func rawActivity(for sessionID: String) -> RuntimeActivity {
