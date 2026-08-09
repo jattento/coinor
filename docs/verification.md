@@ -100,6 +100,38 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code remote host operations verification
+
+Every remaining remote operation was exercised against the same real second
+Mac, through Conan Code's own types.
+
+Live suites (`CoinorTests/RemoteHostLiveOperationsTests`):
+
+- Renaming a remote conversation went through that computer's leader and the
+  original title was restored afterwards.
+- The subagent lifecycle API answered for a real remote conversation.
+- A worktree plan resolved entirely on the remote computer, with remote paths
+  that do not exist on this one.
+
+Real pseudo-terminals (`scripts/verify/remote-panes.py`, driven by the commands
+`CoinorTests/RemoteLaunchCommandDumpTests` dumps from `TerminalLaunchRequest`
+itself, so the script runs exactly what the product runs):
+
+- A remote shell tab ran the remote login shell in the requested directory.
+- The IDE tab started `fresh` and `lazygit` on the remote computer.
+- A new remote conversation painted the Grok interface.
+- An existing remote conversation resumed, and the same conversation
+  reattached after the connection dropped.
+
+Real subagent panel, end to end: a prompt sent to a remote conversation spawned
+a subagent on that computer, its lifecycle event arrived over the remote ACP
+stream, and resuming the child session opened a painted pane with no
+missing-session error.
+
+The pane checks live in a script rather than the test bundle because this
+application's test host cannot fork a pseudo-terminal safely: the Ghostty
+renderer's threads make `forkpty` inside it unreliable.
+
 ## Conan Code remote hosts verification
 
 Remote host support (ADR-0014) was validated on August 8, 2026 against a real

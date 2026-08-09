@@ -196,6 +196,9 @@ enum LiveRemoteEnvironment {
     /// Kept short so the multiplexing socket fits `sockaddr_un`.
     static let controlPath = "/tmp/coinor-live.sock"
 
+    /// Where the pane commands are written for `scripts/verify/remote-panes.py`.
+    static let dumpPath = "/tmp/coinor-remote-commands.json"
+
     static var supportDirectory: URL {
         URL(fileURLWithPath: "/tmp", isDirectory: true)
     }
