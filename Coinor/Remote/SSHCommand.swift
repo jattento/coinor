@@ -71,11 +71,23 @@ struct SSHCommand: Sendable {
     private var connectionOptions: [String] {
         [
             "-o", "ControlMaster=auto",
-            "-o", "ControlPath=\(controlPath)",
+            "-o", "ControlPath=\(Self.optionValue(controlPath))",
             "-o", "ControlPersist=300",
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
         ]
+    }
+
+    /// OpenSSH parses `-o` values with its own configuration lexer, which
+    /// splits on whitespace. Conan Code's control socket lives under
+    /// `Application Support`, so the value must be quoted or the space is read
+    /// as a second argument.
+    static func optionValue(_ value: String) -> String {
+        guard value.contains(" ") || value.contains("\t") else { return value }
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"" + escaped + "\""
     }
 
     /// - Parameters:

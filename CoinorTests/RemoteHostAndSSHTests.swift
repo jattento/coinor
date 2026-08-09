@@ -108,7 +108,11 @@ struct SSHCommandTests {
         )
 
         #expect(arguments.contains("ControlMaster=auto"))
-        #expect(arguments.contains("ControlPath=/tmp/coinor ssh/control.sock"))
+        // OpenSSH's own configuration lexer splits `-o` values on whitespace,
+        // so a control path with a space must arrive quoted.
+        #expect(
+            arguments.contains(#"ControlPath="/tmp/coinor ssh/control.sock""#)
+        )
         #expect(arguments.contains("ControlPersist=300"))
         #expect(arguments.contains("ServerAliveInterval=15"))
         #expect(arguments.contains("ServerAliveCountMax=3"))

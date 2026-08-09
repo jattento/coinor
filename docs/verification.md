@@ -100,6 +100,28 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.16 Verification
+
+Registering a remote computer failed on its first step with
+`keyword controlpath extra arguments at end of line`. Conan Code's SSH control
+socket lives under `Application Support`, and OpenSSH's own option lexer splits
+`-o` values on whitespace, so the space in that path was read as a second
+argument. The value is now quoted.
+
+The reason no test caught it is recorded deliberately: every SSH test, and the
+remote-host UI test, ran against an isolated support directory under `/tmp`
+with no space in its path, so they exercised a path shape the product never
+uses.
+
+- `CoinorTests/ControlPathRegressionTests` now runs the real `ssh` binary with
+  the real default control path and fails if OpenSSH rejects it again.
+- The SSH invocation tests use a directory whose name contains a space.
+- `CoinorUITests/RemoteHostUITests` isolates into a directory whose name
+  contains a space, and passed end to end against a real remote computer:
+  registering, `Connected`, adding a remote project through the picker, the
+  host badge, and removal.
+- The full suite passed with 0 failures.
+
 ## Conan Code 0.5.15 Verification
 
 Hiding remote projects and the remote computers empty state shipped as version

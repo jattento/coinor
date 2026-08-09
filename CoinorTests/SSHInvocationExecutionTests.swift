@@ -14,8 +14,11 @@ struct SSHInvocationExecutionTests {
     private let alias = RemoteHostAlias(rawValue: "coinor-offline-test")!
 
     private func ssh() throws -> SSHCommand {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("coinor-ssh-\(UUID().uuidString)", isDirectory: true)
+        // The real control socket lives under `Application Support`, so the
+        // path used here contains a space on purpose: OpenSSH's configuration
+        // lexer rejects an unquoted value that has one.
+        let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("coinor ssh \(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
@@ -47,6 +50,30 @@ struct SSHInvocationExecutionTests {
             process.terminationStatus,
             String(decoding: data, as: UTF8.self)
         )
+    }
+
+    @Test
+    func theDefaultControlPathIsQuotedBecauseApplicationSupportHasASpace() throws {
+        let support = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ).appendingPathComponent("Coinor", isDirectory: true)
+        let command = SSHCommand(alias: alias, supportDirectory: support)
+        let arguments = command.arguments(
+            remoteCommand: "true",
+            allocateTTY: false,
+            batch: true
+        )
+        let controlOption = try #require(
+            arguments.first { $0.hasPrefix("ControlPath=") }
+        )
+
+        #expect(controlOption.contains("\""))
+        let result = try run(arguments)
+        #expect(!result.error.contains("extra arguments at end of line"))
+        #expect(!result.error.contains("Bad configuration option"))
     }
 
     @Test

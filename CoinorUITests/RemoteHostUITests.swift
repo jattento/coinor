@@ -22,9 +22,12 @@ final class RemoteHostUITests: XCTestCase {
     /// tests, so the user's own projects, pins, and registered computers are
     /// never touched.
     private func launchApp() -> XCUIApplication {
+        // The real support directory is `~/Library/Application Support/…`,
+        // whose space once broke the SSH control path. The isolated directory
+        // used here keeps a space so that can never pass unnoticed again.
         let supportDirectory = URL(fileURLWithPath: "/tmp", isDirectory: true)
             .appendingPathComponent(
-                "CoinorUITests-\(UUID().uuidString)",
+                "Coinor UI Tests \(UUID().uuidString.prefix(8))",
                 isDirectory: true
             )
         let app = XCUIApplication()
