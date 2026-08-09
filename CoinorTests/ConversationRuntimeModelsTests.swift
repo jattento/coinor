@@ -191,6 +191,9 @@ func activityAggregationIsStableAcrossOrdering() {
             == .needsInput
     )
     #expect(RuntimeActivity.aggregate([.idle, .failed]) == .failed)
+    #expect(RuntimeActivity.aggregate([.dormant, .completed]) == .completed)
+    #expect(RuntimeActivity.aggregate([.dormant, .idle]) == .idle)
+    #expect(RuntimeActivity.aggregate([RuntimeActivity]()) == .idle)
 }
 
 @Test
@@ -198,8 +201,8 @@ func grokRosterActivityMapsToRuntimePriorityStates() {
     #expect(RuntimeActivity(grokActivity: .working) == .working)
     #expect(RuntimeActivity(grokActivity: .needsInput) == .needsInput)
     #expect(RuntimeActivity(grokActivity: .dead) == .failed)
-    #expect(RuntimeActivity(grokActivity: .completed) == .idle)
-    #expect(RuntimeActivity(grokActivity: .dormant) == .idle)
+    #expect(RuntimeActivity(grokActivity: .completed) == .completed)
+    #expect(RuntimeActivity(grokActivity: .dormant) == .dormant)
     #expect(RuntimeActivity(grokActivity: .unknown("future")) == .idle)
 }
 
@@ -207,15 +210,19 @@ func grokRosterActivityMapsToRuntimePriorityStates() {
 func aFinishedRunRaisesAttentionEvenWithoutNeedsInput() {
     #expect(
         ConversationAttention.transition(from: .working, to: .idle)
-            == .raised
+            == .raised(.finished)
+    )
+    #expect(
+        ConversationAttention.transition(from: .working, to: .completed)
+            == .raised(.finished)
     )
     #expect(
         ConversationAttention.transition(from: .working, to: .needsInput)
-            == .raised
+            == .raised(.question)
     )
     #expect(
         ConversationAttention.transition(from: .idle, to: .needsInput)
-            == .raised
+            == .raised(.question)
     )
 }
 
@@ -243,4 +250,58 @@ func attentionSettlesWhileWorkingAndHoldsOtherwise() {
         ConversationAttention.transition(from: .working, to: .failed)
             == .unchanged
     )
+}
+
+@Test
+func everyActivityAndAttentionPairHasItsOwnIndicator() {
+    #expect(
+        ConversationIndicator.resolve(activity: .working, attention: nil)
+            == .working
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .idle, attention: nil) == .none
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .needsInput, attention: nil)
+            == .none
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .dormant, attention: nil)
+            == .dormant
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .completed, attention: nil)
+            == .completed
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .idle, attention: .question)
+            == .waiting
+    )
+    #expect(
+        ConversationIndicator.resolve(activity: .idle, attention: .finished)
+            == .finished
+    )
+    // A broken conversation outranks anything it was asking for.
+    #expect(
+        ConversationIndicator.resolve(activity: .failed, attention: .finished)
+            == .failed
+    )
+}
+
+@Test
+func projectIndicatorsShowTheMostDemandingConversation() {
+    #expect(
+        ConversationIndicator.aggregate([.dormant, .working, .finished])
+            == .finished
+    )
+    #expect(
+        ConversationIndicator.aggregate([.finished, .failed]) == .failed
+    )
+    #expect(
+        ConversationIndicator.aggregate([.finished, .waiting]) == .waiting
+    )
+    #expect(
+        ConversationIndicator.aggregate([.none, .dormant]) == .dormant
+    )
+    #expect(ConversationIndicator.aggregate([ConversationIndicator]()) == .none)
 }

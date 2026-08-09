@@ -1,30 +1,32 @@
 import Foundation
 
-enum RuntimeActivity: String, Codable, Equatable, Sendable {
-    case idle
-    case working
+/// What a conversation's process is doing, as Grok's roster reports it.
+///
+/// The cases are ordered by how much they want from the user: `needsInput`
+/// outranks everything because it blocks, and `dormant` ranks last because a
+/// suspended session is the least alive thing a conversation can be.
+enum RuntimeActivity: String, Codable, Equatable, Sendable, CaseIterable {
     case needsInput
+    case working
     case failed
+    case idle
+    case completed
+    case dormant
+
+    private var rank: Int {
+        switch self {
+        case .needsInput: return 0
+        case .working: return 1
+        case .failed: return 2
+        case .idle: return 3
+        case .completed: return 4
+        case .dormant: return 5
+        }
+    }
 
     static func aggregate<S: Sequence>(_ values: S) -> RuntimeActivity
     where S.Element == RuntimeActivity {
-        var hasWorking = false
-        var hasFailed = false
-        for value in values {
-            switch value {
-            case .needsInput:
-                return .needsInput
-            case .working:
-                hasWorking = true
-            case .failed:
-                hasFailed = true
-            case .idle:
-                continue
-            }
-        }
-        if hasWorking { return .working }
-        if hasFailed { return .failed }
-        return .idle
+        values.min { $0.rank < $1.rank } ?? .idle
     }
 
     init(grokActivity: GrokSessionActivity) {
@@ -35,10 +37,25 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable {
             self = .needsInput
         case .dead:
             self = .failed
-        case .idle, .dormant, .completed, .unknown:
+        case .completed:
+            self = .completed
+        case .dormant:
+            self = .dormant
+        case .idle, .unknown:
             self = .idle
         }
     }
+
+    /// Whether the conversation still has work in flight.
+    var isBusy: Bool { self == .working }
+}
+
+/// Why a conversation is asking for the user.
+enum ConversationAttentionReason: Equatable, Sendable {
+    /// Grok is blocked on a question and cannot continue alone.
+    case question
+    /// A run settled and its result has not been seen yet.
+    case finished
 }
 
 /// How a conversation's activity change affects its sidebar indicator.
@@ -49,7 +66,7 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable {
 enum ConversationAttention {
     enum Transition: Equatable {
         /// The conversation now wants the user.
-        case raised
+        case raised(ConversationAttentionReason)
         /// The conversation went back to work and no longer wants anything.
         case settled
         case unchanged
@@ -61,10 +78,61 @@ enum ConversationAttention {
     ) -> Transition {
         if current == .working { return .settled }
         if current == .needsInput {
-            return previous == .needsInput ? .unchanged : .raised
+            return previous == .needsInput ? .unchanged : .raised(.question)
         }
-        if current == .idle, previous == .working { return .raised }
-        return .unchanged
+        guard previous == .working, current != .failed else {
+            return .unchanged
+        }
+        return .raised(.finished)
+    }
+}
+
+/// The single mark a conversation row, project row, or tab shows for its state.
+///
+/// Each case owns a distinct symbol and color: the indicator must stay legible
+/// to someone who cannot separate green from amber.
+enum ConversationIndicator: Equatable, Sendable {
+    case none
+    case working
+    case waiting
+    case finished
+    case failed
+    case completed
+    case dormant
+
+    private var rank: Int {
+        switch self {
+        case .failed: return 0
+        case .waiting: return 1
+        case .finished: return 2
+        case .working: return 3
+        case .completed: return 4
+        case .dormant: return 5
+        case .none: return 6
+        }
+    }
+
+    static func resolve(
+        activity: RuntimeActivity,
+        attention: ConversationAttentionReason?
+    ) -> ConversationIndicator {
+        if activity == .failed { return .failed }
+        switch attention {
+        case .question: return .waiting
+        case .finished: return .finished
+        case nil: break
+        }
+        switch activity {
+        case .working: return .working
+        case .completed: return .completed
+        case .dormant: return .dormant
+        case .needsInput, .failed, .idle: return .none
+        }
+    }
+
+    static func aggregate<S: Sequence>(_ values: S) -> ConversationIndicator
+    where S.Element == ConversationIndicator {
+        values.min { $0.rank < $1.rank } ?? .none
     }
 }
 

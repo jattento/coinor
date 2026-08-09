@@ -390,8 +390,9 @@ struct AppShellSidebar: View {
                         .font(.system(size: 13, weight: .light))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    activityIndicator(coordinator.projectActivity(project))
-                        .frame(width: 12, height: 12)
+                    ConversationIndicatorView(
+                        indicator: coordinator.projectIndicator(project)
+                    )
                     Menu {
                         Button("In Main Checkout") {
                             coordinator.createConversation(
@@ -570,8 +571,9 @@ struct AppShellSidebar: View {
                         .font(.system(size: 13, weight: .light))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    activityIndicator(coordinator.activity(for: conversation.id))
-                        .frame(width: 12, height: 12)
+                    ConversationIndicatorView(
+                        indicator: coordinator.indicator(for: conversation.id)
+                    )
                     conversationControlFootprint(pinSymbol: pinSymbol)
                 }
                 .frame(height: SidebarReorderMetrics.conversationHeight)
@@ -864,31 +866,6 @@ struct AppShellSidebar: View {
                     .stroke(Color(nsColor: .separatorColor))
             }
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-    }
-
-    @ViewBuilder
-    private func activityIndicator(
-        _ activity: RuntimeActivity
-    ) -> some View {
-        switch activity {
-        case .working:
-            ProgressView()
-                .controlSize(.mini)
-                .frame(width: 12, height: 12)
-                .accessibilityLabel("Working")
-        case .needsInput:
-            Image(systemName: "circle.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(.orange)
-                .accessibilityLabel("Needs attention")
-        case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
-                .accessibilityLabel("Failed")
-        case .idle:
-            EmptyView()
-        }
     }
 
     private func addProject() {

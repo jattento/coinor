@@ -292,27 +292,14 @@ private struct TerminalTabStrip: View {
         .accessibilityIdentifier("terminal-tabs.add")
     }
 
-    @ViewBuilder
     private var mainActivityIndicator: some View {
-        switch runtime.aggregateActivity {
-        case .working:
-            ProgressView()
-                .controlSize(.mini)
-                .tint(foregroundColor)
-                .accessibilityLabel("Working")
-        case .needsInput:
-            Image(systemName: "circle.fill")
-                .font(.system(size: 7))
-                .foregroundStyle(.orange)
-                .accessibilityLabel("Needs attention")
-        case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
-                .accessibilityLabel("Failed")
-        case .idle:
-            Color.clear
-        }
+        ConversationIndicatorView(
+            indicator: ConversationIndicator.resolve(
+                activity: runtime.aggregateActivity,
+                attention: nil
+            ),
+            spinnerTint: foregroundColor
+        )
     }
 
     private var backgroundColor: Color {

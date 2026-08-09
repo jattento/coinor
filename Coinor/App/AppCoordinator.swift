@@ -79,7 +79,8 @@ final class AppCoordinator: ObservableObject {
     private var pendingSessions: [String: SessionSummary] = [:]
     private var projectIDBySessionID: [String: String] = [:]
     private var mainCheckoutByProjectID: [String: String] = [:]
-    @Published private var pendingAttentionSessionIDs: Set<String> = []
+    @Published private var pendingAttention:
+        [String: ConversationAttentionReason] = [:]
     private var lastAggregateActivity: [String: RuntimeActivity] = [:]
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
@@ -852,7 +853,7 @@ final class AppCoordinator: ObservableObject {
         activeLeaderSocket = nil
         metadataStore = nil
         roster.removeAll()
-        pendingAttentionSessionIDs.removeAll()
+        pendingAttention.removeAll()
         lastAggregateActivity.removeAll()
         return DetachedRuntimeState(
             controlClient: control,
@@ -967,28 +968,25 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    func projectActivity(_ project: ProjectRow) -> RuntimeActivity {
-        RuntimeActivity.aggregate(
+    func projectIndicator(_ project: ProjectRow) -> ConversationIndicator {
+        ConversationIndicator.aggregate(
             summaries.lazy
                 .filter {
                     $0.projectID == project.projectID
                         && !self.metadata.isSessionArchived($0.id)
                 }
-                .map { self.activity(for: $0.id) }
+                .map { self.indicator(for: $0.id) }
+        )
+    }
+
+    func indicator(for sessionID: String) -> ConversationIndicator {
+        ConversationIndicator.resolve(
+            activity: activity(for: sessionID),
+            attention: pendingAttention[sessionID]
         )
     }
 
     func activity(for sessionID: String) -> RuntimeActivity {
-        let activity = rawActivity(for: sessionID)
-        if activity == .failed { return activity }
-        if pendingAttentionSessionIDs.contains(sessionID) { return .needsInput }
-        // A raw needs_input only reaches the sidebar through the pending set,
-        // so opening the conversation keeps the indicator down until the next
-        // time the conversation asks for the user.
-        return activity == .needsInput ? .idle : activity
-    }
-
-    private func rawActivity(for sessionID: String) -> RuntimeActivity {
         if let runtime = runtimeManager?.runtime(sessionID: sessionID) {
             return runtime.aggregateActivity
         }
@@ -996,7 +994,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func acknowledgeAttention(_ sessionID: String) {
-        pendingAttentionSessionIDs.remove(sessionID)
+        pendingAttention.removeValue(forKey: sessionID)
     }
 
     func searchConversations(_ query: String) -> [ConversationRow] {
@@ -1274,6 +1272,7 @@ final class AppCoordinator: ObservableObject {
         let previous = lastAggregateActivity[sessionID]
         lastAggregateActivity[sessionID] = current
 
+        let reason: ConversationAttentionReason
         switch ConversationAttention.transition(
             from: previous,
             to: current
@@ -1281,16 +1280,15 @@ final class AppCoordinator: ObservableObject {
         case .unchanged:
             return
         case .settled:
-            pendingAttentionSessionIDs.remove(sessionID)
+            pendingAttention.removeValue(forKey: sessionID)
             return
-        case .raised:
-            break
+        case .raised(let raisedReason):
+            reason = raisedReason
         }
 
         guard !isWatching(sessionID) else { return }
-        guard pendingAttentionSessionIDs.insert(sessionID).inserted else {
-            return
-        }
+        guard pendingAttention[sessionID] != reason else { return }
+        pendingAttention[sessionID] = reason
 
         let title = summaries.first { $0.id == sessionID }?.title
             ?? "Grok Conversation"
