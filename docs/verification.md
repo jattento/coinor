@@ -53,6 +53,53 @@ Remote host support shipped as version `0.5.13` build `20` on August 8, 2026.
 - `scripts/release/security-scan.sh` found no secrets or private local paths.
 - `git diff --check` passed.
 
+## Conan Code 0.5.14 Verification
+
+Remote host support was exercised end to end against a real second Mac reached
+through its `~/.ssh/config` alias, using the production types rather than
+hand-written commands.
+
+Through Conan Code's own code (`CoinorTests/RemoteHostLiveTests`, enabled by
+`COINOR_LIVE_REMOTE_HOST`):
+
+- `RemoteHostProbe` reported the remote home, Grok executable, version, runtime
+  socket, and `MaxSessions` in one round trip, and its socket is never the one
+  that computer's own Conan Code uses.
+- `GitProjectResolver(remote:)` resolved a real remote repository into a
+  host-qualified project identity.
+- `RemoteProjectDiscovery` listed remote directories and repositories.
+- `fresh` and `lazygit` were confirmed present on the remote computer.
+- Twelve concurrent channels shared one multiplexed connection.
+
+On a real pseudo-terminal, which is what a Ghostty surface provides:
+
+- A remote shell tab started the remote user's interactive login shell in the
+  requested directory, confirmed by `$PWD` and `hostname` from that computer.
+- The remote IDE commands started: `fresh .` entered the alternate screen with
+  mouse reporting, and `lazygit` ran inside a real remote repository.
+- A remote Grok conversation started and painted its interface with full mouse
+  reporting; `--resume` of an existing remote conversation painted without a
+  missing-session error, and the remote roster then reported that session as
+  resident.
+- Stopping the remote runtime terminated only Conan Code's remote leader; the
+  leader owned by that computer's own Conan Code kept running.
+
+Offline execution evidence (`CoinorTests/RemoteShellExecutionTests`,
+`CoinorTests/SSHInvocationExecutionTests`): every composed remote command is
+executed in a real shell, and the real `ssh` binary accepts Conan Code's option
+set and reports a failed connection as 255.
+
+Findings corrected during this pass:
+
+- Stopping a remote runtime sent one `SIGTERM` and returned before the leader
+  exited. It now waits and escalates to `SIGKILL`, mirroring the local path.
+- The compatibility probes sent this computer's home directory to the remote
+  agent as a `cwd`. They now send the remote home.
+- macOS reports a denied local-network connection as an undefined error, which
+  looked like a broken network. `NSLocalNetworkUsageDescription` was added and
+  the diagnostic now names the permission.
+- `~/.ssh/config` inline comments were parsed as additional host aliases.
+
 ## Conan Code remote hosts verification
 
 Remote host support (ADR-0014) was validated on August 8, 2026 against a real

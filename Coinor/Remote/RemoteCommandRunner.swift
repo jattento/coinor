@@ -138,8 +138,9 @@ extension RemoteCommandRunning {
                 alias: alias.rawValue,
                 command: remoteCommand,
                 status: result.terminationStatus,
-                detail: result.standardError
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                detail: RemoteHostError.detail(
+                    fromSSHStandardError: result.standardError
+                )
             )
         }
         return result

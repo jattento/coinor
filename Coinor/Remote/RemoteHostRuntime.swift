@@ -67,6 +67,12 @@ final class RemoteHostRuntime {
                 )
             ),
             leaderSocket: try GrokLeaderSocket(path: host.leaderSocketPath),
+            // The compatibility probes send this directory to the remote agent
+            // as a `cwd`, so it must be a path that exists there.
+            workingDirectory: URL(
+                fileURLWithPath: host.homeDirectory,
+                isDirectory: true
+            ),
             remote: RemoteControlPlane(ssh: ssh)
         )
         // The version was already read on the remote computer in the probe's
@@ -99,22 +105,54 @@ final class RemoteHostRuntime {
         await control.shutdown()
         let runner = commandRunner
         let alias = host.alias
-        // The leader daemonizes: it reparents to launchd and its command line
-        // does not repeat `--leader-socket`, so it is identified by the PID in
-        // the lock file beside its socket, exactly as the local path does.
-        let lockPath = (host.leaderSocketPath as NSString)
-            .deletingPathExtension
-            .appending(".lock")
-        let command = """
-        pid=$(cat \(ShellQuoting.quote(lockPath)) 2>/dev/null)
-        [ -n "${pid:-}" ] || exit 0
-        case "$(ps -p "$pid" -o command= 2>/dev/null)" in
-            *grok*) kill "$pid" ;;
-            *) exit 0 ;;
-        esac
-        """
+        let command = RemoteRuntimeStopCommand.command(
+            lockPath: RemoteRuntimeStopCommand.lockPath(
+                forSocket: host.leaderSocketPath
+            )
+        )
         try await Task.detached {
             _ = try runner.runChecked(remoteCommand: command, alias: alias)
         }.value
+    }
+}
+
+/// Ends the Grok leader on a remote computer.
+///
+/// The leader daemonizes: it reparents to `launchd` and its command line does
+/// not repeat `--leader-socket`, so a command-line pattern never matches it.
+/// It is identified by the PID in the lock file beside its socket, exactly as
+/// the local path does, and is only signalled when that PID really is Grok.
+enum RemoteRuntimeStopCommand {
+    static func lockPath(forSocket socket: String) -> String {
+        (socket as NSString).deletingPathExtension.appending(".lock")
+    }
+
+    /// Mirrors the local leader shutdown: a graceful signal, a bounded wait,
+    /// then `SIGKILL`. A single `SIGTERM` returns before the leader is gone,
+    /// which leaves the runtime running behind a UI that says it stopped.
+    static func command(lockPath: String) -> String {
+        """
+        pid=$(cat \(ShellQuoting.quote(lockPath)) 2>/dev/null)
+        [ -n "${pid:-}" ] || exit 0
+        case "$(ps -p "$pid" -o command= 2>/dev/null)" in
+            *grok*) ;;
+            *) exit 0 ;;
+        esac
+        kill "$pid" 2>/dev/null || exit 0
+        i=0
+        while [ $i -lt 40 ]; do
+            kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 0.1
+            i=$((i + 1))
+        done
+        kill -9 "$pid" 2>/dev/null || true
+        i=0
+        while [ $i -lt 20 ]; do
+            kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 0.1
+            i=$((i + 1))
+        done
+        exit 1
+        """
     }
 }

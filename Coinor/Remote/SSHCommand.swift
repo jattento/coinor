@@ -182,6 +182,19 @@ struct RemoteExecution: Equatable, Sendable {
     }
 }
 
+extension RemoteHostError {
+    /// macOS blocks an application's first connections to the local network
+    /// until the user allows it, and OpenSSH reports that denial as an
+    /// undefined error. Left raw it looks like a broken network.
+    static func detail(fromSSHStandardError standardError: String) -> String {
+        let trimmed = standardError
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("Undefined error: 0") else { return trimmed }
+        return trimmed + " Conan Code may need Local Network access: allow it "
+            + "in System Settings > Privacy & Security > Local Network."
+    }
+}
+
 enum RemoteHostError: LocalizedError, Equatable, Sendable {
     case controlPathTooLong(path: String, limit: Int)
     case controlPathUnavailable(path: String, detail: String)

@@ -150,8 +150,9 @@ struct RemoteHostProbe: Sendable {
     }
 
     private static func failureDetail(_ result: RemoteCommandResult) -> String {
-        let detail = result.standardError
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = RemoteHostError.detail(
+            fromSSHStandardError: result.standardError
+        )
         return detail.isEmpty
             ? "ssh exited with status \(result.terminationStatus)"
             : detail
