@@ -4,7 +4,7 @@ import Foundation
 /// `MetadataDocument`'s persisted shape changes in a way older decoders
 /// cannot already tolerate, and add the matching step to `MetadataMigrator`.
 enum MetadataSchema {
-    static let currentVersion = 3
+    static let currentVersion = 4
 }
 
 struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
@@ -263,6 +263,7 @@ struct MetadataDocument: Equatable, Sendable {
     var schemaVersion: Int
     var sessions: [String: SessionMetadata]
     var projects: [String: ProjectMetadata]
+    var remoteHostAliases: [RemoteHostAlias]
     var pinnedSessionIDs: [String]
     var projectOrder: [String]
     var lastVisibleSessionID: String?
@@ -271,6 +272,7 @@ struct MetadataDocument: Equatable, Sendable {
         schemaVersion: MetadataSchema.currentVersion,
         sessions: [:],
         projects: [:],
+        remoteHostAliases: [],
         pinnedSessionIDs: [],
         projectOrder: [],
         lastVisibleSessionID: nil
@@ -431,6 +433,17 @@ extension MetadataDocument {
         storeProject(projectID, value)
     }
 
+    /// Registers a host while preserving the user's order. Registering an
+    /// existing alias is a no-op rather than moving it to the end.
+    mutating func registerRemoteHost(_ alias: RemoteHostAlias) {
+        guard !remoteHostAliases.contains(alias) else { return }
+        remoteHostAliases.append(alias)
+    }
+
+    mutating func unregisterRemoteHost(_ alias: RemoteHostAlias) {
+        remoteHostAliases.removeAll { $0 == alias }
+    }
+
     mutating func setProjectArchived(_ projectID: String, archived: Bool) {
         var value = projects[projectID] ?? ProjectMetadata()
         value.archived = archived
@@ -531,6 +544,7 @@ extension MetadataDocument: Codable {
         case schemaVersion
         case sessions
         case projects
+        case remoteHostAliases
         case pinnedSessionIDs
         case projectOrder
         case lastVisibleSessionID
@@ -544,6 +558,18 @@ extension MetadataDocument: Codable {
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
         sessions = try container.decodeIfPresent([String: SessionMetadata].self, forKey: .sessions) ?? [:]
         projects = try container.decodeIfPresent([String: ProjectMetadata].self, forKey: .projects) ?? [:]
+        let rawRemoteHostAliases = try container.decodeIfPresent(
+            [String].self,
+            forKey: .remoteHostAliases
+        ) ?? []
+        var seenRemoteHostAliases: Set<RemoteHostAlias> = []
+        remoteHostAliases = rawRemoteHostAliases.compactMap {
+            guard let alias = RemoteHostAlias(rawValue: $0),
+                  seenRemoteHostAliases.insert(alias).inserted else {
+                return nil
+            }
+            return alias
+        }
         pinnedSessionIDs = try container.decodeIfPresent([String].self, forKey: .pinnedSessionIDs) ?? []
         projectOrder = try container.decodeIfPresent([String].self, forKey: .projectOrder) ?? []
         lastVisibleSessionID = try container.decodeIfPresent(String.self, forKey: .lastVisibleSessionID)
@@ -554,6 +580,7 @@ extension MetadataDocument: Codable {
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(sessions, forKey: .sessions)
         try container.encode(projects, forKey: .projects)
+        try container.encode(remoteHostAliases, forKey: .remoteHostAliases)
         try container.encode(pinnedSessionIDs, forKey: .pinnedSessionIDs)
         try container.encode(projectOrder, forKey: .projectOrder)
         try container.encodeIfPresent(lastVisibleSessionID, forKey: .lastVisibleSessionID)

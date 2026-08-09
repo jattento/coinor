@@ -8,13 +8,28 @@ struct GitProjectResolution: Equatable, Sendable {
 
 struct GitProjectResolver: Sendable {
     private let runner: any GitCommandRunning
+    private let target: ExecutionTarget
+    /// Used only to read files that live on the remote computer.
+    private let remoteRunner: (any RemoteCommandRunning)?
 
-    init(runner: any GitCommandRunning) {
+    init(runner: any GitCommandRunning, target: ExecutionTarget = .local) {
         self.runner = runner
+        self.target = target
+        self.remoteRunner = nil
     }
 
     init() throws {
         self.runner = try GitProcessRunner()
+        self.target = .local
+        self.remoteRunner = nil
+    }
+
+    /// Resolves a repository that lives on a remote computer. Git runs there;
+    /// no path is ever checked against this file system.
+    init(remote alias: RemoteHostAlias, runner: any RemoteCommandRunning) {
+        self.runner = SSHGitCommandRunner(runner: runner, alias: alias)
+        self.target = .remote(alias)
+        self.remoteRunner = runner
     }
 
     func resolve(checkout: URL) throws -> GitProjectResolution {
@@ -40,7 +55,7 @@ struct GitProjectResolver: Sendable {
                 detail: "Git returned an empty common directory"
             )
         }
-        let commonDirectory = Self.canonicalURL(path: commonPath, relativeTo: directory)
+        let commonDirectory = canonicalURL(path: commonPath, relativeTo: directory)
 
         let worktreeResult = try runner.runChecked(
             arguments: ["worktree", "list", "--porcelain"],
@@ -55,9 +70,12 @@ struct GitProjectResolver: Sendable {
         }
 
         return GitProjectResolution(
-            identity: ProjectIdentity(commonDirectory: commonDirectory),
+            identity: ProjectIdentity(
+                target: target,
+                commonDirectory: commonDirectory
+            ),
             commonDirectory: commonDirectory,
-            mainCheckout: Self.canonicalURL(path: primary.path, relativeTo: directory)
+            mainCheckout: canonicalURL(path: primary.path, relativeTo: directory)
         )
     }
 
@@ -122,7 +140,7 @@ struct GitProjectResolver: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !gitDirectoryPath.isEmpty else { return nil }
 
-        let gitDirectory = Self.canonicalURL(
+        let gitDirectory = canonicalURL(
             path: gitDirectoryPath,
             relativeTo: checkout
         )
@@ -130,20 +148,51 @@ struct GitProjectResolver: Sendable {
             "grok-worktree-source",
             isDirectory: false
         )
-        guard let data = try? Data(contentsOf: marker) else { return nil }
-        let sourcePath = String(decoding: data, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourcePath: String
+        switch target {
+        case .local:
+            guard let data = try? Data(contentsOf: marker) else { return nil }
+            sourcePath = String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        case .remote:
+            // The marker lives on the remote file system, so it is read over
+            // the same SSH channel rather than through `Data(contentsOf:)`.
+            guard let remoteRunner,
+                  let result = try? remoteRunner.run(
+                      remoteCommand: "cat "
+                          + ShellQuoting.quote(marker.path),
+                      timeout: .seconds(20)
+                  ),
+                  result.succeeded
+            else {
+                return nil
+            }
+            sourcePath = result.trimmedOutput
+        }
         guard !sourcePath.isEmpty else { return nil }
-        return Self.canonicalURL(path: sourcePath, relativeTo: checkout)
+        return canonicalURL(path: sourcePath, relativeTo: checkout)
     }
 
-    private static func canonicalURL(path: String, relativeTo directory: URL) -> URL {
+    /// A remote path is canonical as text only. Local symlink resolution would
+    /// silently rewrite it against the wrong file system.
+    private func canonicalURL(path: String, relativeTo directory: URL) -> URL {
         let url: URL
         if path.hasPrefix("/") {
             url = URL(fileURLWithPath: path, isDirectory: true)
         } else {
             url = directory.appendingPathComponent(path, isDirectory: true)
         }
-        return url.standardizedFileURL.resolvingSymlinksInPath()
+        switch target {
+        case .local:
+            return url.standardizedFileURL.resolvingSymlinksInPath()
+        case .remote:
+            return URL(
+                fileURLWithPath: ProjectIdentity(
+                    target: target,
+                    commonDirectory: url
+                ).path,
+                isDirectory: true
+            )
+        }
     }
 }

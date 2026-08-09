@@ -154,6 +154,114 @@ func projectOrderRoundTripsWithCurrentSchema() throws {
 }
 
 @Test
+func registeringRemoteHostIsIdempotent() throws {
+    let alias = try #require(
+        RemoteHostAlias(rawValue: "studio-mac")
+    )
+    var document = MetadataDocument.empty
+
+    document.registerRemoteHost(alias)
+    document.registerRemoteHost(alias)
+
+    #expect(document.remoteHostAliases == [alias])
+}
+
+@Test
+func unregisteringRemoteHostRemovesIt() throws {
+    let firstAlias = try #require(
+        RemoteHostAlias(rawValue: "studio-mac")
+    )
+    let secondAlias = try #require(
+        RemoteHostAlias(rawValue: "laptop")
+    )
+    var document = MetadataDocument.empty
+    document.registerRemoteHost(firstAlias)
+    document.registerRemoteHost(secondAlias)
+
+    document.unregisterRemoteHost(firstAlias)
+
+    #expect(document.remoteHostAliases == [secondAlias])
+}
+
+@Test
+func remoteHostAliasesRoundTripThroughStore() async throws {
+    let directory = try makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let firstAlias = try #require(
+        RemoteHostAlias(rawValue: "studio-mac")
+    )
+    let secondAlias = try #require(
+        RemoteHostAlias(rawValue: "laptop")
+    )
+
+    do {
+        let store = try MetadataStore(directoryURL: directory)
+        try await store.update { document in
+            document.registerRemoteHost(firstAlias)
+            document.registerRemoteHost(secondAlias)
+        }
+    }
+
+    let relaunched = try MetadataStore(directoryURL: directory)
+    let document = await relaunched.currentDocument
+
+    #expect(document.remoteHostAliases == [firstAlias, secondAlias])
+}
+
+@Test
+func versionThreeDocumentMigratesWithNoRemoteHosts() async throws {
+    let directory = try makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fileURL = directory.appendingPathComponent(MetadataStore.fileName)
+    let versionThreeBytes = Data(
+        #"""
+        {
+          "schemaVersion": 3,
+          "sessions": {},
+          "projects": {},
+          "pinnedSessionIDs": [],
+          "projectOrder": []
+        }
+        """#.utf8
+    )
+    try versionThreeBytes.write(to: fileURL)
+
+    let store = try MetadataStore(directoryURL: directory)
+    let document = await store.currentDocument
+
+    #expect(document.schemaVersion == 4)
+    #expect(document.remoteHostAliases.isEmpty)
+}
+
+@Test
+func invalidAndDuplicateRemoteHostAliasesAreDroppedWhileDecoding() throws {
+    let json = """
+    {
+      "schemaVersion": 4,
+      "remoteHostAliases": [
+        "studio-mac",
+        "not a host",
+        "studio-mac",
+        "laptop"
+      ]
+    }
+    """
+    let firstAlias = try #require(
+        RemoteHostAlias(rawValue: "studio-mac")
+    )
+    let secondAlias = try #require(
+        RemoteHostAlias(rawValue: "laptop")
+    )
+
+    let decoded = try JSONDecoder().decode(
+        MetadataDocument.self,
+        from: Data(json.utf8)
+    )
+
+    #expect(decoded.remoteHostAliases == [firstAlias, secondAlias])
+}
+
+@Test
 func projectMetadataWithoutConversationOrderStillDecodes() throws {
     let json = """
     {

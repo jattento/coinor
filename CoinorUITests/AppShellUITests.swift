@@ -67,7 +67,14 @@ final class AppShellUITests: XCTestCase {
                 in: app
             ).waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.buttons["Add Project"].waitForExistence(timeout: 5))
+        // Adding a project is a menu now that a project can also come from a
+        // registered remote computer.
+        XCTAssertTrue(
+            app.menuButtons["Add Project"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.menuButtons["Remote Computers"].waitForExistence(timeout: 5)
+        )
         XCTAssertTrue(app.buttons["Archived Items"].waitForExistence(timeout: 5))
     }
 }

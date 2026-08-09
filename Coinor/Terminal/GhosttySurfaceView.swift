@@ -374,7 +374,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             ("GHOSTTY_RESOURCES_DIR", runtime.resourcesDirectory),
             ("TERMINFO", runtime.terminfoDirectory),
             ("PATH", Self.terminalPath()),
-        ] + launch.environment.sorted { $0.key < $1.key }
+        ] + launch.surfaceEnvironment.sorted { $0.key < $1.key }
         guard let app = runtime.app else {
             throw GhosttyRuntimeError.applicationCreation
         }
@@ -382,7 +382,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         let surface = try Self.withEnvironment(environment) {
             environmentPointer,
             environmentCount in
-            try launch.workingDirectory.withCString { workingDirectory in
+            try launch.surfaceWorkingDirectory.withCString { workingDirectory in
                 let createSurface: (
                     UnsafePointer<CChar>?,
                     UnsafePointer<CChar>?

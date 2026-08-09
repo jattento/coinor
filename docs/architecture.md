@@ -20,6 +20,7 @@ Coinor deliberately supports:
 - the custom Grok binary used on this computer
 - one main application window
 - local Git repositories and their worktrees
+- registered remote Macs reached over `ssh`, and their repositories
 - interactive root and subagent terminal panes
 - local organization metadata
 
@@ -27,7 +28,9 @@ Coinor deliberately does not provide:
 
 - cross-platform support
 - its own transcript or task persistence
-- a terminal or PTY server that survives application exit
+- a terminal or PTY server of its own, or any network listener; a remote
+  computer's Grok leader does survive application exit (ADR-0014), but Coinor
+  neither implements nor hosts it
 - compatibility with arbitrary Grok versions
 - Herdr or Paseo runtime dependencies
 - cloud synchronization of Coinor metadata
@@ -331,6 +334,42 @@ search results even when a terminal has focus. Collapsed project contents are
 excluded, and navigation is suspended while a drag owns the sidebar
 interaction.
 
+### Remote hosts
+
+Coinor can register other Macs and run a project's conversations there. There
+is no daemon and no protocol of its own: every remote process is the same
+command the local path runs, invoked through `ssh`.
+
+`SSHCommand` builds every argument vector and is the only place allowed to
+compose a remote command string; `ShellQuoting` quotes each interpolated
+value exactly once. All channels for one host share a Coinor-owned
+`ControlMaster` connection.
+
+`RemoteHostProbe` runs the compatibility contract in one round trip: home
+directory, Grok executable, `grok --version`, runtime directory, and the
+host's `MaxSessions`. The remote fork version must equal the local one.
+
+`RemoteHostRuntime` owns one host at runtime: its SSH channel, its own
+`GrokControlClient`, and the catalog facts that came from it. Connecting is
+what starts the remote leader, which Grok spawns as a detached process with
+`--no-exit-on-disconnect`, so it outlives both the SSH channel and Coinor.
+That leader uses a socket separate from the one the remote computer's own
+Coinor uses, so neither installation can terminate the other's runtime.
+
+`AppCoordinator` keeps local catalog state separate from each host's and
+republishes their merge, so a local refresh can never drop remote rows.
+Control-plane work is routed to the leader that owns the session.
+
+`TerminalLaunchRequest` carries an optional `RemoteExecution`. When present,
+the local Ghostty surface runs `ssh`, starts in the local home directory, and
+inherits none of Coinor's environment; the working directory and environment
+are applied on the remote side. A pane whose `ssh` exits 255 reconnects with
+bounded backoff and shows a banner, because the remote leader keeps the
+session alive across a dropped client.
+
+Agent-managed terminal tabs stay local-only: a remote agent inherits neither
+the control socket nor the instance token, so the skill fails closed.
+
 ### Session and project catalog
 
 `SessionCatalog` combines Grok data with Coinor metadata.
@@ -346,7 +385,9 @@ Grok provides:
 
 `ProjectResolver` determines project identity from the canonical Git common
 directory. All linked worktrees resolve to the same project. Independent clones
-have different common directories and remain separate.
+have different common directories and remain separate. A remote repository is
+additionally qualified by its host alias, and its paths are never resolved or
+validated against the local file system.
 
 The primary checkout is resolved from `git worktree list --porcelain`.
 Manually registered repositories are retained even when they have no sessions.

@@ -149,6 +149,28 @@ enum TerminalTabNavigationRequest: Equatable, Sendable {
     case index(Int)
 }
 
+/// Where one conversation's processes run.
+///
+/// A conversation is local or remote for its whole life: the root pane, every
+/// subagent, the IDE tools, and every shell tab share this.
+struct ConversationExecution: Equatable, Sendable {
+    let grokExecutable: String
+    let leaderSocket: String
+    let remote: RemoteExecution?
+
+    init(
+        grokExecutable: String,
+        leaderSocket: String,
+        remote: RemoteExecution? = nil
+    ) {
+        self.grokExecutable = grokExecutable
+        self.leaderSocket = leaderSocket
+        self.remote = remote
+    }
+
+    var isRemote: Bool { remote != nil }
+}
+
 enum ConversationShellDirectorySource: Equatable, Sendable {
     case rootLaunchDirectory
     case explicit(String)
@@ -173,6 +195,9 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
     let environment: [String: String]
     let initialInput: String?
     let surfaceContext: TerminalSurfaceContext
+    /// Absent for local execution. When present, every field above describes
+    /// the remote computer and the local surface only runs `ssh`.
+    let remote: RemoteExecution?
 
     init(
         sessionID: String,
@@ -183,7 +208,8 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         additionalArguments: [String] = [],
         environment: [String: String] = [:],
         initialInput: String? = nil,
-        surfaceContext: TerminalSurfaceContext = .window
+        surfaceContext: TerminalSurfaceContext = .window,
+        remote: RemoteExecution? = nil
     ) {
         self.sessionID = sessionID
         self.workingDirectory = workingDirectory
@@ -194,9 +220,14 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.environment = environment
         self.initialInput = initialInput
         self.surfaceContext = surfaceContext
+        self.remote = remote
     }
 
-    init(shellTabID: String, workingDirectory: String) {
+    init(
+        shellTabID: String,
+        workingDirectory: String,
+        remote: RemoteExecution? = nil
+    ) {
         self.sessionID = shellTabID
         self.workingDirectory = workingDirectory
         self.grokExecutable = ""
@@ -206,6 +237,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.environment = [:]
         self.initialInput = nil
         self.surfaceContext = .tab
+        self.remote = remote
     }
 
     init(
@@ -222,14 +254,16 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.additionalArguments = []
         self.environment = environment
         self.initialInput =
-            "source \(Self.shellQuote(bootstrapPath))\r"
+            "source \(ShellQuoting.quote(bootstrapPath))\r"
         self.surfaceContext = .tab
+        self.remote = nil
     }
 
     init(
         commandID: String,
         workingDirectory: String,
-        command: String
+        command: String,
+        remote: RemoteExecution? = nil
     ) {
         self.sessionID = commandID
         self.workingDirectory = workingDirectory
@@ -240,6 +274,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.environment = [:]
         self.initialInput = nil
         self.surfaceContext = .split
+        self.remote = remote
     }
 
     var id: String { sessionID }
@@ -268,7 +303,18 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         return values
     }
 
+    /// The command the local Ghostty surface runs.
+    ///
+    /// For a remote conversation this is always `ssh`; the real command is
+    /// composed for the remote shell and quoted exactly once.
     var shellCommand: String {
+        if let remote {
+            return remote.ssh.shellCommand(
+                remoteCommand: remoteCommand,
+                allocateTTY: true,
+                batch: false
+            )
+        }
         switch mode {
         case .shell:
             return ""
@@ -277,16 +323,53 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         case .command(let command):
             return command
         case .newSession, .resume:
-            return ([grokExecutable] + arguments)
-                .map(Self.shellQuote)
-                .joined(separator: " ")
+            return ShellQuoting.command([grokExecutable] + arguments)
         }
+    }
+
+    private var remoteCommand: String {
+        switch mode {
+        case .shell:
+            return SSHCommand.remoteLoginShellCommand(
+                workingDirectory: workingDirectory
+            )
+        case .managedShell:
+            // Agent-managed tabs are local-only by ADR-0014; the control
+            // socket and instance token are never exported to a remote agent.
+            return SSHCommand.remoteLoginShellCommand(
+                workingDirectory: workingDirectory
+            )
+        case .command(let command):
+            return SSHCommand.remoteShellCommand(
+                command: command,
+                workingDirectory: workingDirectory
+            )
+        case .newSession, .resume:
+            return SSHCommand.remoteCommand(
+                executable: grokExecutable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment
+            )
+        }
+    }
+
+    /// Ghostty's own working directory. A remote path does not exist locally,
+    /// so the surface starts at home and the directory is applied remotely.
+    var surfaceWorkingDirectory: String {
+        remote == nil ? workingDirectory : NSHomeDirectory()
+    }
+
+    /// A remote surface never inherits Conan Code's local environment: the
+    /// variables belong to the remote command line instead.
+    var surfaceEnvironment: [String: String] {
+        remote == nil ? environment : [:]
     }
 
     var explicitCommand: String? {
         switch mode {
         case .shell:
-            nil
+            remote == nil ? nil : shellCommand
         case .newSession, .resume, .managedShell, .command:
             shellCommand
         }
@@ -296,9 +379,6 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         mode != .shell && mode != .managedShell
     }
 
-    private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }
 
 struct RuntimePane: Equatable, Identifiable, Sendable {

@@ -69,8 +69,9 @@ Acceptance criteria:
 - cancellation closes the pane even when `SubagentStop` is absent
 - no hook failure blocks or fails a Grok turn
 
-Phase 0 is the go/no-go gate. Do not build the complete sidebar until all three
-spikes pass.
+Phase 0 was the original go/no-go gate. All three spikes passed and the gate is
+closed; `docs/phase-0-results.md` and `docs/acceptance-matrix.md` retain the
+evidence.
 
 This spike passed and established the lifecycle invariants, but the production
 relay was later retired after Grok's native ACP stream was verified to expose

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Coinor
@@ -116,6 +117,70 @@ func managedShellLaunchUsesFixedZshEnvironmentAndBootstrap() {
     )
     #expect(request.surfaceContext == .tab)
     #expect(request.waitsAfterCommand == false)
+}
+
+@Test
+func remoteLaunchRunsSSHLocallyAndComposesGrokRemotely() throws {
+    let alias = try #require(RemoteHostAlias(rawValue: "studio-mac"))
+    let request = TerminalLaunchRequest(
+        sessionID: "remote-session",
+        workingDirectory: "/remote/Project With Space",
+        grokExecutable: "/remote/bin/grok",
+        leaderSocket: "/remote/leader.sock",
+        mode: .resume,
+        environment: ["REMOTE_VALUE": "two words"],
+        remote: RemoteExecution(
+            alias: alias,
+            controlPath: "/tmp/coinor ssh/control.sock"
+        )
+    )
+
+    #expect(request.shellCommand.hasPrefix("'/usr/bin/ssh' "))
+    #expect(request.shellCommand.contains("/remote/bin/grok"))
+    #expect(request.shellCommand.contains("--resume"))
+    #expect(request.shellCommand.contains("remote-session"))
+    #expect(request.surfaceWorkingDirectory == NSHomeDirectory())
+    #expect(request.surfaceEnvironment.isEmpty)
+    #expect(request.explicitCommand == request.shellCommand)
+}
+
+@Test
+func remoteShellLaunchAlwaysSuppliesAnExplicitSSHCommand() throws {
+    let alias = try #require(RemoteHostAlias(rawValue: "studio-mac"))
+    let request = TerminalLaunchRequest(
+        shellTabID: "remote-shell",
+        workingDirectory: "/remote/project",
+        remote: RemoteExecution(
+            alias: alias,
+            controlPath: "/tmp/control.sock"
+        )
+    )
+
+    #expect(request.mode == .shell)
+    #expect(request.explicitCommand == request.shellCommand)
+    #expect(request.explicitCommand != nil)
+    #expect(request.surfaceWorkingDirectory == NSHomeDirectory())
+    #expect(request.surfaceEnvironment.isEmpty)
+}
+
+@Test
+func localLaunchPreservesTheExactPreRemoteBehavior() {
+    let request = TerminalLaunchRequest(
+        sessionID: "local-session",
+        workingDirectory: "/tmp/Project With Space",
+        grokExecutable: "/Users/example/bin/grok",
+        leaderSocket: "/tmp/coinor leader.sock",
+        mode: .resume,
+        environment: ["LOCAL_VALUE": "unchanged"]
+    )
+    let expectedCommand = "'/Users/example/bin/grok' "
+        + "'--leader-socket' '/tmp/coinor leader.sock' '--leader' "
+        + "'--cwd' '/tmp/Project With Space' '--resume' 'local-session'"
+
+    #expect(request.shellCommand == expectedCommand)
+    #expect(request.explicitCommand == expectedCommand)
+    #expect(request.surfaceWorkingDirectory == "/tmp/Project With Space")
+    #expect(request.surfaceEnvironment == ["LOCAL_VALUE": "unchanged"])
 }
 
 @Test

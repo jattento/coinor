@@ -39,14 +39,15 @@ final class GrokSubprocessTransport: GrokTransport, @unchecked Sendable {
     }
 
     func start() throws -> AsyncStream<GrokTransportEvent> {
-        try launch.validate()
-        try launch.leaderSocket.prepareDirectory()
+        try launch.prepare()
         Self.ignoreBrokenPipeSignal()
 
-        process.executableURL = launch.executable.url
-        process.arguments = launch.arguments
-        process.currentDirectoryURL = launch.workingDirectory
-        process.environment = launch.environment
+        process.executableURL = launch.processExecutableURL
+        process.arguments = launch.processArguments
+        if launch.remote == nil {
+            process.currentDirectoryURL = launch.workingDirectory
+        }
+        process.environment = launch.processEnvironment
         process.standardInput = inbound
         process.standardOutput = outbound
         process.standardError = errors
@@ -80,7 +81,8 @@ final class GrokSubprocessTransport: GrokTransport, @unchecked Sendable {
         } catch {
             state.finish(status: -1)
             throw GrokControlError.launchFailed(
-                "\(launch.executable.path): \(error.localizedDescription)"
+                "\(launch.processExecutableURL.path): "
+                    + error.localizedDescription
             )
         }
         return stream

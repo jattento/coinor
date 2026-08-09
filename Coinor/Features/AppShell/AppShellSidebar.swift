@@ -13,6 +13,7 @@ struct AppShellSidebar: View {
     @State private var worktreeName = ""
     @State private var appearanceProjectID: String?
     @State private var searchText = ""
+    @State private var remoteSheet: RemoteSidebarSheet?
     @FocusState private var focusedProjectMenuID: String?
 
     var body: some View {
@@ -99,16 +100,52 @@ struct AppShellSidebar: View {
 
             Divider()
 
-            HStack {
-                Button {
-                    addProject()
+            HStack(spacing: 12) {
+                Menu {
+                    Button("On This Mac…") {
+                        addProject()
+                    }
+                    Menu("From Remote Computer") {
+                        if coordinator.registeredRemoteHosts.isEmpty {
+                            Button("No Remote Computers Registered") {}
+                                .disabled(true)
+                        } else {
+                            ForEach(
+                                coordinator.registeredRemoteHosts,
+                                id: \.rawValue
+                            ) { alias in
+                                Button(alias.rawValue) {
+                                    remoteSheet = .addProject(alias)
+                                }
+                            }
+                        }
+                    }
                 } label: {
                     Image(systemName: "folder.badge.plus")
                 }
-                .buttonStyle(.borderless)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .foregroundStyle(sidebarControlColor)
+                .fixedSize()
                 .help("Add Project")
                 .accessibilityLabel("Add Project")
+
+                Menu {
+                    Button("Add Remote Computer…") {
+                        remoteSheet = .addHost
+                    }
+                    Button("Manage Remote Computers…") {
+                        remoteSheet = .manageHosts
+                    }
+                } label: {
+                    Image(systemName: "desktopcomputer")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .foregroundStyle(sidebarControlColor)
+                .fixedSize()
+                .help("Remote Computers")
+                .accessibilityLabel("Remote Computers")
 
                 Spacer()
 
@@ -127,6 +164,19 @@ struct AppShellSidebar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppShellIdentifier.sidebar)
+        .sheet(item: $remoteSheet) { sheet in
+            switch sheet {
+            case .addHost:
+                AddRemoteHostView(coordinator: coordinator)
+            case .manageHosts:
+                RemoteHostsManagementView(coordinator: coordinator)
+            case let .addProject(alias):
+                RemoteProjectPickerView(
+                    coordinator: coordinator,
+                    alias: alias
+                )
+            }
+        }
         .alert("Rename Conversation", isPresented: renamePresented) {
             TextField("Conversation name", text: $renameText)
             Button("Cancel", role: .cancel) {
@@ -390,6 +440,17 @@ struct AppShellSidebar: View {
                         .font(.system(size: 13, weight: .light))
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    if let alias = coordinator.hostAlias(
+                        forProject: project.projectID
+                    ) {
+                        RemoteHostBadge(
+                            alias: alias,
+                            isUnavailable:
+                                coordinator.remoteHost(alias) == nil
+                                || coordinator.remoteHost(alias)?
+                                    .unreachableReason != nil
+                        )
+                    }
                     ConversationIndicatorView(
                         indicator: coordinator.projectIndicator(project)
                     )
@@ -870,6 +931,17 @@ struct AppShellSidebar: View {
                 .font(.system(size: 13, weight: .light))
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if let alias = coordinator.hostAlias(
+                forProject: project.projectID
+            ) {
+                RemoteHostBadge(
+                    alias: alias,
+                    isUnavailable:
+                        coordinator.remoteHost(alias) == nil
+                        || coordinator.remoteHost(alias)?
+                            .unreachableReason != nil
+                )
+            }
         }
         .padding(.horizontal, 10)
         .frame(width: 238, height: 32)
@@ -925,6 +997,23 @@ struct AppShellSidebar: View {
 private enum SidebarLayout {
     static let disclosureWidth: CGFloat = 9
     static let conversationIndent: CGFloat = 21
+}
+
+private enum RemoteSidebarSheet: Identifiable {
+    case addHost
+    case manageHosts
+    case addProject(RemoteHostAlias)
+
+    var id: String {
+        switch self {
+        case .addHost:
+            "add-host"
+        case .manageHosts:
+            "manage-hosts"
+        case let .addProject(alias):
+            "add-project-\(alias.rawValue)"
+        }
+    }
 }
 
 /// Row-local hover tracking that keeps a single row's `.onHover` state from

@@ -46,10 +46,12 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private var ideWorkingDirectory: String?
     private var shellBaseWorkingDirectory: String?
     private var selectedManagedTabID: String?
+    let execution: ConversationExecution
 
     init(
         id: String,
         root: TerminalSession,
+        execution: ConversationExecution,
         ideWorkingDirectory: String?,
         shellBaseWorkingDirectory: String?,
         tabMetadata: ConversationTabMetadata
@@ -59,7 +61,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             launch: TerminalLaunchRequest(
                 commandID: "\(id).ide.fresh",
                 workingDirectory: resolvedIDEWorkingDirectory,
-                command: "fresh ."
+                command: "fresh .",
+                remote: execution.remote
             ),
             runtime: root.runtime
         )
@@ -67,12 +70,14 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             launch: TerminalLaunchRequest(
                 commandID: "\(id).ide.lazygit",
                 workingDirectory: resolvedIDEWorkingDirectory,
-                command: "lazygit"
+                command: "lazygit",
+                remote: execution.remote
             ),
             runtime: root.runtime
         )
         self.id = id
         self.root = root
+        self.execution = execution
         self.ideFresh = ideFresh
         self.ideLazygit = ideLazygit
         self.ideWorkingDirectory = ideWorkingDirectory
@@ -467,7 +472,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         let terminal = TerminalSession(
             launch: TerminalLaunchRequest(
                 shellTabID: tab.id,
-                workingDirectory: shellBaseWorkingDirectory ?? ""
+                workingDirectory: shellBaseWorkingDirectory ?? "",
+                remote: execution.remote
             ),
             runtime: root.runtime
         )
@@ -487,7 +493,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             launch: TerminalLaunchRequest(
                 commandID: "\(id).ide.\(suffix)",
                 workingDirectory: workingDirectory,
-                command: command
+                command: command,
+                remote: execution.remote
             ),
             runtime: root.runtime
         )
@@ -680,6 +687,13 @@ final class ConversationRuntimeManager: ObservableObject {
         self.leaderSocket = leaderSocket
     }
 
+    var localExecution: ConversationExecution {
+        ConversationExecution(
+            grokExecutable: grokExecutable,
+            leaderSocket: leaderSocket
+        )
+    }
+
     var selectedRuntime: ConversationRuntime? {
         guard let selectedSessionID else { return nil }
         return runtime(sessionID: selectedSessionID)
@@ -693,20 +707,23 @@ final class ConversationRuntimeManager: ObservableObject {
         shellDirectorySource: ConversationShellDirectorySource =
             .rootLaunchDirectory,
         ideDirectorySource: ConversationShellDirectorySource? = nil,
-        tabMetadata: ConversationTabMetadata = .initial
+        tabMetadata: ConversationTabMetadata = .initial,
+        execution: ConversationExecution? = nil
     ) -> ConversationRuntime {
         if let existing = runtime(sessionID: sessionID) {
             selectedSessionID = sessionID
             return existing
         }
 
+        let resolvedExecution = execution ?? localExecution
         let launch = TerminalLaunchRequest(
             sessionID: sessionID,
             workingDirectory: workingDirectory,
-            grokExecutable: grokExecutable,
-            leaderSocket: leaderSocket,
+            grokExecutable: resolvedExecution.grokExecutable,
+            leaderSocket: resolvedExecution.leaderSocket,
             mode: mode,
-            additionalArguments: additionalArguments
+            additionalArguments: additionalArguments,
+            remote: resolvedExecution.remote
         )
         let rootSession = TerminalSession(
             launch: launch,
@@ -733,6 +750,7 @@ final class ConversationRuntimeManager: ObservableObject {
         let runtime = ConversationRuntime(
             id: sessionID,
             root: rootSession,
+            execution: resolvedExecution,
             ideWorkingDirectory: ideWorkingDirectory,
             shellBaseWorkingDirectory: shellBaseWorkingDirectory,
             tabMetadata: tabMetadata
@@ -760,13 +778,15 @@ final class ConversationRuntimeManager: ObservableObject {
         guard let rootRuntime = runtime(sessionID: pane.rootSessionID) else {
             return
         }
+        let execution = rootRuntime.execution
         let launch = TerminalLaunchRequest(
             sessionID: pane.childSessionID,
             workingDirectory: pane.workingDirectory,
-            grokExecutable: grokExecutable,
-            leaderSocket: leaderSocket,
+            grokExecutable: execution.grokExecutable,
+            leaderSocket: execution.leaderSocket,
             mode: .resume,
-            surfaceContext: .split
+            surfaceContext: .split,
+            remote: execution.remote
         )
         let terminal = TerminalSession(
             launch: launch,

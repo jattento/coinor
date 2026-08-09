@@ -61,9 +61,23 @@ struct WorktreeService: Sendable {
     private let runner: any GitCommandRunning
     private let projectResolver: GitProjectResolver
 
-    init(runner: any GitCommandRunning) {
+    init(runner: any GitCommandRunning, target: ExecutionTarget = .local) {
         self.runner = runner
-        self.projectResolver = GitProjectResolver(runner: runner)
+        self.projectResolver = GitProjectResolver(
+            runner: runner,
+            target: target
+        )
+    }
+
+    /// Creates worktrees on a remote computer. Git, the fetch, and the
+    /// default-branch resolution all run there, using that computer's own Git
+    /// credentials.
+    init(remote alias: RemoteHostAlias, runner: any RemoteCommandRunning) {
+        self.runner = SSHGitCommandRunner(runner: runner, alias: alias)
+        self.projectResolver = GitProjectResolver(
+            remote: alias,
+            runner: runner
+        )
     }
 
     init() throws {

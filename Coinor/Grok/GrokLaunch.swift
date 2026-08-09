@@ -107,17 +107,60 @@ struct GrokControlLaunch: Sendable, Equatable {
     let leaderSocket: GrokLeaderSocket
     let workingDirectory: URL
     let environment: [String: String]
+    /// Absent for the local control plane. When present, `executable`,
+    /// `leaderSocket`, and `workingDirectory` describe the remote computer and
+    /// the process started here is `ssh`.
+    let remote: RemoteControlPlane?
 
     init(
         executable: GrokExecutable,
         leaderSocket: GrokLeaderSocket,
         workingDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        remote: RemoteControlPlane? = nil
     ) {
         self.executable = executable
         self.leaderSocket = leaderSocket
         self.workingDirectory = workingDirectory
         self.environment = environment
+        self.remote = remote
+    }
+
+    /// The process actually started on this computer.
+    var processExecutableURL: URL {
+        remote == nil
+            ? executable.url
+            : URL(fileURLWithPath: SSHCommand.executablePath, isDirectory: false)
+    }
+
+    var processArguments: [String] {
+        guard let remote else { return arguments }
+        return remote.ssh.arguments(
+            remoteCommand: SSHCommand.remoteCommand(
+                executable: executable.path,
+                arguments: arguments,
+                workingDirectory: nil
+            ),
+            allocateTTY: false,
+            batch: true
+        )
+    }
+
+    /// The remote control plane inherits nothing from this computer: no
+    /// terminal-control socket, no instance token, no local paths.
+    var processEnvironment: [String: String] {
+        remote == nil ? environment : ProcessInfo.processInfo.environment
+    }
+
+    /// Local preflight only. A remote path is owned by the remote machine and
+    /// is never checked against this file system.
+    func prepare(fileManager: FileManager = .default) throws {
+        if let remote {
+            try remote.ssh.prepareControlDirectory(fileManager: fileManager)
+            return
+        }
+        try validate(fileManager: fileManager)
+        try leaderSocket.prepareDirectory(fileManager: fileManager)
     }
 
     /// `grok --leader-socket <coinor-socket> agent --leader stdio`.
@@ -129,6 +172,7 @@ struct GrokControlLaunch: Sendable, Equatable {
     }
 
     func validate(fileManager: FileManager = .default) throws {
+        guard remote == nil else { return }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: workingDirectory.path, isDirectory: &isDirectory),
               isDirectory.boolValue
@@ -321,5 +365,20 @@ private final class GrokVersionProbeCompletion: @unchecked Sendable {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: captureDirectory)
+    }
+}
+
+/// The SSH channel Conan Code's remote control plane runs through.
+struct RemoteControlPlane: Sendable, Equatable {
+    let alias: RemoteHostAlias
+    let controlPath: String
+
+    init(ssh: SSHCommand) {
+        self.alias = ssh.alias
+        self.controlPath = ssh.controlPath
+    }
+
+    var ssh: SSHCommand {
+        SSHCommand(alias: alias, controlPath: controlPath)
     }
 }

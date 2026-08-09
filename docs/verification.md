@@ -39,6 +39,42 @@ Manual verification used the installed application and its live window:
   edge, with conversation rows one indent inside them.
 - Clicking a project header and its chevron toggled expansion, and project
   reordering by drag still committed.
+## Conan Code remote hosts verification
+
+Remote host support (ADR-0014) was validated on August 8, 2026 against a real
+second Mac reached through its `~/.ssh/config` alias.
+
+Automated verification:
+
+- The full test suite passed with 0 failures, including the new remote SSH,
+  project identity, discovery, reconnect-policy, version-policy, and metadata
+  suites.
+- Debug and test builds passed.
+
+Live verification against a real remote Mac:
+
+- The probe script returned the remote home directory, Grok executable, version,
+  runtime socket path, and `MaxSessions` in one SSH round trip.
+- `ssh <host> 'grok --leader-socket <remote socket> agent --leader stdio'`
+  completed the ACP handshake and answered `_x.ai/sessions/list` with that
+  computer's real session roster.
+- The remote leader started as `grok agent leader --no-exit-on-disconnect`,
+  reparented to `launchd` (PPID 1) in its own process group, and remained alive
+  after the SSH channel closed.
+- The remote leader bound `grok-leader-remote.sock`, separate from the
+  `grok-leader.sock` used by that computer's own Conan Code installation.
+- Stopping the remote runtime through the lock-file PID path succeeded and left
+  no leader process behind.
+
+Findings corrected during verification:
+
+- The remote leader's command line does not repeat `--leader-socket`, so
+  stopping it by command-line pattern never matched. It is now stopped by the
+  PID in the lock file beside its socket, mirroring the local path.
+- `~/.ssh/config` inline comments were parsed as additional host aliases.
+- Two machines on the same base Grok version can run different overlay builds,
+  so the compatibility gate requires an equal base version and warns instead of
+  refusing when only the overlay differs.
 
 ## Conan Code 0.5.5 Verification
 

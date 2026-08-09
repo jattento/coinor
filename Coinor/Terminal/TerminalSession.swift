@@ -39,6 +39,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     let launch: TerminalLaunchRequest
     let runtime: GhosttyRuntime
     let resumePolicy: SubagentResumePolicy?
+    let reconnectPolicy: RemoteReconnectPolicy?
     let keepsSurfaceAfterProcessExit: Bool
 
     @Published private(set) var generation = 0
@@ -46,6 +47,9 @@ final class TerminalSession: ObservableObject, Identifiable {
     @Published private(set) var workingDirectory: String
     @Published private(set) var startupError: String?
     @Published private(set) var exitCode: UInt32?
+    /// Only meaningful for a remote pane. Drives the reconnect banner.
+    @Published private(set) var connectionState: RemoteConnectionState =
+        .connected
 
     weak var surface: GhosttySurfaceView?
     var onCloseRequest: (() -> Void)?
@@ -57,8 +61,10 @@ final class TerminalSession: ObservableObject, Identifiable {
     var onBecameFocused: (() -> Void)?
     var onProcessDidExit: ((UInt32) -> Void)?
     private var completedRetries = 0
+    private var completedReconnects = 0
     private var focusLatch = TerminalFocusLatch()
     private var retryTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
 
     init(
         launch: TerminalLaunchRequest,
@@ -70,12 +76,20 @@ final class TerminalSession: ObservableObject, Identifiable {
         self.launch = launch
         self.runtime = runtime
         self.resumePolicy = resumePolicy
+        self.reconnectPolicy = launch.remote == nil
+            ? nil
+            : RemoteReconnectPolicy()
         self.keepsSurfaceAfterProcessExit = keepsSurfaceAfterProcessExit
         self.workingDirectory = launch.workingDirectory
     }
 
+    static let stableConnectionMilliseconds: UInt64 = 60_000
+
     func attach(_ surface: GhosttySurfaceView) {
         self.surface = surface
+        if case .reconnecting = connectionState {
+            connectionState = .connected
+        }
         let attachedGeneration = generation
         surface.onCloseRequest = { [weak self] in
             self?.onCloseRequest?()
@@ -160,9 +174,21 @@ final class TerminalSession: ObservableObject, Identifiable {
         surface?.processHasExited ?? (exitCode != nil)
     }
 
+    /// Reattaches a remote pane after the user dismissed the automatic
+    /// attempts. The remote session is still alive, so this is a new SSH
+    /// channel to the same conversation.
+    func reconnect() {
+        guard reconnectPolicy != nil else { return }
+        completedReconnects = 0
+        connectionState = .connected
+        recreate()
+    }
+
     func recreate() {
         retryTask?.cancel()
         retryTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
         surface?.shutdown()
         surface = nil
         generation += 1
@@ -171,8 +197,36 @@ final class TerminalSession: ObservableObject, Identifiable {
     func shutdown() {
         retryTask?.cancel()
         retryTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
         surface?.shutdown()
         surface = nil
+    }
+
+    private func scheduleReconnect(
+        policy: RemoteReconnectPolicy,
+        generation: Int
+    ) {
+        guard reconnectTask == nil,
+              let delay = policy.delay(after: completedReconnects) else {
+            connectionState = .disconnected
+            return
+        }
+        connectionState = .reconnecting(
+            attempt: completedReconnects + 1,
+            of: policy.delays.count
+        )
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled,
+                  let self,
+                  self.generation == generation else {
+                return
+            }
+            self.completedReconnects += 1
+            self.reconnectTask = nil
+            self.recreate()
+        }
     }
 
     private func processDidExit(
@@ -187,6 +241,28 @@ final class TerminalSession: ObservableObject, Identifiable {
         }
         self.exitCode = exitCode
         onProcessDidExit?(exitCode)
+        if reconnectPolicy != nil,
+           runtimeMilliseconds > Self.stableConnectionMilliseconds {
+            // A connection that lasted is not a failing one: a later drop
+            // deserves the whole reconnect budget again.
+            completedReconnects = 0
+        }
+        if let reconnectPolicy,
+           reconnectPolicy.shouldReconnect(
+               exitCode: exitCode,
+               completedAttempts: completedReconnects
+           ) {
+            scheduleReconnect(policy: reconnectPolicy, generation: generation)
+            return
+        }
+        if reconnectPolicy != nil,
+           exitCode == RemoteReconnectPolicy.sshFailureExitCode {
+            // The work is still running on the remote computer, so the pane
+            // stays and offers an explicit reconnect instead of closing the
+            // conversation.
+            connectionState = .disconnected
+            return
+        }
         if keepsSurfaceAfterProcessExit {
             return
         }

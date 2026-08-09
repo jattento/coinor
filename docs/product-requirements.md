@@ -98,6 +98,31 @@ inside expanded projects, and the current search results. It skips project and
 section headers, stops at the first and last visible conversations, and is
 disabled while a drag reorder is active.
 
+## Remote computers
+
+Conan Code can register other Macs as remote hosts, chosen from the `Host`
+entries of `~/.ssh/config`. It stores only the alias: no user, port, key path,
+or credential. Registering runs a health check and fails with one actionable
+English message if the host is unreachable, has no Grok executable, or runs a
+different base Grok version. A differing overlay build connects and warns.
+
+A remote project's conversations, subagents, IDE tools, and shell tabs execute
+on that computer. Remote projects appear in the same flat `Projects` list with
+a host badge that turns red while the host is unreachable; their conversations
+stay listed rather than disappearing.
+
+Adding a remote project never requires typing a path. Conan Code offers the
+repositories that host already knows plus a bounded scan, with a directory
+browser as a fallback.
+
+Work continues on the remote computer when the connection drops or Conan Code
+quits. A pane whose connection dropped reconnects automatically for a bounded
+time and then offers an explicit `Reconnect`. Ending a remote runtime is an
+explicit, confirmed action.
+
+Agent-managed terminal tabs are a local-only feature. A remote agent uses
+Grok's ordinary terminal tool instead.
+
 ## Creating conversations
 
 The add button on a project opens a compact menu with two actions:

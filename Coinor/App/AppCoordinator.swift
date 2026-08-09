@@ -79,6 +79,17 @@ final class AppCoordinator: ObservableObject {
     private var pendingSessions: [String: SessionSummary] = [:]
     private var projectIDBySessionID: [String: String] = [:]
     private var mainCheckoutByProjectID: [String: String] = [:]
+    private var localPersistedSessions: [GrokPersistedSession] = []
+    private var localRoster: [String: GrokRosterEntry] = [:]
+    private var localProjectIDBySessionID: [String: String] = [:]
+    private var localMainCheckoutByProjectID: [String: String] = [:]
+    private var remoteHosts: [RemoteHostAlias: RemoteHostRuntime] = [:]
+    private var remoteEventTasks: [RemoteHostAlias: Task<Void, Never>] = [:]
+    /// Which computer owns each conversation, so control-plane work is routed
+    /// to the leader that actually holds the session.
+    private var hostAliasBySessionID: [String: RemoteHostAlias] = [:]
+    private var localGrokVersion: GrokForkVersion?
+    private var supportDirectory: URL?
     @Published private var pendingAttention:
         [String: ConversationAttentionReason] = [:]
     private var lastAggregateActivity: [String: RuntimeActivity] = [:]
@@ -125,6 +136,7 @@ final class AppCoordinator: ObservableObject {
                 )
             }
 
+            self.supportDirectory = supportDirectory
             let store = try MetadataStore(directoryURL: supportDirectory)
             metadataStore = store
             metadata = await store.currentDocument
@@ -248,6 +260,8 @@ final class AppCoordinator: ObservableObject {
                 generation: generation
             )
 
+            await connectRegisteredRemoteHosts()
+
             if let lastVisible = metadata.lastVisibleSessionID,
                isConversationVisible(lastVisible) {
                 selectConversation(lastVisible)
@@ -314,7 +328,7 @@ final class AppCoordinator: ObservableObject {
             }
         )
 
-        persistedSessions = sessions
+        localPersistedSessions = sessions
         for session in sessions {
             if let directory = session.cwd {
                 runtimeManager?.resolveShellBaseWorkingDirectory(
@@ -330,9 +344,10 @@ final class AppCoordinator: ObservableObject {
             }
         }
         pendingSessions = refreshedPendingSessions
-        projectIDBySessionID = locations.projectIDBySessionID
-        mainCheckoutByProjectID = refreshedMainCheckouts
-        roster = refreshedRoster
+        localProjectIDBySessionID = locations.projectIDBySessionID
+        localMainCheckoutByProjectID = refreshedMainCheckouts
+        localRoster = refreshedRoster
+        mergeCatalogState()
         rebuildCatalog()
         reconcileRuntimeActivity()
     }
@@ -369,7 +384,8 @@ final class AppCoordinator: ObservableObject {
             ).map {
                 ConversationShellDirectorySource.explicit($0)
             } ?? .unavailable,
-            tabMetadata: metadata.conversationTabs(sessionID)
+            tabMetadata: metadata.conversationTabs(sessionID),
+            execution: execution(forSession: sessionID)
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         runtimeManager.select(sessionID: sessionID)
@@ -383,6 +399,401 @@ final class AppCoordinator: ObservableObject {
                 $0.setLastVisibleSession(sessionID)
             }
         }
+    }
+
+    // MARK: - Remote hosts
+
+    /// Aliases from `~/.ssh/config` that are not registered yet. Conan Code
+    /// offers these instead of asking for connection details, so it never
+    /// stores a credential of its own.
+    var availableRemoteHostAliases: [RemoteHostAlias] {
+        let registered = Set(metadata.remoteHostAliases.map(\.rawValue))
+        return SSHConfigHosts().aliases().filter {
+            !registered.contains($0.rawValue)
+        }
+    }
+
+    var registeredRemoteHosts: [RemoteHostAlias] {
+        metadata.remoteHostAliases
+    }
+
+    func remoteHost(_ alias: RemoteHostAlias) -> RemoteHostRuntime? {
+        remoteHosts[alias]
+    }
+
+    /// Registers a computer after it passes the same compatibility contract
+    /// the local runtime passes at start-up. Returns an English diagnostic on
+    /// failure; a host is never half-registered.
+    @discardableResult
+    func addRemoteHost(_ alias: RemoteHostAlias) async -> String? {
+        if let failure = await connectRemoteHost(alias) {
+            return failure
+        }
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.registerRemoteHost(alias)
+            }
+        }
+        return nil
+    }
+
+    func removeRemoteHost(_ alias: RemoteHostAlias) {
+        remoteEventTasks.removeValue(forKey: alias)?.cancel()
+        let host = remoteHosts.removeValue(forKey: alias)
+        hostAliasBySessionID = hostAliasBySessionID.filter { $0.value != alias }
+        mergeCatalogState()
+        rebuildCatalog()
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.unregisterRemoteHost(alias)
+            }
+        }
+        Task { await host?.shutdown() }
+    }
+
+    /// Ends the Grok runtime on a remote computer. Every agent still working
+    /// there stops, so callers confirm first.
+    func stopRemoteRuntime(_ alias: RemoteHostAlias) async -> String? {
+        guard let host = remoteHosts[alias] else { return nil }
+        do {
+            try await host.stopRemoteRuntime()
+        } catch {
+            return error.localizedDescription
+        }
+        remoteHosts.removeValue(forKey: alias)
+        mergeCatalogState()
+        rebuildCatalog()
+        return nil
+    }
+
+    private func connectRemoteHost(
+        _ alias: RemoteHostAlias
+    ) async -> String? {
+        guard let supportDirectory else {
+            return "Conan Code has not finished starting."
+        }
+        guard let localVersion = await resolvedLocalGrokVersion() else {
+            return "Conan Code could not determine this computer's Grok version."
+        }
+        do {
+            let host = try await RemoteHostRuntime.connect(
+                alias: alias,
+                supportDirectory: supportDirectory,
+                localVersion: localVersion
+            )
+            remoteHosts[alias] = host
+            if let versionWarning = host.host.versionWarning {
+                warningMessage = versionWarning
+            }
+            listenForRemoteControlEvents(host, generation: lifecycleGeneration)
+            try await refreshRemoteHost(host)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func resolvedLocalGrokVersion() async -> GrokForkVersion? {
+        if let localGrokVersion { return localGrokVersion }
+        guard let controlClient,
+              let text = await controlClient.executableVersion,
+              let version = GrokForkVersion(text: text) else {
+            return nil
+        }
+        localGrokVersion = version
+        return version
+    }
+
+    /// Reconnects every registered host in parallel. A host that fails stays
+    /// registered and unreachable rather than disappearing from the sidebar.
+    private func connectRegisteredRemoteHosts() async {
+        let aliases = metadata.remoteHostAliases
+        guard !aliases.isEmpty else { return }
+        for alias in aliases where remoteHosts[alias] == nil {
+            if let failure = await connectRemoteHost(alias) {
+                warningMessage = failure
+            }
+        }
+    }
+
+    private func refreshRemoteHost(_ host: RemoteHostRuntime) async throws {
+        async let persistedRequest = host.control.listPersistedSessions()
+        async let rosterRequest = host.control.listRoster()
+        let (allSessions, rosterEntries) = try await (
+            persistedRequest,
+            rosterRequest
+        )
+        let sessions = allSessions.filter { !$0.isSubagent }
+        let alias = host.alias
+        let runner = host.commandRunner
+        let locations = await Task.detached {
+            Self.resolveRemoteProjectLocations(
+                for: sessions,
+                alias: alias,
+                runner: runner
+            )
+        }.value
+
+        host.persistedSessions = sessions
+        host.roster = Dictionary(
+            uniqueKeysWithValues: rosterEntries.map { ($0.id.rawValue, $0) }
+        )
+        host.projectIDBySessionID = locations.projectIDBySessionID
+        host.mainCheckoutByProjectID.merge(
+            locations.mainCheckoutByProjectID,
+            uniquingKeysWith: { _, refreshed in refreshed }
+        )
+        host.unreachableReason = nil
+        for session in sessions {
+            hostAliasBySessionID[session.id.rawValue] = alias
+        }
+        mergeCatalogState()
+        rebuildCatalog()
+    }
+
+    /// Republishes the merged view of every computer's catalog. Local state is
+    /// kept separately so a local refresh cannot drop remote rows.
+    private func mergeCatalogState() {
+        var sessions = localPersistedSessions
+        var roster = localRoster
+        var projectIDs = localProjectIDBySessionID
+        var checkouts = localMainCheckoutByProjectID
+        for host in remoteHosts.values {
+            sessions += host.persistedSessions
+            roster.merge(host.roster, uniquingKeysWith: { _, remote in remote })
+            projectIDs.merge(
+                host.projectIDBySessionID,
+                uniquingKeysWith: { _, remote in remote }
+            )
+            checkouts.merge(
+                host.mainCheckoutByProjectID,
+                uniquingKeysWith: { _, remote in remote }
+            )
+        }
+        persistedSessions = sessions
+        self.roster = roster
+        projectIDBySessionID = projectIDs
+        mainCheckoutByProjectID = checkouts
+    }
+
+    /// The computer that owns a conversation, or `nil` when it is local.
+    func hostAlias(forSession sessionID: String) -> RemoteHostAlias? {
+        if let alias = hostAliasBySessionID[sessionID] { return alias }
+        guard let projectID = projectIDBySessionID[sessionID] else {
+            return nil
+        }
+        return ProjectIdentity(rawValue: projectID).target.remoteAlias
+    }
+
+    func hostAlias(forProject projectID: String) -> RemoteHostAlias? {
+        ProjectIdentity(rawValue: projectID).target.remoteAlias
+    }
+
+    /// Routes control-plane work to the leader that actually holds the
+    /// session. A remote conversation is never driven by the local client.
+    private func controlClient(
+        forSession sessionID: String
+    ) -> GrokControlClient? {
+        guard let alias = hostAlias(forSession: sessionID) else {
+            return controlClient
+        }
+        return remoteHosts[alias]?.control
+    }
+
+    private func execution(
+        forProject projectID: String
+    ) -> ConversationExecution? {
+        guard let alias = hostAlias(forProject: projectID) else { return nil }
+        return remoteHosts[alias]?.execution
+    }
+
+    private func execution(
+        forSession sessionID: String
+    ) -> ConversationExecution? {
+        guard let alias = hostAlias(forSession: sessionID) else { return nil }
+        return remoteHosts[alias]?.execution
+    }
+
+    /// Mirrors the local control-event loop for one remote computer. A remote
+    /// stream ending marks that host unreachable instead of failing the
+    /// application, because the rest of the sidebar keeps working.
+    private func listenForRemoteControlEvents(
+        _ host: RemoteHostRuntime,
+        generation: Int
+    ) {
+        let alias = host.alias
+        remoteEventTasks[alias]?.cancel()
+        remoteEventTasks[alias] = Task { [weak self] in
+            let events = await host.control.events()
+            for await event in events {
+                guard let self,
+                      !Task.isCancelled,
+                      self.remoteHosts[alias] === host,
+                      self.lifecycleGeneration == generation else {
+                    return
+                }
+                switch event {
+                case .rosterChanged(let change):
+                    for removed in change.removed {
+                        host.roster.removeValue(forKey: removed.rawValue)
+                        self.roster.removeValue(forKey: removed.rawValue)
+                    }
+                    for entry in change.upserted {
+                        host.roster[entry.id.rawValue] = entry
+                        self.roster[entry.id.rawValue] = entry
+                        self.hostAliasBySessionID[entry.id.rawValue] = alias
+                        if let directory = entry.cwd {
+                            self.runtimeManager?
+                                .resolveShellBaseWorkingDirectory(
+                                    sessionID: entry.id.rawValue,
+                                    directory: directory
+                                )
+                            self.runtimeManager?
+                                .resolveIDEWorkingDirectory(
+                                    sessionID: entry.id.rawValue,
+                                    directory: directory
+                                )
+                        }
+                        self.materializePendingSessionIfNeeded(entry)
+                        self.startLifecycleCatchupIfReady(entry)
+                    }
+                    self.reconcileRuntimeActivity()
+                case .subagentLifecycle(let observation):
+                    self.reconcileSubagentLifecycle(observation)
+                case .notification:
+                    continue
+                case .terminated(let error):
+                    host.unreachableReason = error.localizedDescription
+                    self.warningMessage = RemoteHostError.unreachable(
+                        alias: alias.rawValue,
+                        detail: host.unreachableReason ?? ""
+                    ).localizedDescription
+                    return
+                }
+            }
+        }
+    }
+
+    /// Refreshes every reachable host. Failures are recorded on the host and
+    /// never abort the local refresh.
+    private func refreshRemoteHosts() async {
+        for host in remoteHosts.values {
+            do {
+                try await refreshRemoteHost(host)
+            } catch {
+                host.unreachableReason = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Remote projects
+
+    /// Repositories the picker offers for a host: the ones its Grok catalog
+    /// already knows plus a bounded remote scan.
+    func remoteRepositoryCandidates(
+        _ alias: RemoteHostAlias
+    ) async throws -> [RemoteRepositoryCandidate] {
+        guard let host = remoteHosts[alias] else {
+            throw RemoteHostError.unreachable(
+                alias: alias.rawValue,
+                detail: "it is not connected"
+            )
+        }
+        let knownRoots = host.projectIDBySessionID.values.map {
+            ProjectIdentity(rawValue: $0).path
+        }
+        let discovery = RemoteProjectDiscovery(
+            runner: host.commandRunner,
+            alias: alias
+        )
+        return try await Task.detached {
+            try discovery.candidates(knownGitRoots: Array(Set(knownRoots)))
+        }.value
+    }
+
+    /// Lists one remote directory for the picker's `Browse…` fallback.
+    func remoteDirectoryEntries(
+        _ alias: RemoteHostAlias,
+        at path: String?
+    ) async throws -> (path: String, entries: [RemoteDirectoryEntry]) {
+        guard let host = remoteHosts[alias] else {
+            throw RemoteHostError.unreachable(
+                alias: alias.rawValue,
+                detail: "it is not connected"
+            )
+        }
+        let discovery = RemoteProjectDiscovery(
+            runner: host.commandRunner,
+            alias: alias
+        )
+        let directory = path ?? host.host.homeDirectory
+        let entries = try await Task.detached {
+            try discovery.directoryEntries(at: directory)
+        }.value
+        return (directory, entries)
+    }
+
+    /// Registers a repository that lives on a remote computer. Git runs there,
+    /// so the path is never validated against this file system.
+    @discardableResult
+    func addRemoteProject(
+        alias: RemoteHostAlias,
+        path: String
+    ) async -> String? {
+        guard let host = remoteHosts[alias] else {
+            return RemoteHostError.unreachable(
+                alias: alias.rawValue,
+                detail: "it is not connected"
+            ).localizedDescription
+        }
+        let runner = host.commandRunner
+        let checkout = URL(fileURLWithPath: path, isDirectory: true)
+        do {
+            let resolution = try await Task.detached {
+                try GitProjectResolver(remote: alias, runner: runner)
+                    .resolve(checkout: checkout)
+            }.value
+            let projectID = resolution.identity.rawValue
+            host.mainCheckoutByProjectID[projectID] =
+                resolution.mainCheckout.path
+            mergeCatalogState()
+            schedulePersistence { coordinator in
+                await coordinator.persist {
+                    $0.registerProject(
+                        projectID,
+                        checkoutPath: resolution.mainCheckout.path
+                    )
+                }
+            }
+            rebuildCatalog()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private nonisolated static func resolveRemoteProjectLocations(
+        for sessions: [GrokPersistedSession],
+        alias: RemoteHostAlias,
+        runner: any RemoteCommandRunning
+    ) -> ProjectLocationSnapshot {
+        let resolver = GitProjectResolver(remote: alias, runner: runner)
+        var projectIDs: [String: String] = [:]
+        var mainCheckouts: [String: String] = [:]
+        for session in sessions {
+            guard let resolution = try? resolver.resolve(
+                projectFor: session
+            ) else {
+                continue
+            }
+            projectIDs[session.id.rawValue] = resolution.identity.rawValue
+            mainCheckouts[resolution.identity.rawValue] =
+                resolution.mainCheckout.path
+        }
+        return ProjectLocationSnapshot(
+            projectIDBySessionID: projectIDs,
+            mainCheckoutByProjectID: mainCheckouts
+        )
     }
 
     func setVisibleConversationNavigationIDs(_ conversationIDs: [String]) {
@@ -436,7 +847,8 @@ final class AppCoordinator: ObservableObject {
             shellDirectorySource: additionalArguments.contains {
                 $0.hasPrefix("--worktree=")
             } ? .unavailable : .rootLaunchDirectory,
-            tabMetadata: metadata.conversationTabs(sessionID)
+            tabMetadata: metadata.conversationTabs(sessionID),
+            execution: execution(forProject: projectID)
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         selectedSessionID = sessionID
@@ -625,10 +1037,16 @@ final class AppCoordinator: ObservableObject {
             fileURLWithPath: mainCheckout(for: projectID),
             isDirectory: true
         )
+        let remoteRunner = hostAlias(forProject: projectID)
+            .flatMap { remoteHosts[$0] }
+            .map { (alias: $0.alias, runner: $0.commandRunner) }
         Task {
             do {
                 let result = try await Task.detached {
-                    try WorktreeService().prepareCreation(
+                    let service = remoteRunner.map {
+                        WorktreeService(remote: $0.alias, runner: $0.runner)
+                    }
+                    return try (service ?? WorktreeService()).prepareCreation(
                         named: trimmed,
                         from: checkout
                     )
@@ -763,7 +1181,11 @@ final class AppCoordinator: ObservableObject {
 
     func renameConversation(_ sessionID: String, title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let controlClient else { return }
+        guard !trimmed.isEmpty,
+              let controlClient = controlClient(forSession: sessionID)
+        else {
+            return
+        }
         let directory = session(sessionID)?.cwd
         Task {
             do {
@@ -1031,22 +1453,34 @@ final class AppCoordinator: ObservableObject {
         persistedSessions.first { $0.id.rawValue == sessionID }
     }
 
+    /// Used when Git could not resolve a session's repository. A remote
+    /// session keeps its host so it can never land inside a local project that
+    /// happens to share the same path.
     private func fallbackProjectID(
         for session: GrokPersistedSession
     ) -> String {
         let value = session.projectDirectory ?? session.cwd ?? NSHomeDirectory()
-        return URL(fileURLWithPath: value)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-            .path
+        let directory = URL(fileURLWithPath: value, isDirectory: true)
+        guard let alias = hostAliasBySessionID[session.id.rawValue] else {
+            return directory
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+                .path
+        }
+        return ProjectIdentity(
+            target: .remote(alias),
+            commonDirectory: directory
+        ).rawValue
     }
 
     private func mainCheckout(for projectID: String) -> String {
         mainCheckoutByProjectID[projectID]
             ?? metadata.projectCheckoutPath(projectID)
             ?? {
+            // A remote project ID carries its host, so the fallback uses the
+            // repository path on the computer that owns it.
             let projectURL = URL(
-                fileURLWithPath: projectID,
+                fileURLWithPath: ProjectIdentity(rawValue: projectID).path,
                 isDirectory: true
             )
             if projectURL.lastPathComponent == ".git" {
@@ -1160,7 +1594,9 @@ final class AppCoordinator: ObservableObject {
         _ control: GrokControlClient,
         generation: Int
     ) -> Bool {
-        lifecycleGeneration == generation && controlClient === control
+        guard lifecycleGeneration == generation else { return false }
+        if controlClient === control { return true }
+        return remoteHosts.values.contains { $0.control === control }
     }
 
     private func listenForControlEvents(
@@ -1344,6 +1780,7 @@ final class AppCoordinator: ObservableObject {
                         using: control,
                         generation: generation
                     )
+                    await self.refreshRemoteHosts()
                 } catch is CancellationError {
                     return
                 } catch {
@@ -1370,7 +1807,9 @@ final class AppCoordinator: ObservableObject {
             try? await Task.sleep(for: .milliseconds(500))
             guard let self,
                   !Task.isCancelled,
-                  let controlClient = self.controlClient else {
+                  let controlClient = self.controlClient(
+                      forSession: rootSessionID
+                  ) else {
                 return
             }
             do {
@@ -1398,7 +1837,7 @@ final class AppCoordinator: ObservableObject {
               pendingLifecycleCatchup.contains(rootSessionID),
               !completedLifecycleCatchup.contains(rootSessionID),
               runtimeManager?.runtime(sessionID: rootSessionID) != nil,
-              let controlClient,
+              let controlClient = controlClient(forSession: rootSessionID),
               let cwd = runtimeManager?.workingDirectory(
                   sessionID: rootSessionID,
                   rootSessionID: rootSessionID
@@ -1575,7 +2014,8 @@ final class AppCoordinator: ObservableObject {
               hookCoordinator?.activePanes(
                 rootSessionID: rootSessionID
               ).isEmpty == false,
-              let controlClient else {
+              let controlClient = controlClient(forSession: rootSessionID)
+        else {
             return
         }
         let generation = lifecycleGeneration
@@ -1708,7 +2148,8 @@ final class AppCoordinator: ObservableObject {
         let sessionID = entry.id.rawValue
         guard pendingSessions[sessionID] != nil,
               pendingMaterializationTasks[sessionID] == nil,
-              let controlClient else {
+              let controlClient = controlClient(forSession: sessionID)
+        else {
             return
         }
         let generation = lifecycleGeneration

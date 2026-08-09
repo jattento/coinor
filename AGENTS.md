@@ -29,8 +29,6 @@ Read `CONTEXT.md`, `docs/product-requirements.md`, `docs/architecture.md`,
 
 ## Delivery
 
-- Phase 0 is a strict gate. Do not build full product UI until all three spikes
-  pass and `docs/phase-0-results.md` records real evidence.
 - Use `apply_patch` for manual file edits.
 - Keep changes within the ownership assigned by the root agent.
 - Do not weaken, skip, disable, or delete tests.
