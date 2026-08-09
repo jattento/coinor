@@ -67,7 +67,6 @@ open .build/DerivedData/Build/Products/Debug/Coinor.app
 
 ```sh
 scripts/ghostty/test-verification.sh
-scripts/phase0/check-boundaries.sh
 
 xcodebuild -project Coinor.xcodeproj -scheme Coinor \
   -configuration Debug \

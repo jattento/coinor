@@ -2,6 +2,44 @@
 
 Date: August 8, 2026
 
+## Retired Grok Runtime Baseline
+
+`scripts/phase0/check-boundaries.sh` and `docs/baselines/` were removed on
+August 8, 2026. They pinned the Grok runtime checkout to the exact revision and
+working-tree status recorded during Phase 0, which stopped describing reality
+once Grok moved ahead. Entries below that cite the script are kept as the
+historical record of the release they belong to.
+
+The integration boundaries that still hold are enforced by the product and its
+release verification: an absolute Grok path, Coinor's private leader socket,
+and no writes into `grok-build` or `~/.grok/config.toml`.
+
+## Conan Code 0.5.12 Verification
+
+The sidebar stopped relying on `DisclosureGroup` for project rows as version
+`0.5.12` build `19`, so a collapsed project header can no longer inherit the
+indentation `List` reserves for the conversations inside it.
+
+Automated verification:
+
+- Full Debug suite: 34 unit and integration tests plus 3 XCUITests passed with
+  0 failures and 0 skips.
+- Release arm64 build passed.
+- `scripts/release/verify-app.sh` reported `0.5.12 (19)`, arm64, macOS 13
+  minimum, deep-strict signature, sandbox disabled, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` found no leaks in Git history, the
+  publishable snapshot, or the Release bundle.
+- `git diff --check` passed.
+- The published asset digests matched the local `SHA256SUMS`.
+
+Manual verification used the installed application and its live window:
+
+- Accessibility geometry reported every project header on the same leading
+  edge, with conversation rows one indent inside them.
+- Clicking a project header and its chevron toggled expansion, and project
+  reordering by drag still committed.
+
 ## Conan Code 0.5.5 Verification
 
 The embedded Ghostty terminal theme was aligned with the Codex desktop app's

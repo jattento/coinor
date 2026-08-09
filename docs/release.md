@@ -63,18 +63,6 @@ The verifier binds the Ghostty tag and commit to the public header, static
 library, complete XCFramework, resources, and terminfo checksums. Do not mix
 files from different Ghostty builds.
 
-## Preflight
-
-Confirm that the standalone repository and Grok integration boundaries still
-match the recorded baseline:
-
-```sh
-scripts/phase0/check-boundaries.sh
-```
-
-The boundary check must not modify `grok-build`, `~/.grok/config.toml`, or the
-global Grok leader setting.
-
 ## Build
 
 Run the required Debug build and full Debug test before producing Release:
@@ -139,14 +127,13 @@ The verifier requires:
 - the Ghostty v1.3.1 MIT notice and exact source commit
 - no dynamic dependency on `/Applications/Ghostty.app`
 
-The final release record must also contain the result of:
-
-```sh
-scripts/phase0/check-boundaries.sh
-```
-
 Record those results in `docs/verification.md`; do not infer success from an
 older application bundle.
+
+Coinor no longer pins the Grok runtime to a recorded revision. The integration
+boundaries that matter are enforced in the product itself: an absolute Grok
+path, Coinor's private leader socket, and no writes into `grok-build` or
+`~/.grok/config.toml`. A release must still leave those untouched.
 
 ## Install
 
@@ -254,7 +241,7 @@ For every release:
 1. Update `MARKETING_VERSION` when the user-facing version changes and always
    increment `CURRENT_PROJECT_VERSION`.
 2. Complete Debug build, full test, Release build, bundle verification,
-   boundary checks, visual QA, and the security gate.
+   visual QA, and the security gate.
 3. Create the verified archive and checksum file:
 
 ```sh

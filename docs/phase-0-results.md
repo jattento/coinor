@@ -23,7 +23,8 @@ The custom Grok binary under test reports:
 grok 0.2.117 (29189e7)
 ```
 
-Boundary verification:
+Boundary verification, run with tooling that no longer ships in this
+repository:
 
 ```sh
 scripts/phase0/check-boundaries.sh

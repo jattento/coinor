@@ -1,5 +1,0 @@
- M overlay/hooks/herdr-subagent-pane.sh
-?? CONTEXT.md
-?? docs/
-?? overlay/tests/fixtures/
-?? overlay/tests/model_matrix.py
