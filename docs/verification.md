@@ -39,6 +39,20 @@ Manual verification used the installed application and its live window:
   edge, with conversation rows one indent inside them.
 - Clicking a project header and its chevron toggled expansion, and project
   reordering by drag still committed.
+## Conan Code 0.5.13 Verification
+
+Remote host support shipped as version `0.5.13` build `20` on August 8, 2026.
+
+- The full Debug test suite passed with 0 failures.
+- The arm64 Release build passed.
+- `scripts/release/verify-app.sh` passed for the exact Release bundle:
+  `verified_codesign=deep-strict`, `verified_app_sandbox=false`,
+  `verified_get_task_allow=false`,
+  `verified_ghostty_commit=332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`,
+  `verified_coinorctl_outside_app_error=stable`.
+- `scripts/release/security-scan.sh` found no secrets or private local paths.
+- `git diff --check` passed.
+
 ## Conan Code remote hosts verification
 
 Remote host support (ADR-0014) was validated on August 8, 2026 against a real
