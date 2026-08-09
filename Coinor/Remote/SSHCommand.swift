@@ -156,10 +156,16 @@ struct SSHCommand: Sendable {
         return parts.joined(separator: " && ")
     }
 
+    /// SSH forwards `TERM` but never `COLORTERM`, so a remote program that
+    /// asks the environment whether the terminal is truecolor would see a
+    /// downgraded one. Every Coinor surface is truecolor on both computers.
+    static let truecolorEnvironment = ["COLORTERM": "truecolor"]
+
     /// The remote user's own login shell, so a remote shell tab behaves like a
     /// local one. `$SHELL` is expanded by the remote shell, never here.
     static func remoteLoginShellCommand(workingDirectory: String) -> String {
         "cd \(ShellQuoting.quote(workingDirectory)) && "
+            + "COLORTERM=truecolor "
             + #"exec "${SHELL:-/bin/zsh}" -il"#
     }
 
@@ -170,6 +176,7 @@ struct SSHCommand: Sendable {
         workingDirectory: String
     ) -> String {
         "cd \(ShellQuoting.quote(workingDirectory)) && "
+            + "COLORTERM=truecolor "
             + "exec \"${SHELL:-/bin/zsh}\" -ilc \(ShellQuoting.quote(command))"
     }
 }

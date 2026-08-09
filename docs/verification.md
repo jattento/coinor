@@ -100,6 +100,29 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.19 Verification
+
+Grok offered only its two non-truecolor themes, locally and remotely.
+
+Two independent causes, both Conan Code's:
+
+- Grok treats `NO_COLOR` as set even when empty, so it cannot be neutralized
+  through Ghostty's per-surface variables. A value inherited from whatever
+  launched the application reached every embedded terminal. The application now
+  removes it from its own environment at start-up, before any surface exists;
+  a shell running inside a terminal can still set it.
+- SSH forwards `TERM` but never `COLORTERM`, so a remote pane's Grok saw a
+  downgraded terminal. Remote Grok, shell, and IDE commands now carry
+  `COLORTERM=truecolor`, and local surfaces set it explicitly.
+
+Evidence: on a real remote computer, the previous command reported
+`COLORTERM=<unset>` in the remote login shell and the new one reports
+`truecolor`. `grok doctor` in a clean pseudo-terminal reports
+`color truecolor` and `themes all`, and with `NO_COLOR` set it reports
+`2/7: groknight, grokday`, which is exactly what the picker showed.
+
+The full suite passed with 0 failures.
+
 ## Conan Code 0.5.18 Verification
 
 Opening a conversation in a remote project showed

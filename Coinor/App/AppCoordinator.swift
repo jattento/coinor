@@ -110,6 +110,7 @@ final class AppCoordinator: ObservableObject {
     func start() async {
         guard !started else { return }
         started = true
+        InheritedTerminalEnvironment.removeColorSuppression()
         observeApplicationActivation()
         lifecycleGeneration += 1
         let generation = lifecycleGeneration

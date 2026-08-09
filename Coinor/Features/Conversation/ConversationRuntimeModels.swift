@@ -365,6 +365,9 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
                 arguments: arguments,
                 workingDirectory: workingDirectory,
                 environment: environment
+                    .merging(SSHCommand.truecolorEnvironment) { current, _ in
+                        current
+                    }
             )
         }
     }

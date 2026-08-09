@@ -158,14 +158,14 @@ struct SSHCommandTests {
             SSHCommand.remoteLoginShellCommand(
                 workingDirectory: "/srv/Project With Space"
             )
-                == #"cd '/srv/Project With Space' && exec "${SHELL:-/bin/zsh}" -il"#
+                == #"cd '/srv/Project With Space' && COLORTERM=truecolor exec "${SHELL:-/bin/zsh}" -il"#
         )
         #expect(
             SSHCommand.remoteShellCommand(
                 command: "fresh . && echo $HOME",
                 workingDirectory: "/srv/Project With Space"
             )
-                == #"cd '/srv/Project With Space' && exec "${SHELL:-/bin/zsh}" -ilc 'fresh . && echo $HOME'"#
+                == #"cd '/srv/Project With Space' && COLORTERM=truecolor exec "${SHELL:-/bin/zsh}" -ilc 'fresh . && echo $HOME'"#
         )
     }
 
@@ -325,5 +325,51 @@ struct RemoteHostVersionPolicyTests {
         #expect(throws: RemoteHostError.self) {
             try probe(remote: "0.2.118").probe(localVersion: localVersion)
         }
+    }
+}
+
+@Suite
+struct TruecolorEnvironmentTests {
+    private let alias = RemoteHostAlias(rawValue: "studio")!
+
+    @Test
+    func aRemoteGrokPaneCarriesTruecolor() {
+        // SSH forwards TERM but not COLORTERM, so the remote Grok would offer
+        // only its non-truecolor themes without this.
+        let launch = TerminalLaunchRequest(
+            sessionID: "abc",
+            workingDirectory: "/Users/remote/repo",
+            grokExecutable: "/Users/remote/bin/grok",
+            leaderSocket: "/Users/remote/leader.sock",
+            mode: .resume,
+            remote: RemoteExecution(alias: alias, controlPath: "/tmp/a.sock")
+        )
+
+        #expect(launch.shellCommand.contains("COLORTERM=truecolor"))
+    }
+
+    @Test
+    func aRemoteShellAndIDECommandCarryTruecolor() {
+        #expect(
+            SSHCommand.remoteLoginShellCommand(workingDirectory: "/tmp")
+                .contains("COLORTERM=truecolor")
+        )
+        #expect(
+            SSHCommand.remoteShellCommand(
+                command: "lazygit",
+                workingDirectory: "/tmp"
+            ).contains("COLORTERM=truecolor")
+        )
+    }
+
+    @Test
+    func colorSuppressionInheritedFromTheLauncherIsRemoved() {
+        var removed: [String] = []
+
+        InheritedTerminalEnvironment.removeColorSuppression {
+            removed.append($0)
+        }
+
+        #expect(removed == ["NO_COLOR"])
     }
 }

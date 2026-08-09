@@ -56,3 +56,19 @@ struct AppEnvironment: Sendable {
         )
     }
 }
+
+
+/// Environment the application must not pass on to its terminals.
+enum InheritedTerminalEnvironment {
+    /// `NO_COLOR` counts as set even when empty, so it cannot be neutralized
+    /// through Ghostty's per-surface variables. A value inherited from
+    /// whatever launched the application - a shell, `open`, a script - would
+    /// silently strip color from every embedded terminal, including Grok's
+    /// truecolor themes. A user who wants it can still set it in the shell
+    /// that runs inside the terminal.
+    static func removeColorSuppression(
+        unset: (String) -> Void = { unsetenv($0) }
+    ) {
+        unset("NO_COLOR")
+    }
+}
