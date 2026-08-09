@@ -54,3 +54,28 @@ enum RemoteConnectionState: Equatable, Sendable {
         }
     }
 }
+
+
+/// The environment every embedded terminal is started with.
+///
+/// Kept apart from the AppKit surface so the guarantees it carries can be
+/// asserted directly: a Coinor terminal is always truecolor, and it never
+/// passes on a colour suppression inherited from whatever launched the
+/// application.
+enum TerminalSurfaceEnvironment {
+    static func variables(
+        resourcesDirectory: String,
+        terminfoDirectory: String,
+        path: String,
+        launch: TerminalLaunchRequest
+    ) -> [(String, String)] {
+        [
+            ("GHOSTTY_RESOURCES_DIR", resourcesDirectory),
+            ("TERMINFO", terminfoDirectory),
+            ("PATH", path),
+            // Programs that ask the environment instead of terminfo, including
+            // Grok's theme catalog, need this to offer their full palette.
+            ("COLORTERM", "truecolor"),
+        ] + launch.surfaceEnvironment.sorted { $0.key < $1.key }
+    }
+}

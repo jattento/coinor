@@ -370,15 +370,12 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         wantsLayer = true
 
-        let environment = [
-            ("GHOSTTY_RESOURCES_DIR", runtime.resourcesDirectory),
-            ("TERMINFO", runtime.terminfoDirectory),
-            ("PATH", Self.terminalPath()),
-            // Every Coinor surface is a truecolor terminal. Programs that ask
-            // the environment instead of terminfo, including Grok's theme
-            // catalog, need this to offer their full palette.
-            ("COLORTERM", "truecolor"),
-        ] + launch.surfaceEnvironment.sorted { $0.key < $1.key }
+        let environment = TerminalSurfaceEnvironment.variables(
+            resourcesDirectory: runtime.resourcesDirectory,
+            terminfoDirectory: runtime.terminfoDirectory,
+            path: Self.terminalPath(),
+            launch: launch
+        )
         guard let app = runtime.app else {
             throw GhosttyRuntimeError.applicationCreation
         }

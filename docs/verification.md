@@ -100,6 +100,24 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.20 Verification
+
+The colour guarantees of an embedded terminal are now asserted directly rather
+than inferred: `TerminalSurfaceEnvironment.variables` is built outside the
+AppKit surface, and tests require every local and remote surface to carry
+`COLORTERM=truecolor` and to never carry `NO_COLOR`. The start-up removal of an
+inherited `NO_COLOR` keeps its own test.
+
+Manual confirmation on the installed application: launched with `NO_COLOR=1`
+in its environment, every terminal process it started reported
+`TERM=xterm-ghostty`, `COLORTERM=truecolor`, and no `NO_COLOR`.
+
+This computer's `~/bin/grok` now points at the installed
+`v0.2.117-overlay.3` release instead of the development worktree launcher, so
+both computers report the same version and the host version warning is gone.
+
+The full suite passed with 0 failures.
+
 ## Conan Code 0.5.19 Verification
 
 Grok offered only its two non-truecolor themes, locally and remotely.

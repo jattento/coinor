@@ -363,6 +363,34 @@ struct TruecolorEnvironmentTests {
     }
 
     @Test
+    func everyTerminalSurfaceIsAdvertisedAsTruecolor() {
+        let local = TerminalSurfaceEnvironment.variables(
+            resourcesDirectory: "/res",
+            terminfoDirectory: "/terminfo",
+            path: "/usr/bin",
+            launch: TerminalLaunchRequest(shellTabID: "a", workingDirectory: "/tmp")
+        )
+        let remote = TerminalSurfaceEnvironment.variables(
+            resourcesDirectory: "/res",
+            terminfoDirectory: "/terminfo",
+            path: "/usr/bin",
+            launch: TerminalLaunchRequest(
+                shellTabID: "b",
+                workingDirectory: "/tmp",
+                remote: RemoteExecution(alias: alias, controlPath: "/tmp/a.sock")
+            )
+        )
+
+        for variables in [local, remote] {
+            #expect(
+                variables.contains { $0.0 == "COLORTERM" && $0.1 == "truecolor" }
+            )
+            // A suppression is never handed to a terminal.
+            #expect(!variables.contains { $0.0 == "NO_COLOR" })
+        }
+    }
+
+    @Test
     func colorSuppressionInheritedFromTheLauncherIsRemoved() {
         var removed: [String] = []
 

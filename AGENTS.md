@@ -19,6 +19,10 @@ Read `CONTEXT.md`, `docs/product-requirements.md`, `docs/architecture.md`,
 - Treat the sibling custom `grok-build` checkout as read-only. Never modify
   its tracked, untracked, generated, or configuration files from Coinor work.
 - Resolve Grok through an absolute path, defaulting to `~/bin/grok`.
+- `~/bin/grok` must be an installed `jattento/grok-build` release, never a
+  development worktree launcher: a worktree build reports an unstamped version,
+  so Conan Code's compatibility contract and its host version comparison stop
+  meaning anything. Install the release after publishing one.
 - Use a Coinor-specific `--leader-socket`; never edit `~/.grok/config.toml`.
 - Pin Ghostty to tag `v1.3.1`, commit
   `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
