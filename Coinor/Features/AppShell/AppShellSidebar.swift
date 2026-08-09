@@ -329,48 +329,48 @@ struct AppShellSidebar: View {
         .padding(.bottom, 4)
     }
 
+    /// Emits a project as flat sibling rows instead of a `DisclosureGroup`.
+    ///
+    /// `List` keeps its own outline indentation per row, and a long-lived
+    /// sidebar can leave a collapsed project header sitting at the indentation
+    /// of the conversations it owns. Owning the indentation here keeps every
+    /// header on the same leading edge for the life of the session.
     @ViewBuilder
     private func projectRow(_ project: ProjectRow) -> some View {
-        Group {
-            if reorder.isDragging(project.projectID, in: .projects) {
-                projectReorderPlaceholder(project)
-            } else {
-                projectDisclosureGroup(project)
+        if reorder.isDragging(project.projectID, in: .projects) {
+            projectReorderPlaceholder(project)
+                .transaction { $0.animation = nil }
+        } else {
+            projectHeaderRow(project)
+                // Recycled sidebar rows cross-fade their labels when an
+                // ambient animation reaches them, which paints two project
+                // names on top of each other. Row content updates stay
+                // instantaneous.
+                .transaction { $0.animation = nil }
+
+            if project.isExpanded {
+                ForEach(displayConversations(in: project)) { conversation in
+                    conversationRow(
+                        conversation,
+                        pinned: false,
+                        reorderScope: .project(project.projectID),
+                        projectDropTargetID: project.projectID
+                    )
+                    .padding(.leading, SidebarLayout.conversationIndent)
+                }
             }
         }
-        // Recycled sidebar rows cross-fade their labels when an ambient
-        // animation reaches them, which paints two project names on top of
-        // each other. Row content updates stay instantaneous.
-        .transaction { $0.animation = nil }
     }
 
-    private func projectDisclosureGroup(
+    private func projectHeaderRow(
         _ project: ProjectRow
     ) -> some View {
-        DisclosureGroup(
-            isExpanded: Binding(
-                get: { project.isExpanded },
-                set: {
-                    coordinator.setProjectExpanded(
-                        project.projectID,
-                        expanded: $0
-                    )
-                }
-            )
-        ) {
-            ForEach(displayConversations(in: project)) { conversation in
-                conversationRow(
-                    conversation,
-                    pinned: false,
-                    reorderScope: .project(project.projectID),
-                    projectDropTargetID: project.projectID
-                )
-            }
-        } label: {
-            SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
-                let showsNewConversation =
-                    isHovered || focusedProjectMenuID == project.projectID
+        SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
+            let showsNewConversation =
+                isHovered || focusedProjectMenuID == project.projectID
 
+            HStack(spacing: 0) {
+                projectDisclosureControl(project)
                 HStack(spacing: 7) {
                     Image(
                         systemName: coordinator.projectIconName(
@@ -440,68 +440,104 @@ struct AppShellSidebar: View {
                         "Choose where to start the conversation"
                     )
                 }
-                .frame(height: SidebarReorderMetrics.projectHeaderHeight)
-                .contentShape(Rectangle())
-                .onDrag {
-                    reorder.begin(
-                        scope: .projects,
-                        itemID: project.projectID,
-                        currentOrder: currentOrder(for: .projects)
-                    )
-                } preview: {
-                    projectDragPreview(project)
-                }
-                .onDrop(
-                    of: [.coinorProjectReorder],
-                    delegate: projectDropDelegate(
-                        targetProjectID: project.projectID
-                    )
+            }
+            .frame(height: SidebarReorderMetrics.projectHeaderHeight)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                coordinator.setProjectExpanded(
+                    project.projectID,
+                    expanded: !project.isExpanded
                 )
-                .contextMenu {
-                    Button("Rename Project") {
-                        renameProjectText = coordinator.projectDisplayName(
-                            project.projectID
-                        )
-                        renameProjectID = project.projectID
-                    }
-                    if coordinator.projectHasCustomDisplayName(project.projectID) {
-                        Button("Use Folder Name") {
-                            coordinator.useFolderName(for: project.projectID)
-                        }
-                    }
-                    Button("Change Icon") {
-                        appearanceProjectID = project.projectID
-                    }
-                    Divider()
-                    Button("Archive Project") {
-                        coordinator.archiveProject(project.projectID)
+            }
+            .onDrag {
+                reorder.begin(
+                    scope: .projects,
+                    itemID: project.projectID,
+                    currentOrder: currentOrder(for: .projects)
+                )
+            } preview: {
+                projectDragPreview(project)
+            }
+            .onDrop(
+                of: [.coinorProjectReorder],
+                delegate: projectDropDelegate(
+                    targetProjectID: project.projectID
+                )
+            )
+            .contextMenu {
+                Button("Rename Project") {
+                    renameProjectText = coordinator.projectDisplayName(
+                        project.projectID
+                    )
+                    renameProjectID = project.projectID
+                }
+                if coordinator.projectHasCustomDisplayName(project.projectID) {
+                    Button("Use Folder Name") {
+                        coordinator.useFolderName(for: project.projectID)
                     }
                 }
-                .popover(
-                    isPresented: projectAppearancePresented(project.projectID),
-                    arrowEdge: .trailing
-                ) {
-                    ProjectAppearancePicker(
-                        initialIconName: coordinator.projectIconName(
-                            project.projectID
-                        ),
-                        initialColorName: coordinator.projectIconColorName(
-                            project.projectID
-                        ),
-                        apply: { iconName, colorName in
-                            coordinator.setProjectAppearance(
-                                project.projectID,
-                                iconName: iconName,
-                                colorName: colorName
-                            )
-                        },
-                        dismiss: {
-                            appearanceProjectID = nil
-                        }
-                    )
+                Button("Change Icon") {
+                    appearanceProjectID = project.projectID
+                }
+                Divider()
+                Button("Archive Project") {
+                    coordinator.archiveProject(project.projectID)
                 }
             }
+            .popover(
+                isPresented: projectAppearancePresented(project.projectID),
+                arrowEdge: .trailing
+            ) {
+                ProjectAppearancePicker(
+                    initialIconName: coordinator.projectIconName(
+                        project.projectID
+                    ),
+                    initialColorName: coordinator.projectIconColorName(
+                        project.projectID
+                    ),
+                    apply: { iconName, colorName in
+                        coordinator.setProjectAppearance(
+                            project.projectID,
+                            iconName: iconName,
+                            colorName: colorName
+                        )
+                    },
+                    dismiss: {
+                        appearanceProjectID = nil
+                    }
+                )
+            }
         }
+    }
+
+    /// Chevron that mirrors the sidebar's disclosure affordance.
+    ///
+    /// Project rows are flat `List` rows, so the sidebar draws and positions
+    /// this control itself instead of inheriting one from `DisclosureGroup`.
+    private func projectDisclosureControl(
+        _ project: ProjectRow
+    ) -> some View {
+        Button {
+            coordinator.setProjectExpanded(
+                project.projectID,
+                expanded: !project.isExpanded
+            )
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(project.isExpanded ? 90 : 0))
+                .frame(
+                    width: SidebarLayout.disclosureWidth,
+                    height: SidebarLayout.disclosureWidth,
+                    alignment: .center
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            project.isExpanded ? "Collapse Project" : "Expand Project"
+        )
     }
 
     private func projectReorderPlaceholder(
@@ -879,6 +915,16 @@ struct AppShellSidebar: View {
             coordinator.addProject(url: url)
         }
     }
+}
+
+/// Leading geometry the sidebar controls itself.
+///
+/// `List` no longer indents project conversations, so these constants keep the
+/// disclosure chevron and the conversation rows aligned with the project header
+/// they belong to.
+private enum SidebarLayout {
+    static let disclosureWidth: CGFloat = 9
+    static let conversationIndent: CGFloat = 21
 }
 
 /// Row-local hover tracking that keeps a single row's `.onHover` state from
