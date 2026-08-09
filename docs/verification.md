@@ -100,6 +100,27 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.18 Verification
+
+Opening a conversation in a remote project showed
+`The terminal working directory is unavailable` instead of a terminal.
+`TerminalSurfaceRepresentable` checked the conversation's working directory
+against this computer's file system, and a remote conversation's directory
+exists only on the other computer.
+
+The check now lives on `TerminalLaunchRequest.surfaceStartupFailure()`, which
+skips the file-system check for a remote launch and still reports an
+unresolved directory. Every other local file-system check was re-audited: the
+rest cover this computer's own Grok binary, Ghostty resources, metadata, and
+the local-only terminal-control service.
+
+- `CoinorUITests/RemoteHostUITests` now also starts a conversation in the
+  remote project it just added and fails if the unavailable-directory message
+  appears; it passed end to end against a real second Mac.
+- Unit tests cover local missing, local present, remote, and unresolved
+  directories.
+- The full suite passed with 0 failures.
+
 ## Conan Code 0.5.16 Verification
 
 Registering a remote computer failed on its first step with

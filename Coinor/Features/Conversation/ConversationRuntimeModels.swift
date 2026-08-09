@@ -375,6 +375,30 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         remote == nil ? workingDirectory : NSHomeDirectory()
     }
 
+    /// Why a terminal cannot start, or `nil` when it can.
+    ///
+    /// A remote conversation's working directory belongs to the other
+    /// computer, so it is never checked against this file system: doing so
+    /// reported every remote conversation as unavailable.
+    func surfaceStartupFailure(
+        fileManager: FileManager = .default
+    ) -> String? {
+        guard !workingDirectory.isEmpty else {
+            return "The conversation working directory is unavailable."
+        }
+        guard remote == nil else { return nil }
+
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: workingDirectory,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            return "The terminal working directory is unavailable:\n"
+                + workingDirectory
+        }
+        return nil
+    }
+
     /// A remote surface never inherits Conan Code's local environment: the
     /// variables belong to the remote command line instead.
     var surfaceEnvironment: [String: String] {

@@ -411,3 +411,69 @@ struct ProjectIndicatorPropagationTests {
         #expect(aggregated == .working)
     }
 }
+
+
+@Suite
+struct SurfaceStartupFailureTests {
+    private func remote() -> RemoteExecution {
+        RemoteExecution(
+            alias: RemoteHostAlias(rawValue: "studio")!,
+            controlPath: "/tmp/studio.sock"
+        )
+    }
+
+    @Test
+    func aLocalConversationInAMissingDirectoryReportsIt() {
+        let launch = TerminalLaunchRequest(
+            sessionID: "s",
+            workingDirectory: "/nonexistent/coinor/project",
+            grokExecutable: "/bin/grok",
+            leaderSocket: "/tmp/leader.sock",
+            mode: .resume
+        )
+
+        #expect(launch.surfaceStartupFailure()?.contains("unavailable") == true)
+    }
+
+    @Test
+    func aLocalConversationInARealDirectoryStarts() {
+        let launch = TerminalLaunchRequest(
+            sessionID: "s",
+            workingDirectory: NSHomeDirectory(),
+            grokExecutable: "/bin/grok",
+            leaderSocket: "/tmp/leader.sock",
+            mode: .resume
+        )
+
+        #expect(launch.surfaceStartupFailure() == nil)
+    }
+
+    @Test
+    func aRemoteConversationIsNeverCheckedAgainstThisFileSystem() {
+        // This path exists on the other computer only. Checking it here is
+        // what reported every remote conversation as unavailable.
+        let launch = TerminalLaunchRequest(
+            sessionID: "s",
+            workingDirectory: "/Users/someone-else/projects/repo",
+            grokExecutable: "/Users/someone-else/bin/grok",
+            leaderSocket: "/Users/someone-else/leader.sock",
+            mode: .resume,
+            remote: remote()
+        )
+
+        #expect(launch.surfaceStartupFailure() == nil)
+    }
+
+    @Test
+    func anUnresolvedDirectoryIsStillReported() {
+        let local = TerminalLaunchRequest(shellTabID: "a", workingDirectory: "")
+        let remoteTab = TerminalLaunchRequest(
+            shellTabID: "b",
+            workingDirectory: "",
+            remote: remote()
+        )
+
+        #expect(local.surfaceStartupFailure() != nil)
+        #expect(remoteTab.surfaceStartupFailure() != nil)
+    }
+}

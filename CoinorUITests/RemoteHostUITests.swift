@@ -99,7 +99,8 @@ final class RemoteHostUITests: XCTestCase {
         // Close the management sheet before using the project picker.
         app.typeKey(.escape, modifierFlags: [])
 
-        try addARemoteProject(app: app, alias: alias)
+        let projectBadge = try addARemoteProject(app: app, alias: alias)
+        try openAConversationInTheRemoteProject(app: app, row: projectBadge)
 
         // Leave the application exactly as it was found.
         let remoteMenuAgain = app.menuButtons["Remote Computers"]
@@ -113,12 +114,49 @@ final class RemoteHostUITests: XCTestCase {
         )
     }
 
+    /// The whole point of a remote project: starting a conversation in it must
+    /// open a terminal, not an error about a directory that only exists on the
+    /// other computer.
+    private func openAConversationInTheRemoteProject(
+        app: XCUIApplication,
+        row: XCUIElement
+    ) throws {
+        // The control only appears while its project row is hovered.
+        row.hover()
+        let newConversation = app.menuButtons["New Conversation"].firstMatch
+        XCTAssertTrue(newConversation.waitForExistence(timeout: 20))
+        newConversation.click()
+
+        let inMainCheckout = app.menuItems["In Main Checkout"]
+        XCTAssertTrue(inMainCheckout.waitForExistence(timeout: 10))
+        inMainCheckout.click()
+
+        let unavailable = app.staticTexts.containing(
+            NSPredicate(
+                format: "value CONTAINS[c] %@",
+                "working directory is unavailable"
+            )
+        ).firstMatch
+        XCTAssertFalse(
+            unavailable.waitForExistence(timeout: 12),
+            "the remote conversation reported its working directory as unavailable"
+        )
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(identifier: "AppShellTerminalRegion")
+                .firstMatch
+                .waitForExistence(timeout: 20)
+        )
+    }
+
     /// The picker must let the user choose a repository on the other computer
     /// without ever typing a path.
+    @discardableResult
     private func addARemoteProject(
         app: XCUIApplication,
         alias: String
-    ) throws {
+    ) throws -> XCUIElement {
         let addProject = app.menuButtons["Add Project"]
         XCTAssertTrue(addProject.waitForExistence(timeout: 15))
         addProject.click()
@@ -171,5 +209,6 @@ final class RemoteHostUITests: XCTestCase {
             badge.waitForExistence(timeout: 30),
             "the remote project row is missing its host badge"
         )
+        return badge
     }
 }

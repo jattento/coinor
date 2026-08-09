@@ -321,18 +321,8 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(
-            atPath: session.launch.workingDirectory,
-            isDirectory: &isDirectory
-        ), isDirectory.boolValue else {
-            let message = session.launch.workingDirectory.isEmpty
-                ? "The conversation working directory is unavailable."
-                : "The terminal working directory is unavailable:\n"
-                    + session.launch.workingDirectory
-            return TerminalErrorView(
-                message: message
-            )
+        if let failure = session.launch.surfaceStartupFailure() {
+            return TerminalErrorView(message: failure)
         }
         do {
             let view = try GhosttySurfaceView(
