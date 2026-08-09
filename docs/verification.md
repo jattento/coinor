@@ -100,6 +100,23 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code remote host interface verification
+
+`CoinorUITests/RemoteHostUITests` drives the running application against a real
+remote computer, in an isolated support directory so the user's own projects,
+pins, and registered computers are untouched:
+
+- The sidebar's `Remote Computers` menu opens `Add Remote Computer…`, which
+  offers the alias from `~/.ssh/config` without any typing.
+- Registering performs a real SSH health check and the management view then
+  reports the computer as `Connected`.
+- `Add Project` offers `From Remote Computer`, the picker lists repositories
+  discovered on that computer, and selecting one registers the project. No
+  path is typed anywhere in the flow.
+- The new project appears in the same flat sidebar list carrying its host
+  badge.
+- Removing the computer returns the interface to its empty state.
+
 ## Conan Code remote host operations verification
 
 Every remaining remote operation was exercised against the same real second
