@@ -1416,6 +1416,7 @@ final class AppCoordinator: ObservableObject {
                         && !self.metadata.isSessionArchived($0.id)
                 }
                 .map { self.indicator(for: $0.id) }
+                .filter(\.propagatesToProject)
         )
     }
 

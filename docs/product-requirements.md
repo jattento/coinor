@@ -128,6 +128,16 @@ explicit, confirmed action.
 Agent-managed terminal tabs are a local-only feature. A remote agent uses
 Grok's ordinary terminal tool instead.
 
+## Activity indicators
+
+A conversation shows its own state: working, waiting for you, finished,
+failed, session closed, or dormant.
+
+A project row only inherits the states that mean it needs attention or is
+doing work: failed, waiting, working, and finished. Per-conversation lifecycle
+states never reach it, because a project is a grouping and cannot itself be
+dormant or closed.
+
 ## Creating conversations
 
 The add button on a project opens a compact menu with two actions:

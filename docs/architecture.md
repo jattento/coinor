@@ -472,7 +472,9 @@ The root conversation aggregates activity from itself and all descendants:
 3. idle, dormant, or completed has no active indicator
 4. dead sessions show an error state
 
-Aggregated state propagates to the conversation row and project. Selecting a
+Aggregated state propagates to the conversation row, and to its project only
+for states a grouping can meaningfully have: failed, waiting, working, and
+finished. Dormant and closed stop at the conversation. Selecting a
 conversation needing attention focuses the requesting pane.
 
 Coinor sends a native macOS notification only when it is not the focused

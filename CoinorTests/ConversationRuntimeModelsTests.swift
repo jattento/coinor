@@ -370,3 +370,44 @@ func projectIndicatorsShowTheMostDemandingConversation() {
     )
     #expect(ConversationIndicator.aggregate([ConversationIndicator]()) == .none)
 }
+
+@Suite
+struct ProjectIndicatorPropagationTests {
+    @Test
+    func aProjectNeverInheritsPerConversationLifecycleStates() {
+        // A project is a grouping: it cannot be dormant or closed.
+        #expect(!ConversationIndicator.dormant.propagatesToProject)
+        #expect(!ConversationIndicator.completed.propagatesToProject)
+        #expect(!ConversationIndicator.none.propagatesToProject)
+    }
+
+    @Test
+    func aProjectStillSurfacesAttentionAndWork() {
+        #expect(ConversationIndicator.failed.propagatesToProject)
+        #expect(ConversationIndicator.waiting.propagatesToProject)
+        #expect(ConversationIndicator.working.propagatesToProject)
+        #expect(ConversationIndicator.finished.propagatesToProject)
+    }
+
+    @Test
+    func aProjectWhoseConversationsAreAllDormantShowsNothing() {
+        let indicators: [ConversationIndicator] = [.dormant, .completed, .none]
+
+        let aggregated = ConversationIndicator.aggregate(
+            indicators.filter(\.propagatesToProject)
+        )
+
+        #expect(aggregated == .none)
+    }
+
+    @Test
+    func oneWorkingConversationStillMarksItsProject() {
+        let indicators: [ConversationIndicator] = [.dormant, .working, .completed]
+
+        let aggregated = ConversationIndicator.aggregate(
+            indicators.filter(\.propagatesToProject)
+        )
+
+        #expect(aggregated == .working)
+    }
+}

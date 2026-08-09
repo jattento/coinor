@@ -130,6 +130,21 @@ enum ConversationIndicator: Equatable, Sendable {
         }
     }
 
+    /// Whether a project row should inherit this state from its
+    /// conversations.
+    ///
+    /// A project is a grouping, not something that can be dormant or closed:
+    /// only states that say the project needs attention or is doing work are
+    /// worth showing on its row.
+    var propagatesToProject: Bool {
+        switch self {
+        case .failed, .waiting, .working, .finished:
+            true
+        case .completed, .dormant, .none:
+            false
+        }
+    }
+
     static func aggregate<S: Sequence>(_ values: S) -> ConversationIndicator
     where S.Element == ConversationIndicator {
         values.min { $0.rank < $1.rank } ?? .none
