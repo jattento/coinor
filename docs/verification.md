@@ -100,6 +100,20 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.15 Verification
+
+Hiding remote projects and the remote computers empty state shipped as version
+`0.5.15` build `22`.
+
+- The full test suite passed with 0 failures.
+- The arm64 Release build, `scripts/release/verify-app.sh`, and
+  `scripts/release/security-scan.sh` passed.
+- The reported empty `Remote Computers` panel was correct: that installation
+  had no registered computer. The confusing part was its guidance, which sent
+  the user back to the menu they had just used; it now registers a computer
+  from the panel itself. The add sheet was confirmed to offer the four aliases
+  in that machine's SSH configuration.
+
 ## Conan Code remote host interface verification
 
 `CoinorUITests/RemoteHostUITests` drives the running application against a real

@@ -421,6 +421,24 @@ final class AppCoordinator: ObservableObject {
         remoteHosts[alias]
     }
 
+    /// Whether remote projects are currently kept out of the sidebar.
+    var remoteProjectsHidden: Bool {
+        metadata.remoteProjectsHidden
+    }
+
+    /// Shows or hides every remote project. Registered computers, their
+    /// runtimes, and any conversation running on them are untouched.
+    func setRemoteProjectsHidden(_ hidden: Bool) {
+        guard hidden != metadata.remoteProjectsHidden else { return }
+        metadata.setRemoteProjectsHidden(hidden)
+        rebuildCatalog()
+        schedulePersistence { coordinator in
+            await coordinator.persist {
+                $0.setRemoteProjectsHidden(hidden)
+            }
+        }
+    }
+
     /// Registers a computer after it passes the same compatibility contract
     /// the local runtime passes at start-up. Returns an English diagnostic on
     /// failure; a host is never half-registered.
@@ -1519,9 +1537,24 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func rebuildCatalog() {
+        guard metadata.remoteProjectsHidden else {
+            catalog = SessionCatalog.build(
+                sessions: summaries,
+                metadata: metadata
+            )
+            return
+        }
+        // Hiding is presentation only: the computers stay registered, their
+        // runtimes keep running, and nothing is archived.
+        var visibleMetadata = metadata
+        visibleMetadata.projects = metadata.projects.filter {
+            !ProjectIdentity(rawValue: $0.key).target.isRemote
+        }
         catalog = SessionCatalog.build(
-            sessions: summaries,
-            metadata: metadata
+            sessions: summaries.filter {
+                !ProjectIdentity(rawValue: $0.projectID).target.isRemote
+            },
+            metadata: visibleMetadata
         )
     }
 

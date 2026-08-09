@@ -229,8 +229,9 @@ func versionThreeDocumentMigratesWithNoRemoteHosts() async throws {
     let store = try MetadataStore(directoryURL: directory)
     let document = await store.currentDocument
 
-    #expect(document.schemaVersion == 4)
+    #expect(document.schemaVersion == MetadataSchema.currentVersion)
     #expect(document.remoteHostAliases.isEmpty)
+    #expect(!document.remoteProjectsHidden)
 }
 
 @Test

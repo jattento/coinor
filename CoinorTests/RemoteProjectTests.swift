@@ -286,3 +286,50 @@ private final class FakeRemoteCommandRunner:
         return results.removeFirst()
     }
 }
+
+@Suite
+struct RemoteProjectVisibilityTests {
+    private func summary(_ id: String, project: String) -> SessionSummary {
+        SessionSummary(id: id, projectID: project, title: id)
+    }
+
+    @Test
+    func hidingRemoteProjectsIsPresentationOnly() {
+        var metadata = MetadataDocument.empty
+        metadata.registerRemoteHost(RemoteHostAlias(rawValue: "studio")!)
+        metadata.setRemoteProjectsHidden(true)
+
+        // Hiding must not unregister the computer or archive anything.
+        #expect(metadata.remoteHostAliases.count == 1)
+        #expect(metadata.remoteProjectsHidden)
+        #expect(!metadata.isProjectArchived("studio:/Users/other/repo"))
+    }
+
+    @Test
+    func aHiddenCatalogKeepsOnlyLocalProjects() {
+        let sessions = [
+            summary("local-1", project: "/Users/me/repo"),
+            summary("remote-1", project: "studio:/Users/other/repo"),
+        ]
+        var metadata = MetadataDocument.empty
+        metadata.registerProject(
+            "studio:/Users/other/manual",
+            checkoutPath: "/Users/other/manual"
+        )
+
+        let visible = sessions.filter {
+            !ProjectIdentity(rawValue: $0.projectID).target.isRemote
+        }
+        var hiddenMetadata = metadata
+        hiddenMetadata.projects = metadata.projects.filter {
+            !ProjectIdentity(rawValue: $0.key).target.isRemote
+        }
+        let catalog = SessionCatalog.build(
+            sessions: visible,
+            metadata: hiddenMetadata
+        )
+
+        #expect(catalog.projects.count == 1)
+        #expect(catalog.projects.first?.projectID == "/Users/me/repo")
+    }
+}

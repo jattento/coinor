@@ -137,6 +137,17 @@ struct AppShellSidebar: View {
                     Button("Manage Remote Computers…") {
                         remoteSheet = .manageHosts
                     }
+                    Divider()
+                    Button(
+                        coordinator.remoteProjectsHidden
+                            ? "Show Remote Projects"
+                            : "Hide Remote Projects"
+                    ) {
+                        coordinator.setRemoteProjectsHidden(
+                            !coordinator.remoteProjectsHidden
+                        )
+                    }
+                    .disabled(coordinator.registeredRemoteHosts.isEmpty)
                 } label: {
                     Image(systemName: "desktopcomputer")
                 }

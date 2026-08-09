@@ -168,6 +168,13 @@ Remote projects sit in the same flat `Projects` list as local ones with a small
 host badge on the project row. There is no per-computer section: the sidebar's
 flat structure is a standing product rule.
 
+## Hiding remote projects
+
+The sidebar's `Remote Computers` menu can hide every remote project at once.
+This changes presentation only: registered computers, their runtimes, and any
+work running on them are untouched, and the choice is stored with the rest of
+Conan Code's local organization metadata.
+
 ## Security
 
 - no credential, key path, user name, or port is persisted by Conan Code

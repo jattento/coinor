@@ -162,6 +162,7 @@ struct RemoteHostsManagementView: View {
     @State private var pendingStopAlias: RemoteHostAlias?
     @State private var stoppingAliases: Set<RemoteHostAlias> = []
     @State private var errorMessage: String?
+    @State private var showsAddSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -188,9 +189,16 @@ struct RemoteHostsManagementView: View {
                         .foregroundStyle(.secondary)
                     Text("No Remote Computers")
                         .font(.headline)
-                    Text("Add a computer from the Remote Computers menu in the sidebar.")
+                    Text("Conan Code offers the hosts in your SSH configuration and stores no credentials.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    // Sending the user back to the menu they just used is a
+                    // dead end, so the action lives here too.
+                    Button("Add Remote Computer…") {
+                        showsAddSheet = true
+                    }
+                    .padding(.top, 2)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(28)
@@ -219,6 +227,9 @@ struct RemoteHostsManagementView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 420)
+        .sheet(isPresented: $showsAddSheet) {
+            AddRemoteHostView(coordinator: coordinator)
+        }
         .alert(
             "Stop Remote Runtime?",
             isPresented: Binding(

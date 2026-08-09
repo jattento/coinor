@@ -4,7 +4,7 @@ import Foundation
 /// `MetadataDocument`'s persisted shape changes in a way older decoders
 /// cannot already tolerate, and add the matching step to `MetadataMigrator`.
 enum MetadataSchema {
-    static let currentVersion = 4
+    static let currentVersion = 5
 }
 
 struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
@@ -264,6 +264,10 @@ struct MetadataDocument: Equatable, Sendable {
     var sessions: [String: SessionMetadata]
     var projects: [String: ProjectMetadata]
     var remoteHostAliases: [RemoteHostAlias]
+    /// Hides every remote project without unregistering its computer, so a
+    /// machine that is asleep or irrelevant right now stops crowding the
+    /// sidebar.
+    var remoteProjectsHidden: Bool
     var pinnedSessionIDs: [String]
     var projectOrder: [String]
     var lastVisibleSessionID: String?
@@ -273,6 +277,7 @@ struct MetadataDocument: Equatable, Sendable {
         sessions: [:],
         projects: [:],
         remoteHostAliases: [],
+        remoteProjectsHidden: false,
         pinnedSessionIDs: [],
         projectOrder: [],
         lastVisibleSessionID: nil
@@ -444,6 +449,10 @@ extension MetadataDocument {
         remoteHostAliases.removeAll { $0 == alias }
     }
 
+    mutating func setRemoteProjectsHidden(_ hidden: Bool) {
+        remoteProjectsHidden = hidden
+    }
+
     mutating func setProjectArchived(_ projectID: String, archived: Bool) {
         var value = projects[projectID] ?? ProjectMetadata()
         value.archived = archived
@@ -545,6 +554,7 @@ extension MetadataDocument: Codable {
         case sessions
         case projects
         case remoteHostAliases
+        case remoteProjectsHidden
         case pinnedSessionIDs
         case projectOrder
         case lastVisibleSessionID
@@ -570,6 +580,10 @@ extension MetadataDocument: Codable {
             }
             return alias
         }
+        remoteProjectsHidden = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .remoteProjectsHidden
+        ) ?? false
         pinnedSessionIDs = try container.decodeIfPresent([String].self, forKey: .pinnedSessionIDs) ?? []
         projectOrder = try container.decodeIfPresent([String].self, forKey: .projectOrder) ?? []
         lastVisibleSessionID = try container.decodeIfPresent(String.self, forKey: .lastVisibleSessionID)
@@ -581,6 +595,7 @@ extension MetadataDocument: Codable {
         try container.encode(sessions, forKey: .sessions)
         try container.encode(projects, forKey: .projects)
         try container.encode(remoteHostAliases, forKey: .remoteHostAliases)
+        try container.encode(remoteProjectsHidden, forKey: .remoteProjectsHidden)
         try container.encode(pinnedSessionIDs, forKey: .pinnedSessionIDs)
         try container.encode(projectOrder, forKey: .projectOrder)
         try container.encodeIfPresent(lastVisibleSessionID, forKey: .lastVisibleSessionID)

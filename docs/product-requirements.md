@@ -111,6 +111,11 @@ on that computer. Remote projects appear in the same flat `Projects` list with
 a host badge that turns red while the host is unreachable; their conversations
 stay listed rather than disappearing.
 
+The `Remote Computers` menu also toggles `Hide Remote Projects` and `Show
+Remote Projects`. Hiding is presentation only: the computers stay registered,
+their runtimes keep running, and nothing is archived. The choice survives
+relaunch.
+
 Adding a remote project never requires typing a path. Conan Code offers the
 repositories that host already knows plus a bounded scan, with a directory
 browser as a fallback.
