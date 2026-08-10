@@ -100,6 +100,22 @@ Findings corrected during this pass:
   the diagnostic now names the permission.
 - `~/.ssh/config` inline comments were parsed as additional host aliases.
 
+## Conan Code 0.5.21 Verification
+
+A registered computer that became unreachable stayed unreachable: the periodic
+refresh only iterated hosts that were already connected, so a computer that had
+been asleep or restarted could only be recovered by removing and adding it
+again.
+
+The refresh now retries every registered host that has no runtime or is marked
+unreachable, quietly, and the remote computers view offers an explicit
+`Reconnect` and shows the reason the computer is unavailable.
+
+- A live test registers a host, stops its remote runtime underneath it, and
+  requires a fresh connection to succeed and read the catalog again. It passed
+  against a real second Mac.
+- The full suite passed with 0 failures.
+
 ## Conan Code 0.5.20 Verification
 
 The colour guarantees of an embedded terminal are now asserted directly rather

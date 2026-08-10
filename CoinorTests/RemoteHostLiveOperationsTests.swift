@@ -79,6 +79,28 @@ struct RemoteHostLiveOperationsTests {
         await runtime.control.shutdown()
     }
 
+    @Test
+    @MainActor
+    func aHostRecoversAfterItsRuntimeIsStoppedUnderneath() async throws {
+        let alias = try #require(LiveRemoteEnvironment.alias)
+
+        // Registering, losing the computer, and getting it back must not
+        // require removing and adding it again.
+        let runtime = try await connected()
+        try await runtime.stopRemoteRuntime()
+        await runtime.shutdown()
+
+        let recovered = try await RemoteHostRuntime.connect(
+            alias: alias,
+            supportDirectory: LiveRemoteEnvironment.supportDirectory,
+            localVersion: try LiveRemoteEnvironment.localVersion()
+        )
+        let sessions = try await recovered.control.listPersistedSessions()
+        #expect(sessions.allSatisfy { !$0.id.rawValue.isEmpty })
+
+        try await recovered.stopRemoteRuntime()
+    }
+
     @Test(.enabled(if: LiveRemoteEnvironment.repository != nil))
     func creatingAWorktreeRunsEntirelyOnTheRemoteComputer() throws {
         let alias = try #require(LiveRemoteEnvironment.alias)

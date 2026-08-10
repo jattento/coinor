@@ -85,6 +85,10 @@ final class AppCoordinator: ObservableObject {
     private var localMainCheckoutByProjectID: [String: String] = [:]
     private var remoteHosts: [RemoteHostAlias: RemoteHostRuntime] = [:]
     private var remoteEventTasks: [RemoteHostAlias: Task<Void, Never>] = [:]
+    /// Why a registered host has no runtime, so the interface can explain a
+    /// computer that is away instead of showing nothing.
+    @Published private(set) var unreachableRemoteHostReasons:
+        [RemoteHostAlias: String] = [:]
     /// Which computer owns each conversation, so control-plane work is routed
     /// to the leader that actually holds the session.
     private var hostAliasBySessionID: [String: RemoteHostAlias] = [:]
@@ -486,7 +490,8 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func connectRemoteHost(
-        _ alias: RemoteHostAlias
+        _ alias: RemoteHostAlias,
+        reportsFailure: Bool = true
     ) async -> String? {
         guard let supportDirectory else {
             return "Conan Code has not finished starting."
@@ -501,6 +506,7 @@ final class AppCoordinator: ObservableObject {
                 localVersion: localVersion
             )
             remoteHosts[alias] = host
+            unreachableRemoteHostReasons.removeValue(forKey: alias)
             if let versionWarning = host.host.versionWarning {
                 warningMessage = versionWarning
             }
@@ -508,7 +514,14 @@ final class AppCoordinator: ObservableObject {
             try await refreshRemoteHost(host)
             return nil
         } catch {
-            return error.localizedDescription
+            let message = error.localizedDescription
+            if !reportsFailure {
+                // Keep the sidebar badge red and the management view honest
+                // without interrupting the user on every retry.
+                unreachableRemoteHostReasons[alias] = message
+                rebuildCatalog()
+            }
+            return message
         }
     }
 
@@ -693,8 +706,9 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    /// Refreshes every reachable host. Failures are recorded on the host and
-    /// never abort the local refresh.
+    /// Refreshes every reachable host and quietly retries the ones that are
+    /// not. A remote computer that was asleep, restarted, or off the network
+    /// comes back on its own, without the user having to remove and add it.
     private func refreshRemoteHosts() async {
         for host in remoteHosts.values {
             do {
@@ -703,6 +717,27 @@ final class AppCoordinator: ObservableObject {
                 host.unreachableReason = error.localizedDescription
             }
         }
+
+        for alias in metadata.remoteHostAliases {
+            let host = remoteHosts[alias]
+            guard host == nil || host?.unreachableReason != nil else {
+                continue
+            }
+            // A failed retry is expected while the computer is away, so it
+            // updates the badge instead of raising a warning.
+            _ = await connectRemoteHost(alias, reportsFailure: false)
+        }
+    }
+
+    /// Drops a host's runtime and connects to it again. Used by the explicit
+    /// `Reconnect` action; the periodic refresh does the same on its own.
+    @discardableResult
+    func reconnectRemoteHost(_ alias: RemoteHostAlias) async -> String? {
+        remoteEventTasks.removeValue(forKey: alias)?.cancel()
+        if let host = remoteHosts.removeValue(forKey: alias) {
+            await host.shutdown()
+        }
+        return await connectRemoteHost(alias)
     }
 
     // MARK: - Remote projects

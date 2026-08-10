@@ -120,6 +120,12 @@ Adding a remote project never requires typing a path. Conan Code offers the
 repositories that host already knows plus a bounded scan, with a directory
 browser as a fallback.
 
+A computer that is asleep, restarted, or off the network keeps its projects in
+the sidebar with a red badge, and Conan Code keeps retrying it in the
+background until it answers. The remote computers view also offers an explicit
+`Reconnect` and explains why the computer is unavailable. Removing and adding
+the computer again is never necessary.
+
 Work continues on the remote computer when the connection drops or Conan Code
 quits. A pane whose connection dropped reconnects automatically for a bounded
 time and then offers an explicit `Reconnect`. Ending a remote runtime is an

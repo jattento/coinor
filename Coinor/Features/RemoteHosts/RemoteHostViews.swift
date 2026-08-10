@@ -163,6 +163,7 @@ struct RemoteHostsManagementView: View {
     @State private var stoppingAliases: Set<RemoteHostAlias> = []
     @State private var errorMessage: String?
     @State private var showsAddSheet = false
+    @State private var reconnectingAliases: Set<RemoteHostAlias> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -282,9 +283,15 @@ struct RemoteHostsManagementView: View {
 
                 Spacer()
 
-                if isStopping {
+                if isStopping || reconnectingAliases.contains(alias) {
                     ProgressView()
                         .controlSize(.small)
+                }
+                if !isConnected {
+                    Button("Reconnect") {
+                        reconnect(alias)
+                    }
+                    .disabled(reconnectingAliases.contains(alias))
                 }
                 Button("Stop remote runtime", role: .destructive) {
                     pendingStopAlias = alias
@@ -325,7 +332,10 @@ struct RemoteHostsManagementView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                Text("Conan Code is not currently connected to this computer.")
+                Text(
+                    coordinator.unreachableRemoteHostReasons[alias]
+                        ?? "Conan Code is not currently connected to this computer."
+                )
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -338,6 +348,20 @@ struct RemoteHostsManagementView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor))
+        }
+    }
+
+    /// A remote computer that was asleep, restarted, or off the network comes
+    /// back without being removed and added again.
+    private func reconnect(_ alias: RemoteHostAlias) {
+        errorMessage = nil
+        reconnectingAliases.insert(alias)
+        Task {
+            let failure = await coordinator.reconnectRemoteHost(alias)
+            reconnectingAliases.remove(alias)
+            if let failure {
+                errorMessage = failure
+            }
         }
     }
 
