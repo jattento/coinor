@@ -207,4 +207,37 @@ final class TerminalSearchTests: XCTestCase {
             )
         )
     }
+
+    func testGrokPanesHandTheirSearchToGrok() {
+        XCTAssertEqual(
+            TerminalSearchTarget.target(for: .newSession),
+            .grokConversation
+        )
+        XCTAssertEqual(
+            TerminalSearchTarget.target(for: .resume),
+            .grokConversation
+        )
+    }
+
+    func testEveryOtherPaneSearchesItsOwnScrollback() {
+        XCTAssertEqual(
+            TerminalSearchTarget.target(for: .shell),
+            .terminalScrollback
+        )
+        XCTAssertEqual(
+            TerminalSearchTarget.target(for: .managedShell),
+            .terminalScrollback
+        )
+        XCTAssertEqual(
+            TerminalSearchTarget.target(for: .command("lazygit")),
+            .terminalScrollback
+        )
+    }
+
+    func testGrokFindCommandNeverSubmitsByItself() {
+        XCTAssertEqual(TerminalSearchTarget.grokFindCommand, "/find ")
+        XCTAssertFalse(
+            TerminalSearchTarget.grokFindCommand.contains { $0.isNewline }
+        )
+    }
 }

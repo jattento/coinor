@@ -74,6 +74,36 @@ enum TerminalSearchStatus {
     }
 }
 
+/// Who owns the text a find request is supposed to search.
+///
+/// A Grok pane runs Grok's full-screen interface on the terminal's alternate
+/// screen, and an alternate screen has no scrollback at all: libghostty gives
+/// it a zero-length history, so a terminal-level search there can only ever
+/// see the rows currently on screen. The conversation itself belongs to Grok,
+/// which searches all of it through `/find`, so a find request in a Grok pane
+/// is handed to Grok instead of answered with a screen-deep result.
+enum TerminalSearchTarget: Equatable, Sendable {
+    /// The terminal's own scrollback, searched by libghostty.
+    case terminalScrollback
+    /// The whole Grok conversation, searched by Grok.
+    case grokConversation
+
+    /// Typed into the pane, without a newline, so the person can add the text
+    /// they are looking for and never sends a stray message by accident.
+    static let grokFindCommand = "/find "
+
+    static func target(
+        for mode: TerminalLaunchRequest.Mode
+    ) -> TerminalSearchTarget {
+        switch mode {
+        case .newSession, .resume:
+            .grokConversation
+        case .shell, .managedShell, .command:
+            .terminalScrollback
+        }
+    }
+}
+
 enum TerminalSearchCommand: Equatable, Sendable {
     case find
     case findNext

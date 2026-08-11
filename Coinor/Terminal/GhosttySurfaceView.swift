@@ -572,6 +572,11 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             forCharacters: event.charactersIgnoringModifiers,
             modifiers: event.modifierFlags
         ) {
+            // Grok owns navigation through its own search, so only the request
+            // to start one is claimed in a Grok pane.
+            guard searchTarget == .terminalScrollback || command == .find else {
+                return false
+            }
             performSearchCommand(command)
             return true
         }
@@ -729,11 +734,15 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
         menu.addItem(.separator())
 
-        for (title, action) in [
-            ("Find…", #selector(find(_:))),
-            ("Find Next", #selector(findNext(_:))),
-            ("Find Previous", #selector(findPrevious(_:))),
-        ] {
+        let findItems: [(String, Selector)] =
+            searchTarget == .grokConversation
+                ? [("Find in Conversation…", #selector(find(_:)))]
+                : [
+                    ("Find…", #selector(find(_:))),
+                    ("Find Next", #selector(findNext(_:))),
+                    ("Find Previous", #selector(findPrevious(_:))),
+                ]
+        for (title, action) in findItems {
             let item = NSMenuItem(
                 title: title,
                 action: action,
@@ -948,7 +957,14 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     /// Opens the find bar. `search_selection` fails when nothing is selected,
     /// which is the only way to ask the core whether it can seed the needle.
+    ///
+    /// In a Grok pane the request goes to Grok instead, because the terminal
+    /// holds only the rows Grok is currently drawing.
     func beginSearch(seedFromSelection: Bool = true) {
+        guard searchTarget == .terminalScrollback else {
+            sendText(TerminalSearchTarget.grokFindCommand)
+            return
+        }
         presentSearchOverlay()
         if seedFromSelection,
            performBindingAction(TerminalSearchAction.selection.bindingAction) {
@@ -964,6 +980,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     func navigateSearch(next: Bool) {
+        guard searchTarget == .terminalScrollback else { return }
         guard searchHost != nil else {
             beginSearch()
             return
@@ -1029,6 +1046,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         search.onClose = nil
         ghostty_surface_free(surfaceHandle)
         self.surfaceHandle = nil
+    }
+
+    private var searchTarget: TerminalSearchTarget {
+        TerminalSearchTarget.target(for: launch.mode)
     }
 
     private func performSearchCommand(_ command: TerminalSearchCommand) {

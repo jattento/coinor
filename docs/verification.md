@@ -14,6 +14,35 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.23 Verification
+
+A find request now goes to whoever holds the text, as version `0.5.23` build
+`30`.
+
+Automated verification:
+
+- Full Debug suite: 46 XCTest cases, 270 swift-testing tests across 33 suites,
+  and 3 XCUITests passed with 0 failures.
+- Release arm64 build passed.
+- `scripts/release/verify-app.sh` reported `0.5.23 (30)`, arm64, macOS 13
+  minimum, deep-strict signature, sandbox disabled, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` found no leaks in Git history, the
+  publishable snapshot, or the Release bundle.
+- `git diff --check` passed.
+
+Manual verification used a live window against an isolated application support
+directory:
+
+- A new Grok conversation was started, its prompt focused, and `Cmd+F` wrote
+  `/find ` into the prompt with Grok's own argument placeholder, ready for the
+  text to look for. Nothing was submitted.
+- The scrollback limitation was confirmed at the source: Ghostty gives an
+  alternate screen `max_scrollback = 0` (`src/terminal/Terminal.zig`), and its
+  search honours `no_scrollback` (`src/terminal/search/screen.zig`), so a
+  terminal-level search in a full-screen program is screen-deep by
+  construction.
+
 ## Conan Code 0.5.22 Verification
 
 The sidebar draws its own rows and `Cmd+F` searches a terminal as version
