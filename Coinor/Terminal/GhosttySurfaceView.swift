@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import Foundation
 import GhosttyKit
 import QuartzCore
+import SwiftUI
 
 struct GhosttyMouseInput: Equatable {
     let point: CGPoint
@@ -341,6 +342,8 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var secondaryClickRouter = GhosttySecondaryClickRouter()
     private var hostVisible = true
     private var focusesWhenAttached = false
+    private let search = TerminalSearchState()
+    private var searchHost: NSView?
 
     var onCloseRequest: (() -> Void)?
     var onProcessExit: ((UInt32, UInt64) -> Void)?
@@ -369,6 +372,13 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         wantsLayer = true
+
+        search.onCommand = { [weak self] action in
+            _ = self?.performBindingAction(action.bindingAction)
+        }
+        search.onClose = { [weak self] in
+            self?.endSearch()
+        }
 
         let environment = TerminalSurfaceEnvironment.variables(
             resourcesDirectory: runtime.resourcesDirectory,
@@ -549,9 +559,21 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.type == .keyDown,
-              window?.firstResponder === self else {
-            return false
+        guard event.type == .keyDown else { return false }
+        guard window?.firstResponder === self else {
+            // The find bar takes first responder away from the surface, so its
+            // hosting subview still has to be offered the key equivalent. Only
+            // the bar that actually holds the keyboard may claim it, otherwise
+            // a bar left open on another pane would answer for it.
+            guard searchOverlayHoldsKeyboard else { return false }
+            return super.performKeyEquivalent(with: event)
+        }
+        if let command = TerminalSearchShortcut.command(
+            forCharacters: event.charactersIgnoringModifiers,
+            modifiers: event.modifierFlags
+        ) {
+            performSearchCommand(command)
+            return true
         }
         var key = makeKeyEvent(event, action: GHOSTTY_ACTION_PRESS)
         var flags = ghostty_binding_flags_e(0)
@@ -705,6 +727,22 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         selectAllItem.target = self
         menu.addItem(selectAllItem)
 
+        menu.addItem(.separator())
+
+        for (title, action) in [
+            ("Find…", #selector(find(_:))),
+            ("Find Next", #selector(findNext(_:))),
+            ("Find Previous", #selector(findPrevious(_:))),
+        ] {
+            let item = NSMenuItem(
+                title: title,
+                action: action,
+                keyEquivalent: ""
+            )
+            item.target = self
+            menu.addItem(item)
+        }
+
         return menu
     }
 
@@ -721,13 +759,28 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         _ = performBindingAction("select_all")
     }
 
+    @IBAction func find(_ sender: Any?) {
+        beginSearch()
+    }
+
+    @IBAction func findNext(_ sender: Any?) {
+        navigateSearch(next: true)
+    }
+
+    @IBAction func findPrevious(_ sender: Any?) {
+        navigateSearch(next: false)
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(copy(_:)):
             hasSelection
         case #selector(paste(_:)):
             NSPasteboard.general.string(forType: .string) != nil
-        case #selector(selectAll(_:)):
+        case #selector(selectAll(_:)),
+             #selector(find(_:)),
+             #selector(findNext(_:)),
+             #selector(findPrevious(_:)):
             surfaceHandle != nil
         default:
             true
@@ -893,6 +946,54 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
     }
 
+    /// Opens the find bar. `search_selection` fails when nothing is selected,
+    /// which is the only way to ask the core whether it can seed the needle.
+    func beginSearch(seedFromSelection: Bool = true) {
+        presentSearchOverlay()
+        if seedFromSelection,
+           performBindingAction(TerminalSearchAction.selection.bindingAction) {
+            return
+        }
+        _ = performBindingAction(TerminalSearchAction.start.bindingAction)
+    }
+
+    func endSearch() {
+        guard searchHost != nil else { return }
+        _ = performBindingAction(TerminalSearchAction.end.bindingAction)
+        applySearchEnd()
+    }
+
+    func navigateSearch(next: Bool) {
+        guard searchHost != nil else {
+            beginSearch()
+            return
+        }
+        _ = performBindingAction(
+            (next ? TerminalSearchAction.next : .previous).bindingAction
+        )
+    }
+
+    /// The core answers both `start_search` and `search_selection` with this
+    /// action, so it is the single place where the bar learns its needle.
+    func applySearchStart(needle: String) {
+        presentSearchOverlay()
+        search.seed(needle)
+        search.requestFieldFocus()
+    }
+
+    func applySearchEnd() {
+        dismissSearchOverlay(restoringFocus: true)
+        search.reset()
+    }
+
+    func applySearchTotal(_ total: Int) {
+        search.applyTotal(total)
+    }
+
+    func applySearchSelected(_ selected: Int) {
+        search.applySelected(selected)
+    }
+
     func focusTerminal() {
         guard hostVisible, let window else {
             focusesWhenAttached = true
@@ -922,8 +1023,65 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         onRenameTabRequest = nil
         onBecameFocused = nil
         focusesWhenAttached = false
+        dismissSearchOverlay(restoringFocus: false)
+        search.reset()
+        search.onCommand = nil
+        search.onClose = nil
         ghostty_surface_free(surfaceHandle)
         self.surfaceHandle = nil
+    }
+
+    private func performSearchCommand(_ command: TerminalSearchCommand) {
+        switch command {
+        case .find:
+            beginSearch()
+        case .findNext:
+            navigateSearch(next: true)
+        case .findPrevious:
+            navigateSearch(next: false)
+        }
+    }
+
+    private var searchOverlayHoldsKeyboard: Bool {
+        guard let searchHost,
+              let responder = window?.firstResponder as? NSView else {
+            return false
+        }
+        return responder.isDescendant(of: searchHost)
+    }
+
+    private func presentSearchOverlay() {
+        guard searchHost == nil else {
+            search.requestFieldFocus()
+            return
+        }
+        let host = NSHostingView(rootView: TerminalSearchBar(state: search))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.wantsLayer = true
+        // libghostty renders straight into this view's layer, so the overlay
+        // has to be lifted above it explicitly to stay visible.
+        host.layer?.zPosition = 1
+        addSubview(host)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            host.trailingAnchor.constraint(
+                equalTo: trailingAnchor,
+                constant: -8
+            ),
+            host.widthAnchor.constraint(equalToConstant: 260),
+            host.heightAnchor.constraint(equalToConstant: 30),
+        ])
+        searchHost = host
+    }
+
+    private func dismissSearchOverlay(restoringFocus: Bool) {
+        guard let searchHost else { return }
+        searchHost.removeFromSuperview()
+        self.searchHost = nil
+        if restoringFocus {
+            // Typing has to reach the terminal again the moment the bar goes.
+            window?.makeFirstResponder(self)
+        }
     }
 
     private func cancelMouseInteraction() {

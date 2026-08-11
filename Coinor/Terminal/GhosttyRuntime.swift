@@ -393,6 +393,39 @@ final class GhosttyRuntime: ObservableObject {
             }
             return true
 
+        case GHOSTTY_ACTION_START_SEARCH:
+            let targetSurface = surface(from: target)
+            let needle = action.action.start_search.needle.map(
+                String.init(cString:)
+            ) ?? ""
+            DispatchQueue.main.async {
+                targetSurface?.applySearchStart(needle: needle)
+            }
+            return true
+
+        case GHOSTTY_ACTION_END_SEARCH:
+            let targetSurface = surface(from: target)
+            DispatchQueue.main.async {
+                targetSurface?.applySearchEnd()
+            }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            let targetSurface = surface(from: target)
+            let total = Int(action.action.search_total.total)
+            DispatchQueue.main.async {
+                targetSurface?.applySearchTotal(total)
+            }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            let targetSurface = surface(from: target)
+            let selected = Int(action.action.search_selected.selected)
+            DispatchQueue.main.async {
+                targetSurface?.applySearchSelected(selected)
+            }
+            return true
+
         case GHOSTTY_ACTION_RENDERER_HEALTH:
             return true
 

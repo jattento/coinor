@@ -14,6 +14,35 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.22 Verification
+
+The sidebar draws its own rows and `Cmd+F` searches a terminal as version
+`0.5.22` build `29`.
+
+Automated verification:
+
+- Full Debug suite: 43 XCTest cases, 270 swift-testing tests across 33 suites,
+  and 3 XCUITests passed with 0 failures. The remote XCUITest stays skipped
+  without `COINOR_LIVE_REMOTE_HOST`.
+- Release arm64 build passed.
+- `scripts/release/verify-app.sh` reported `0.5.22 (29)`, arm64, macOS 13
+  minimum, deep-strict signature, sandbox disabled, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` found no leaks in Git history, the
+  publishable snapshot, or the Release bundle.
+- `git diff --check` passed.
+
+Manual verification used a live window of the Debug build and a smoke run of
+the Release bundle, both against an isolated application support directory:
+
+- The sidebar showed project headers with their icon, conversations indented
+  under the project title, one selected row pill, and full-width titles that
+  no longer truncate around reserved control space.
+- `Cmd+F` in the Grok pane opened the find bar over the terminal, above the
+  Metal layer, with the field focused.
+- Typing `property` highlighted every match in the scrollback and the bar
+  reported `9`; `Return` moved to the first match and the bar reported `1/9`.
+
 ## Conan Code 0.5.12 Verification
 
 The sidebar stopped relying on `DisclosureGroup` for project rows as version

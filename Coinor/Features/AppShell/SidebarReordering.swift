@@ -224,9 +224,10 @@ enum SidebarReorderOrder {
 }
 
 enum SidebarReorderMetrics {
-    static let projectHeaderHeight: CGFloat = 18
-    static let conversationHeight: CGFloat = 24
-    static let listRowHeight: CGFloat = 40
+    static let projectHeaderHeight: CGFloat = 28
+    static let conversationHeight: CGFloat = 28
+    static let listRowHeight: CGFloat =
+        conversationHeight + SidebarStyle.rowSpacing
 }
 
 enum SidebarReorderPayload {

@@ -8,7 +8,7 @@ struct AppShellView: View {
     var body: some View {
         NavigationSplitView {
             AppShellSidebar(coordinator: coordinator)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
         } detail: {
             VStack(spacing: 0) {
                 ConversationContentView(

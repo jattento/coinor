@@ -20,67 +20,19 @@ struct AppShellSidebar: View {
         VStack(spacing: 0) {
             searchField
 
-            List(selection: selection) {
-                if isSearching {
-                    Section {
-                        if searchResults.isEmpty {
-                            Text("No matching conversations")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                                .accessibilityIdentifier(
-                                    AppShellIdentifier.searchEmptyState
-                                )
-                        } else {
-                            ForEach(searchResults) { conversation in
-                                conversationRow(
-                                    conversation,
-                                    pinned: coordinator.metadata
-                                        .isSessionPinned(conversation.id)
-                                )
-                            }
-                        }
-                    } header: {
-                        sectionHeader("Search Results")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if isSearching {
+                        searchResultsSection
+                    } else {
+                        pinnedSection
+                        projectsSection
                     }
-                    .accessibilityIdentifier(
-                        AppShellIdentifier.searchResultsSection
-                    )
-                } else {
-                    if !coordinator.catalog.pinned.isEmpty {
-                        Section {
-                            ForEach(displayPinnedConversations) { conversation in
-                                conversationRow(
-                                    conversation,
-                                    pinned: true,
-                                    reorderScope: .pinned
-                                )
-                            }
-                        } header: {
-                            sectionHeader("Pinned")
-                        }
-                        .accessibilityIdentifier(
-                            AppShellIdentifier.pinnedSection
-                        )
-                    }
-
-                    Section {
-                        if coordinator.catalog.projects.isEmpty {
-                            Text("No projects")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            ForEach(displayProjects) { project in
-                                projectRow(project)
-                            }
-                        }
-                    } header: {
-                        sectionHeader("Projects")
-                    }
-                    .accessibilityIdentifier(
-                        AppShellIdentifier.projectsSection
-                    )
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
             }
+            .scrollContentBackground(.hidden)
             .onDrop(
                 of: [
                     .coinorProjectReorder,
@@ -96,11 +48,10 @@ struct AppShellSidebar: View {
                     }
                 )
             )
-            .listStyle(.sidebar)
 
-            Divider()
+            sidebarFooterSeparator
 
-            HStack(spacing: 12) {
+            HStack(spacing: 2) {
                 Menu {
                     Button("On This Mac…") {
                         addProject()
@@ -121,7 +72,7 @@ struct AppShellSidebar: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "folder.badge.plus")
+                    SidebarFooterGlyph(systemName: "folder.badge.plus")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -149,7 +100,7 @@ struct AppShellSidebar: View {
                     }
                     .disabled(coordinator.registeredRemoteHosts.isEmpty)
                 } label: {
-                    Image(systemName: "desktopcomputer")
+                    SidebarFooterGlyph(systemName: "desktopcomputer")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -158,20 +109,20 @@ struct AppShellSidebar: View {
                 .help("Remote Computers")
                 .accessibilityLabel("Remote Computers")
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 Button {
                     coordinator.showsArchivedItems = true
                 } label: {
-                    Image(systemName: "archivebox")
+                    SidebarFooterGlyph(systemName: "archivebox")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .foregroundStyle(sidebarControlColor)
                 .help("Archived Items")
                 .accessibilityLabel("Archived Items")
             }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
+            .padding(.horizontal, SidebarStyle.rowInset)
+            .frame(height: 36)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppShellIdentifier.sidebar)
@@ -261,24 +212,95 @@ struct AppShellSidebar: View {
         }
     }
 
-    private var selection: Binding<String?> {
-        Binding(
-            get: { coordinator.selectedSessionID },
-            set: { value in
-                if let value {
-                    coordinator.selectConversation(value)
+    @ViewBuilder
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: SidebarStyle.rowSpacing) {
+            sectionHeader("Search Results")
+
+            if searchResults.isEmpty {
+                emptyStateLabel("No matching conversations")
+                    .accessibilityIdentifier(
+                        AppShellIdentifier.searchEmptyState
+                    )
+            } else {
+                ForEach(searchResults) { conversation in
+                    conversationRow(
+                        conversation,
+                        pinned: coordinator.metadata
+                            .isSessionPinned(conversation.id)
+                    )
                 }
             }
-        )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AppShellIdentifier.searchResultsSection)
+    }
+
+    @ViewBuilder
+    private var pinnedSection: some View {
+        if !coordinator.catalog.pinned.isEmpty {
+            VStack(alignment: .leading, spacing: SidebarStyle.rowSpacing) {
+                sectionHeader("Pinned")
+
+                ForEach(displayPinnedConversations) { conversation in
+                    conversationRow(
+                        conversation,
+                        pinned: true,
+                        reorderScope: .pinned
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AppShellIdentifier.pinnedSection)
+        }
+    }
+
+    @ViewBuilder
+    private var projectsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Projects")
+
+            if coordinator.catalog.projects.isEmpty {
+                emptyStateLabel("No projects")
+            } else {
+                ForEach(displayProjects) { project in
+                    projectRow(project)
+                        .padding(
+                            .top,
+                            project.id == displayProjects.first?.id
+                                ? 0
+                                : SidebarStyle.groupSpacing
+                        )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AppShellIdentifier.projectsSection)
+    }
+
+    private var sidebarFooterSeparator: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.07))
+            .frame(height: 1)
+    }
+
+    private func emptyStateLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, SidebarStyle.rowInset + 8)
+            .frame(height: SidebarReorderMetrics.conversationHeight)
     }
 
     /// Opens a conversation from a primary click on its row.
     ///
-    /// `List` only reports a selection that actually changed, so clicking the
-    /// current row, or clicking after a selection attempt left the coordinator
-    /// unchanged, would otherwise never reach the coordinator. Calling it here
-    /// is safe because `selectConversation` reuses an existing runtime instead
-    /// of launching a second one.
+    /// A row that is already selected still has to reach the coordinator,
+    /// because a click can also mean "bring this conversation back". Calling it
+    /// here is safe because `selectConversation` reuses an existing runtime
+    /// instead of launching a second one.
     private func activateConversation(_ conversationID: String) {
         switch SidebarConversationActivation.primaryClick(
             conversationID: conversationID,
@@ -352,11 +374,13 @@ struct AppShellSidebar: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.tertiary)
             TextField("Search conversations", text: $searchText)
                 .textFieldStyle(.plain)
+                .font(.system(size: 13))
                 .onExitCommand {
                     searchText = ""
                 }
@@ -368,7 +392,8 @@ struct AppShellSidebar: View {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 .help("Clear Search")
@@ -376,51 +401,50 @@ struct AppShellSidebar: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(height: 28)
+        .frame(height: 30)
         .background {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.8))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, SidebarStyle.rowInset)
         .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.bottom, 2)
     }
 
-    /// Emits a project as flat sibling rows instead of a `DisclosureGroup`.
+    /// Emits a project as a header followed by the conversations it owns.
     ///
-    /// `List` keeps its own outline indentation per row, and a long-lived
-    /// sidebar can leave a collapsed project header sitting at the indentation
-    /// of the conversations it owns. Owning the indentation here keeps every
-    /// header on the same leading edge for the life of the session.
-    @ViewBuilder
+    /// The group is one stack so a project and its conversations move, indent,
+    /// and space as a unit, and so the conversation titles start exactly under
+    /// the project title above them.
     private func projectRow(_ project: ProjectRow) -> some View {
-        if reorder.isDragging(project.projectID, in: .projects) {
-            projectReorderPlaceholder(project)
-                .transaction { $0.animation = nil }
-        } else {
-            projectHeaderRow(project)
-                // Recycled sidebar rows cross-fade their labels when an
-                // ambient animation reaches them, which paints two project
-                // names on top of each other. Row content updates stay
-                // instantaneous.
-                .transaction { $0.animation = nil }
+        VStack(alignment: .leading, spacing: SidebarStyle.rowSpacing) {
+            if reorder.isDragging(project.projectID, in: .projects) {
+                projectReorderPlaceholder(project)
+            } else {
+                projectHeaderRow(project)
 
-            if project.isExpanded {
-                ForEach(displayConversations(in: project)) { conversation in
-                    conversationRow(
-                        conversation,
-                        pinned: false,
-                        reorderScope: .project(project.projectID),
-                        projectDropTargetID: project.projectID
-                    )
-                    .padding(.leading, SidebarLayout.conversationIndent)
+                if project.isExpanded {
+                    ForEach(displayConversations(in: project)) { conversation in
+                        conversationRow(
+                            conversation,
+                            pinned: false,
+                            reorderScope: .project(project.projectID),
+                            projectDropTargetID: project.projectID
+                        )
+                        .padding(.leading, SidebarStyle.conversationIndent)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Recycled sidebar rows cross-fade their labels when an ambient
+        // animation reaches them, which paints two project names on top of
+        // each other. Row content updates stay instantaneous.
+        .transaction { $0.animation = nil }
     }
 
     private func projectHeaderRow(
@@ -430,91 +454,70 @@ struct AppShellSidebar: View {
             let showsNewConversation =
                 isHovered || focusedProjectMenuID == project.projectID
 
-            HStack(spacing: 0) {
-                projectDisclosureControl(project)
-                HStack(spacing: 7) {
-                    Image(
-                        systemName: coordinator.projectIconName(
-                            project.projectID
-                        )
-                    )
-                    .symbolRenderingMode(.monochrome)
-                    .frame(width: 20, alignment: .center)
-                    .foregroundStyle(
-                        ProjectIconColorChoice.choice(
-                            for: coordinator.projectIconColorName(
-                                project.projectID
-                            )
-                        ).color
-                    )
-                    Text(coordinator.projectDisplayName(project.projectID))
-                        .font(.system(size: 13, weight: .light))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let alias = coordinator.hostAlias(
-                        forProject: project.projectID
-                    ) {
-                        RemoteHostBadge(
-                            alias: alias,
-                            isUnavailable:
-                                coordinator.remoteHost(alias) == nil
-                                || coordinator.remoteHost(alias)?
-                                    .unreachableReason != nil
-                        )
-                    }
-                    ConversationIndicatorView(
-                        indicator: coordinator.projectIndicator(project)
-                    )
-                    Menu {
-                        Button("In Main Checkout") {
-                            coordinator.createConversation(
-                                in: project.projectID
-                            )
-                        }
-                        Button("In New Worktree") {
-                            worktreeName = ""
-                            worktreeProjectID = project.projectID
-                        }
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "plus")
-                                .font(
-                                    .system(
-                                        size: 11,
-                                        weight: .medium
-                                    )
-                                )
-                            Image(systemName: "chevron.down")
-                                .font(
-                                    .system(
-                                        size: 7,
-                                        weight: .semibold
-                                    )
-                                )
-                        }
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(sidebarControlColor)
-                        .frame(width: 26, height: 18)
-                        .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .tint(sidebarControlColor)
-                    .fixedSize()
-                    .opacity(showsNewConversation ? 1 : 0)
-                    .focused(
-                        $focusedProjectMenuID,
-                        equals: project.projectID
-                    )
-                    .help("New Conversation")
-                    .accessibilityLabel("New Conversation")
-                    .accessibilityHint(
-                        "Choose where to start the conversation"
+            HStack(spacing: SidebarStyle.iconGap) {
+                projectLeadingSlot(project, isHovered: isHovered)
+                Text(coordinator.projectDisplayName(project.projectID))
+                    .font(SidebarStyle.projectFont)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let alias = coordinator.hostAlias(
+                    forProject: project.projectID
+                ) {
+                    RemoteHostBadge(
+                        alias: alias,
+                        isUnavailable:
+                            coordinator.remoteHost(alias) == nil
+                            || coordinator.remoteHost(alias)?
+                                .unreachableReason != nil
                     )
                 }
+                ConversationIndicatorView(
+                    indicator: coordinator.projectIndicator(project)
+                )
+                Menu {
+                    Button("In Main Checkout") {
+                        coordinator.createConversation(
+                            in: project.projectID
+                        )
+                    }
+                    Button("In New Worktree") {
+                        worktreeName = ""
+                        worktreeProjectID = project.projectID
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .tint(sidebarControlColor)
+                .fixedSize()
+                .opacity(showsNewConversation ? 1 : 0)
+                .focused(
+                    $focusedProjectMenuID,
+                    equals: project.projectID
+                )
+                .help("New Conversation")
+                .accessibilityLabel("New Conversation")
+                .accessibilityHint(
+                    "Choose where to start the conversation"
+                )
             }
+            .padding(.horizontal, SidebarStyle.rowPadding)
             .frame(height: SidebarReorderMetrics.projectHeaderHeight)
+            .background(
+                SidebarRowBackground(
+                    isSelected: false,
+                    isHovered: isHovered
+                )
+            )
             .contentShape(Rectangle())
+            .padding(.horizontal, SidebarStyle.rowInset)
             .onTapGesture {
                 coordinator.setProjectExpanded(
                     project.projectID,
@@ -582,12 +585,15 @@ struct AppShellSidebar: View {
         }
     }
 
-    /// Chevron that mirrors the sidebar's disclosure affordance.
+    /// The project's identity and its disclosure control, in one slot.
     ///
-    /// Project rows are flat `List` rows, so the sidebar draws and positions
-    /// this control itself instead of inheriting one from `DisclosureGroup`.
-    private func projectDisclosureControl(
-        _ project: ProjectRow
+    /// A project is recognized by its icon, and the chevron only matters while
+    /// the pointer is on the row, so the two share a single leading slot: the
+    /// icon reads at rest, the chevron takes over on hover. Sharing the slot
+    /// also lets a conversation title start directly under its project title.
+    private func projectLeadingSlot(
+        _ project: ProjectRow,
+        isHovered: Bool
     ) -> some View {
         Button {
             coordinator.setProjectExpanded(
@@ -595,16 +601,35 @@ struct AppShellSidebar: View {
                 expanded: !project.isExpanded
             )
         } label: {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(project.isExpanded ? 90 : 0))
-                .frame(
-                    width: SidebarLayout.disclosureWidth,
-                    height: SidebarLayout.disclosureWidth,
-                    alignment: .center
+            ZStack {
+                Image(
+                    systemName: coordinator.projectIconName(
+                        project.projectID
+                    )
                 )
-                .contentShape(Rectangle())
+                .font(.system(size: 12, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(
+                    ProjectIconColorChoice.choice(
+                        for: coordinator.projectIconColorName(
+                            project.projectID
+                        )
+                    ).color
+                )
+                .opacity(isHovered ? 0 : 1)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(project.isExpanded ? 90 : 0))
+                    .opacity(isHovered ? 1 : 0)
+            }
+            .frame(
+                width: SidebarStyle.iconWidth,
+                height: SidebarReorderMetrics.projectHeaderHeight,
+                alignment: .center
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
@@ -643,14 +668,12 @@ struct AppShellSidebar: View {
                 scope: reorderScope,
                 projectDropTargetID: projectDropTargetID
             )
-            .tag(conversation.id)
             .transaction { $0.animation = nil }
         } else {
             conversationRowContent(
                 conversation,
                 pinned: pinned
             )
-            .tag(conversation.id)
             .transaction { $0.animation = nil }
         }
     }
@@ -671,20 +694,40 @@ struct AppShellSidebar: View {
                 isReordering: reorder.isActive
             )
 
+            let isSelected = coordinator.selectedSessionID == conversation.id
+
             Button {
                 activateConversation(conversation.id)
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: 6) {
                     Text(conversation.session.title)
-                        .font(.system(size: 13, weight: .light))
+                        .font(SidebarStyle.conversationFont)
+                        .foregroundStyle(
+                            isSelected
+                                ? Color(nsColor: .labelColor)
+                                : Color(nsColor: .secondaryLabelColor)
+                        )
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     ConversationIndicatorView(
                         indicator: coordinator.indicator(for: conversation.id)
                     )
-                    conversationControlFootprint(pinSymbol: pinSymbol)
                 }
+                // The pin and archive controls only exist while the pointer is
+                // on the row, so a resting title keeps the full width instead
+                // of truncating around space nothing is using.
+                .padding(
+                    .trailing,
+                    showsControls ? SidebarStyle.controlsWidth : 0
+                )
+                .padding(.horizontal, SidebarStyle.rowPadding)
                 .frame(height: SidebarReorderMetrics.conversationHeight)
+                .background(
+                    SidebarRowBackground(
+                        isSelected: isSelected,
+                        isHovered: isHovered
+                    )
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -694,10 +737,12 @@ struct AppShellSidebar: View {
                     pinned: pinned,
                     pinSymbol: pinSymbol
                 )
+                .padding(.trailing, SidebarStyle.rowPadding)
                 .opacity(showsControls ? 1 : 0)
                 .allowsHitTesting(showsControls)
                 .accessibilityHidden(!showsControls)
             }
+            .padding(.horizontal, SidebarStyle.rowInset)
             .contextMenu {
                 if pinned {
                     Button("Unpin") {
@@ -739,6 +784,8 @@ struct AppShellSidebar: View {
                 }
             } label: {
                 Image(systemName: pinSymbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help(pinned ? "Unpin" : "Pin")
@@ -748,28 +795,13 @@ struct AppShellSidebar: View {
                 coordinator.archiveConversation(conversation.id)
             } label: {
                 Image(systemName: "archivebox")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help("Archive")
             .accessibilityLabel("Archive")
         }
-    }
-
-    /// Inert stand-in that holds the trailing controls' width inside the
-    /// activation button's label.
-    ///
-    /// It mirrors the control icons instead of a fixed number so the reserved
-    /// space cannot drift from the real controls, and it stays out of the view
-    /// tree's interactive and accessibility surfaces.
-    private func conversationControlFootprint(
-        pinSymbol: String
-    ) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: pinSymbol)
-            Image(systemName: "archivebox")
-        }
-        .hidden()
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -829,9 +861,14 @@ struct AppShellSidebar: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .regular))
+            .font(.system(size: 11, weight: .semibold))
+            .kerning(0.3)
             .foregroundStyle(.tertiary)
             .textCase(nil)
+            .padding(.horizontal, SidebarStyle.rowInset + 8)
+            .padding(.top, SidebarStyle.sectionTopSpacing)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func projectAppearancePresented(
@@ -1000,14 +1037,71 @@ struct AppShellSidebar: View {
     }
 }
 
-/// Leading geometry the sidebar controls itself.
+/// The sidebar's visual vocabulary.
 ///
-/// `List` no longer indents project conversations, so these constants keep the
-/// disclosure chevron and the conversation rows aligned with the project header
-/// they belong to.
-private enum SidebarLayout {
-    static let disclosureWidth: CGFloat = 9
-    static let conversationIndent: CGFloat = 21
+/// The sidebar draws its own rows instead of leaning on `List`, so every inset,
+/// height, and weight lives here: a row is a pill inset from the sidebar edges,
+/// a project reads heavier than the conversations it owns, and a conversation
+/// title starts exactly under its project's title.
+enum SidebarStyle {
+    /// Distance from the sidebar edge to the row pill.
+    static let rowInset: CGFloat = 8
+    /// Distance from the pill edge to its content.
+    static let rowPadding: CGFloat = 6
+    static let rowRadius: CGFloat = 6
+    static let rowSpacing: CGFloat = 0
+    /// Breathing room between one project group and the next.
+    static let groupSpacing: CGFloat = 12
+    static let sectionTopSpacing: CGFloat = 14
+    /// One slot carries either the project icon or its disclosure chevron, so
+    /// a project title starts as close to the edge as a conversation title.
+    static let iconWidth: CGFloat = 17
+    static let iconGap: CGFloat = 7
+    /// Room the hover controls claim from a conversation title.
+    static let controlsWidth: CGFloat = 42
+
+    /// Lines a conversation title up with the title of the project above it.
+    static let conversationIndent: CGFloat = iconWidth + iconGap
+
+    static let projectFont = Font.system(size: 13, weight: .medium)
+    static let conversationFont = Font.system(size: 13, weight: .regular)
+}
+
+/// The pill behind a sidebar row.
+///
+/// Selection and hover differ only in weight, so a selected row stays legible
+/// while the pointer moves over its neighbours.
+struct SidebarRowBackground: View {
+    let isSelected: Bool
+    let isHovered: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: SidebarStyle.rowRadius, style: .continuous)
+            .fill(fill)
+    }
+
+    private var fill: Color {
+        if isSelected {
+            return Color.primary.opacity(0.12)
+        }
+        if isHovered {
+            return Color.primary.opacity(0.055)
+        }
+        return .clear
+    }
+}
+
+/// A footer control's icon, sized so the three controls read as one row.
+private struct SidebarFooterGlyph: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(.secondary)
+            .frame(width: 26, height: 24)
+            .contentShape(Rectangle())
+    }
 }
 
 private enum RemoteSidebarSheet: Identifiable {
