@@ -14,6 +14,63 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.24 Verification
+
+An ordinary click now reaches the application that captured the mouse, as
+version `0.5.24` build `31`.
+
+Automated verification:
+
+- 272 swift-testing tests across 33 suites passed with 0 failures, including
+  the two new cases that hold the click contract:
+  `capturedClickSurvivesJitterUnderTheDragThreshold` and
+  `capturedGesturePromotesOnceTravelPassesTheDragThreshold`.
+- 46 XCTest cases ran with one failure,
+  `testApplicationBundleMatchesTheDeclaredIdentity`, caused by the test harness
+  and not by the product. The canonical `xcodebuild test` cannot launch its
+  host while an installed Conan Code is running, because both bundles declare
+  `dev.coinor.Coinor` and LaunchServices refuses the second one. The suite was
+  therefore run from a patched `.xctestrun` against a copy of the host renamed
+  to `dev.coinor.CoinorFixTest`, which is exactly the identity that assertion
+  rejects. `scripts/release/verify-app.sh` independently reports
+  `verified_bundle_id=dev.coinor.Coinor` for the shipped bundle, so the
+  assertion holds for the released application.
+- Release arm64 build passed.
+- `scripts/release/verify-app.sh` reported `0.5.24 (31)`, arm64, macOS 13
+  minimum, deep-strict signature, sandbox disabled, source-matched terminal
+  control resources, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` found no leaks in Git history, the
+  publishable snapshot, or the Release bundle.
+- `git diff --check` passed.
+
+The defect and the fix were both established from raw terminal input rather
+than from inspection. A managed tab enabled mouse tracking modes `1000`,
+`1002`, `1003`, and `1006` plus focus reporting `1004`, and dumped every byte
+the application received:
+
+- Three ordinary hand clicks produced only motion reports, `ESC [ < 35 ; C ; R
+  M`, and not one button report. The clicks were invisible to the running
+  application.
+- A synthesized click, which cannot jitter between press and release, produced
+  the complete `ESC [ < 0 ; C ; R M` and `ESC [ < 0 ; C ; R m` pair.
+
+That difference isolates hand jitter as the cause. A deferred captured gesture
+was promoted to a text selection on the first pointer movement of any size, a
+promoted gesture is routed with Shift forced on, and `GhosttyOverrides.conf`
+sets `mouse-shift-capture = never`, so `Surface.zig` consumed the gesture
+locally instead of reporting it. Grok's interface arms an affordance such as
+`[Copy Source]` on the press and executes it on the release, so losing both
+reports lost the click.
+
+Manual verification ran the fixed build as a second, isolated instance beside
+the installed application, using its own application support directory and its
+own Grok leader socket:
+
+- A single ordinary click on `[Copy Source]` under a Grok-rendered diagram
+  copied the diagram source on the first attempt.
+- Dragging to select terminal text still selects text.
+
 ## Conan Code 0.5.23 Verification
 
 A find request now goes to whoever holds the text, as version `0.5.23` build

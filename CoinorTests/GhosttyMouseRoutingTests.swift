@@ -138,6 +138,41 @@ struct GhosttyMouseRoutingTests {
     }
 
     @Test
+    func capturedClickSurvivesJitterUnderTheDragThreshold() {
+        var router = GhosttyMouseRouter()
+        let down = input(x: 10, y: 20, modifiers: [.command])
+        let jitter = input(x: 12, y: 23, modifiers: [.command])
+        let up = input(x: 12, y: 23, modifiers: [.command])
+
+        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
+        #expect(router.mouseDragged(jitter).isEmpty)
+        #expect(router.mouseUp(up) == [
+            .position(down),
+            .leftButton(.press, down),
+            .position(up),
+            .leftButton(.release, up),
+        ])
+    }
+
+    @Test
+    func capturedGesturePromotesOnceTravelPassesTheDragThreshold() {
+        var router = GhosttyMouseRouter()
+        let down = input(x: 10, y: 20, modifiers: [.command])
+        let jitter = input(x: 13, y: 23, modifiers: [.command])
+        let drag = input(x: 10, y: 26, modifiers: [.command])
+        let shiftedDown = down.forcingShift(true)
+        let shiftedDrag = drag.forcingShift(true)
+
+        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
+        #expect(router.mouseDragged(jitter).isEmpty)
+        #expect(router.mouseDragged(drag) == [
+            .position(shiftedDown),
+            .leftButton(.press, shiftedDown),
+            .position(shiftedDrag),
+        ])
+    }
+
+    @Test
     func capturedDragAddsShiftWithoutDroppingOriginalModifiers() {
         var router = GhosttyMouseRouter()
         let down = input(x: 10, y: 20, modifiers: [.command, .control])

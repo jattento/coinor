@@ -111,6 +111,15 @@ enum GhosttyMouseBoundaryRouting {
 }
 
 struct GhosttyMouseRouter {
+    /// Pointer travel, in points, that separates a click from a drag while a
+    /// captured gesture is deferred. A promoted gesture is routed with Shift
+    /// forced on so it selects text, and Ghostty never lets the terminal
+    /// capture Shift, so promoting on the hand jitter of an ordinary click
+    /// loses the click entirely instead of reporting it to the application.
+    /// The threshold stays below one cell so a deliberate drag still promotes
+    /// as soon as it crosses into a neighbouring cell.
+    static let dragThreshold: CGFloat = 5
+
     private struct ActiveGesture {
         let shiftPresent: Bool
         var lastRoutedInput: GhosttyMouseInput
@@ -159,6 +168,13 @@ struct GhosttyMouseRouter {
     ) -> [GhosttyMouseRoutingCommand] {
         switch state {
         case .deferred(let gesture):
+            let origin = gesture.lastRoutedInput.point
+            let travel = hypot(
+                input.point.x - origin.x,
+                input.point.y - origin.y
+            )
+            guard travel > Self.dragThreshold else { return [] }
+
             let shiftedOriginal = gesture.lastRoutedInput.forcingShift(true)
             let shiftedCurrent = input.forcingShift(true)
             state = .selecting(
