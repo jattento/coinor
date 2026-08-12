@@ -43,6 +43,8 @@ final class AppCoordinator: ObservableObject {
     private static let supportedProjectIconColorNames = Set(
         ProjectIconColorChoice.allCases.compactMap(\.persistedName)
     )
+    private static let conversationTabsPersistenceDelay =
+        Duration.milliseconds(400)
 
     enum Status: Equatable {
         case starting
@@ -99,6 +101,10 @@ final class AppCoordinator: ObservableObject {
     private var lastAggregateActivity: [String: RuntimeActivity] = [:]
     private var persistenceTasks: [UUID: Task<Void, Never>] = [:]
     private var persistenceTail: Task<Void, Never>?
+    /// Tab selection changes arrive on every switch, so they are coalesced per
+    /// conversation and written once the burst settles.
+    private var pendingConversationTabs: [String: ConversationTabMetadata] = [:]
+    private var conversationTabsPersistenceTask: Task<Void, Never>?
     private var activeLeaderSocket: GrokLeaderSocket?
     private var visibleConversationNavigationIDs: [String] = []
     private var reorderGeneration = 0
@@ -1623,6 +1629,11 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func drainPersistenceTasks() async {
+        // Land any debounced tab metadata before draining, so a quit or
+        // restart never drops the pending write.
+        conversationTabsPersistenceTask?.cancel()
+        conversationTabsPersistenceTask = nil
+        flushPendingConversationTabs()
         while let task = persistenceTail {
             await task.value
             if persistenceTasks.isEmpty {
@@ -1653,10 +1664,30 @@ final class AppCoordinator: ObservableObject {
         sessionID: String,
         tabs: ConversationTabMetadata
     ) {
+        pendingConversationTabs[sessionID] = tabs
+        guard conversationTabsPersistenceTask == nil else { return }
+        conversationTabsPersistenceTask = Task { [weak self] in
+            try? await Task.sleep(
+                for: Self.conversationTabsPersistenceDelay
+            )
+            guard !Task.isCancelled, let self else { return }
+            self.conversationTabsPersistenceTask = nil
+            self.flushPendingConversationTabs()
+        }
+    }
+
+    private func flushPendingConversationTabs() {
+        let pending = pendingConversationTabs
+        guard !pending.isEmpty else { return }
+        pendingConversationTabs.removeAll()
         schedulePersistence { coordinator in
-            await coordinator.persist {
-                $0.setConversationTabs(sessionID, tabs: tabs)
-            }
+            // Tab metadata never feeds the catalog, so skip the rebuild and
+            // the sidebar re-render it triggers.
+            await coordinator.persist({ document in
+                for (sessionID, tabs) in pending {
+                    document.setConversationTabs(sessionID, tabs: tabs)
+                }
+            }, rebuildCatalog: false)
         }
     }
 

@@ -14,6 +14,50 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.25 Verification
+
+Switching terminal tabs no longer costs work proportional to the whole
+catalog, as version `0.5.25` build `32`.
+
+Automated verification:
+
+- 273 swift-testing tests across 33 suites passed with 0 failures, including
+  the new `stopCommandLeavesAProcessRunningFromAGrokDirectoryAlone`.
+- 46 XCTest cases passed with 0 failures, and 3 XCUITest cases passed with 1
+  skip, from the canonical `xcodebuild test` with no patched harness. The
+  installed application was quit first, because both bundles declare
+  `dev.coinor.Coinor` and LaunchServices refuses the second one.
+- Release arm64 build passed.
+- `scripts/release/verify-app.sh` reported `0.5.25 (32)`, arm64, macOS 13
+  minimum, deep-strict signature, sandbox disabled, source-matched terminal
+  control resources, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` found no leaks in Git history, the
+  publishable snapshot, or the Release bundle.
+- `git diff --check` passed.
+
+The tab-switch cost was established by tracing the work a single selection
+performs, not by timing it. Selecting a tab published tab metadata, which
+scheduled an immediate full metadata write and then `rebuildCatalog()`. That
+rebuild runs `SessionCatalog.build` over every session and project and
+republishes `catalog` and `metadata` on the window-wide coordinator, so the
+sidebar re-rendered on every tab click. Nothing the sidebar displays depends on
+which terminal tab is selected, so the rebuild is now skipped and the write is
+coalesced per conversation behind a settle delay, with a flush before the
+persistence drain so quit and restart cannot lose a pending selection.
+
+A separate defect was found while running the suite from a worktree under
+`~/.grok`. `RemoteRuntimeStopCommand` identified the remote leader with
+`ps -o command=`, which prints the whole argument vector including the
+executable path, and matched the substring `grok`. The test host built inside
+`~/.grok/worktrees/...` therefore matched its own guard and was killed by
+`stopCommandIgnoresAPIDThatIsNotGrok`, which reads as an unexplained
+`Restarting after unexpected exit` and an aborted run. The guard now reduces
+`ps -o comm=` to the executable name before matching. The behaviour is pinned
+by `stopCommandLeavesAProcessRunningFromAGrokDirectoryAlone`, which runs a real
+process from a `.grok` directory, records its PID in the lock, and asserts it
+survives the stop command; that test fails against the previous guard.
+
 ## Conan Code 0.5.24 Verification
 
 An ordinary click now reaches the application that captured the mouse, as

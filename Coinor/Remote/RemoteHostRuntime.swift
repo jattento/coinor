@@ -130,11 +130,16 @@ enum RemoteRuntimeStopCommand {
     /// Mirrors the local leader shutdown: a graceful signal, a bounded wait,
     /// then `SIGKILL`. A single `SIGTERM` returns before the leader is gone,
     /// which leaves the runtime running behind a UI that says it stopped.
+    ///
+    /// The identity check reads `comm=` and keeps only the executable name.
+    /// `command=` carries the whole argument vector, so every process launched
+    /// from a directory such as `~/.grok` matched and was signalled.
     static func command(lockPath: String) -> String {
         """
         pid=$(cat \(ShellQuoting.quote(lockPath)) 2>/dev/null)
         [ -n "${pid:-}" ] || exit 0
-        case "$(ps -p "$pid" -o command= 2>/dev/null)" in
+        name=$(ps -p "$pid" -o comm= 2>/dev/null)
+        case "${name##*/}" in
             *grok*) ;;
             *) exit 0 ;;
         esac

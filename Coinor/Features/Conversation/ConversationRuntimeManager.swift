@@ -45,7 +45,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private var lastFocusedIDEPaneID: String
     private var ideWorkingDirectory: String?
     private var shellBaseWorkingDirectory: String?
-    private var selectedManagedTabID: String?
+    @Published private var selectedManagedTabID: String?
     let execution: ConversationExecution
 
     init(
@@ -326,12 +326,16 @@ final class ConversationRuntime: ObservableObject, Identifiable {
 
     func selectTab(tabID: String) {
         if managedTabs.contains(where: { $0.id == tabID }) {
-            selectedManagedTabID = tabID
+            if selectedManagedTabID != tabID {
+                selectedManagedTabID = tabID
+            }
             focusSelectedTab()
             return
         }
         guard tabMetadata.contains(tabID: tabID) else { return }
-        selectedManagedTabID = nil
+        if selectedManagedTabID != nil {
+            selectedManagedTabID = nil
+        }
         if selectedTabID != tabID {
             var updated = tabMetadata
             updated.select(tabID: tabID)

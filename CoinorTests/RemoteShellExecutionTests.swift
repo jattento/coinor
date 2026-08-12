@@ -214,6 +214,42 @@ struct RemoteShellExecutionTests {
     }
 
     @Test
+    func stopCommandLeavesAProcessRunningFromAGrokDirectoryAlone() async throws {
+        let directory = try TemporaryTree.make(directories: [".grok/bin"])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Only the directory carries the name, so matching the whole argument
+        // vector would signal a process that is not the leader at all.
+        let decoy = directory
+            .appendingPathComponent(".grok/bin/sleeper", isDirectory: false)
+        try FileManager.default.copyItem(
+            at: URL(fileURLWithPath: "/bin/sleep", isDirectory: false),
+            to: decoy
+        )
+
+        let process = Process()
+        process.executableURL = decoy
+        process.arguments = ["30"]
+        try process.run()
+        defer {
+            process.terminate()
+            process.waitUntilExit()
+        }
+
+        let lock = directory.appendingPathComponent("leader.lock")
+        try String(process.processIdentifier)
+            .write(to: lock, atomically: true, encoding: .utf8)
+
+        let result = try LocalShellRunner().run(
+            remoteCommand: RemoteRuntimeStopCommand.command(lockPath: lock.path),
+            timeout: .seconds(20)
+        )
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(result.terminationStatus == 0)
+        #expect(process.isRunning)
+    }
+
+    @Test
     func stopCommandSucceedsWhenNoLockExists() throws {
         let result = try LocalShellRunner().run(
             remoteCommand: RemoteRuntimeStopCommand.command(

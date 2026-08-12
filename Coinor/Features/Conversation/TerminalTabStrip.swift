@@ -133,9 +133,7 @@ private struct TerminalTabStrip: View {
                 .frame(height: 34)
             }
             .onChange(of: runtime.selectedTabID) { selectedID in
-                withAnimation(.easeOut(duration: 0.12)) {
-                    proxy.scrollTo(selectedID, anchor: .center)
-                }
+                proxy.scrollTo(selectedID, anchor: .center)
             }
             .onAppear {
                 let selectedID = runtime.selectedTabID
