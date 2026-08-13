@@ -68,10 +68,7 @@ open .build/DerivedData/Build/Products/Debug/Coinor.app
 ```sh
 scripts/ghostty/test-verification.sh
 
-xcodebuild -project Coinor.xcodeproj -scheme Coinor \
-  -configuration Debug \
-  -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath .build/DerivedData test
+scripts/dev/run-tests.sh
 
 xcodebuild -project Coinor.xcodeproj -scheme Coinor \
   -configuration Release \

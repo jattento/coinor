@@ -73,11 +73,17 @@ xcodebuild -project Coinor.xcodeproj -scheme Coinor \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .build/DerivedData build
 
-xcodebuild -project Coinor.xcodeproj -scheme Coinor \
-  -configuration Debug \
-  -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath .build/DerivedData test
+scripts/dev/run-tests.sh
 ```
+
+Run the suite through `scripts/dev/run-tests.sh` rather than calling
+`xcodebuild test` directly. A running Conan Code already owns the
+`dev.coinor.Coinor` bundle identifier, so XCUITest cannot launch the built
+application and the unit-test host fails the same way, reporting
+`Could not launch "Coinor". The LaunchServices launcher has returned an error`.
+The script terminates every running instance first and runs the suite under
+`caffeinate`, so display sleep cannot lock the session and abort the
+user-interface tests.
 
 If the test runner reports that automation mode cannot be enabled, verify:
 
@@ -90,6 +96,14 @@ administrator authorization:
 
 ```sh
 sudo DevToolsSecurity -enable
+```
+
+If the test runner instead raises a system authentication dialog for
+`system.privilege.taskport`, an unattended run cannot answer it. Granting the
+right once removes the dialog permanently:
+
+```sh
+sudo security authorizationdb write system.privilege.taskport allow
 ```
 
 Build the arm64 Release bundle:
