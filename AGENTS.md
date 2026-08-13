@@ -59,7 +59,12 @@ Read `CONTEXT.md`, `docs/product-requirements.md`, `docs/architecture.md`,
   commit, and validation results. GitHub's uploaded asset digests must match
   the local checksums.
 - Install the exact verified release bundle locally after publication so the
-  running application and public rollback artifact are identical.
+  running application and public rollback artifact are identical. The canonical
+  installation is `/Applications/Coinor.app`; remove and unregister every stale
+  duplicate installation, including `~/Applications/Coinor.app`, before
+  launching or declaring the release installed. Verify LaunchServices,
+  Spotlight, and the running process all resolve to the canonical bundle, and
+  confirm its version, build, and executable hash match the published asset.
 - Do not publish partial or failing work. Preserve the previous release and tag
   as the rollback point; never replace an existing release asset or move a
   published version tag.
