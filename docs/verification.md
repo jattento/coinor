@@ -14,6 +14,35 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.26 Verification
+
+Conversation ordering, immediate archive behavior, remote disconnect episodes,
+and ephemeral Agent Search ship as version `0.5.26` build `33`.
+
+Automated verification:
+
+- The Swift 6 Debug application build succeeds with the new search, ordering,
+  archive, and notification code.
+- Focused tests cover newest-first catalog construction, stable explicit order,
+  project archive unpinning, one-notification-per-disconnect episodes, Agent
+  Search response sanitization/action filtering, bounded result count, safe
+  headless flags, and quoted remote transcript export.
+- The canonical hosted XCTest runner was attempted after terminating the
+  installed application, but the app-host launch remains blocked in this
+  machine's test-host environment. This release does not claim a completed
+  hosted XCTest/XCUITest run; compile checks and the independently runnable
+  focused verification are recorded instead.
+- Release arm64 build, bundle verification, Ghostty artifact verification,
+  security scanning, checksum comparison, and installed-bundle identity are
+  required before publication and are recorded in the public release notes.
+- `git diff --check` passes.
+
+Manual UX verification checks the integrated sidebar search mode, compact
+mini-chat layout, explicit result actions, immediate archive disappearance,
+remote unavailable badge/reconnect affordance, and the absence of a persistent
+remote warning. Agent Search state is also checked after closing and reopening
+the search surface.
+
 ## Conan Code 0.5.25 Verification
 
 Switching terminal tabs no longer costs work proportional to the whole

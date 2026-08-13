@@ -69,3 +69,46 @@ func attentionNotificationUsesEnglishCopyAndStableSessionIdentifier() async {
     #expect(requests.first?.content.title == "Fix parser")
     #expect(requests.first?.content.body == "Grok needs your attention.")
 }
+
+@Test
+@MainActor
+func remoteDisconnectNotificationUsesNativeEnglishCopyEvenWhileFocused() async throws {
+    let center = NotificationCenterSpy()
+    let service = AttentionNotificationService(
+        center: center,
+        isApplicationActive: { true }
+    )
+
+    let alias = try #require(RemoteHostAlias(rawValue: "work-mac"))
+    await service.notifyRemoteDisconnect(alias)
+
+    let request = try #require(center.requests.first)
+    #expect(center.authorizationRequests == 1)
+    #expect(center.requests.count == 1)
+    #expect(request.identifier == "coinor.remote-disconnect.work-mac")
+    #expect(request.content.title == "work-mac disconnected")
+    #expect(
+        request.content.body
+            == "Conan Code will keep trying to reconnect."
+    )
+}
+
+@Test
+func remoteDisconnectEpisodesNotifyOnlyAfterAConnectedHostDrops() throws {
+    let alias = try #require(RemoteHostAlias(rawValue: "work-mac"))
+    var episodes = RemoteDisconnectNotificationEpisodes()
+
+    let startupDrop = episodes.markUnavailable(alias)
+    #expect(!startupDrop)
+    episodes.markConnected(alias)
+    let firstDrop = episodes.markUnavailable(alias)
+    let repeatedRetry = episodes.markUnavailable(alias)
+    #expect(firstDrop)
+    #expect(!repeatedRetry)
+    episodes.markConnected(alias)
+    let secondEpisode = episodes.markUnavailable(alias)
+    #expect(secondEpisode)
+    episodes.remove(alias)
+    let afterRemoval = episodes.markUnavailable(alias)
+    #expect(!afterRemoval)
+}

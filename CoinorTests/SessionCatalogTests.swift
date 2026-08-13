@@ -35,7 +35,7 @@ func pinnedConversationsAreExcludedFromTheirProjectRow() {
 }
 
 @Test
-func pinnedOrderMatchesMetadataOrder() {
+func newlyPinnedConversationsAppearAtTheTop() {
     var metadata = MetadataDocument.empty
     metadata.pin("session-b")
     metadata.pin("session-a")
@@ -47,7 +47,27 @@ func pinnedOrderMatchesMetadataOrder() {
 
     let catalog = SessionCatalog.build(sessions: sessions, metadata: metadata)
 
-    #expect(catalog.pinned.map(\.id) == ["session-b", "session-a"])
+    #expect(catalog.pinned.map(\.id) == ["session-a", "session-b"])
+}
+
+@Test
+func explicitPinnedOrderSurvivesLaterPins() {
+    var metadata = MetadataDocument.empty
+    metadata.pin("session-a")
+    metadata.pin("session-b")
+    metadata.reorderVisiblePinnedSessions(to: ["session-a", "session-b"])
+    metadata.pin("session-c")
+
+    let catalog = SessionCatalog.build(
+        sessions: [
+            session("session-b", project: "project-a"),
+            session("session-c", project: "project-a"),
+            session("session-a", project: "project-a"),
+        ],
+        metadata: metadata
+    )
+
+    #expect(catalog.pinned.map(\.id) == ["session-c", "session-a", "session-b"])
 }
 
 @Test
@@ -69,6 +89,21 @@ func archivedSessionsAndProjectsAreFilteredFromTheActiveCatalog() {
     #expect(catalog.pinned.isEmpty)
     #expect(catalog.projects.map(\.projectID) == ["project-a"])
     #expect(catalog.projects.first?.conversations.map(\.id) == ["session-b"])
+}
+
+@Test
+func archivingAProjectCanUnpinAllOfItsConversations() {
+    var metadata = MetadataDocument.empty
+    metadata.pin("session-a")
+    metadata.pin("session-b")
+    let projectSessionIDs = ["session-a", "session-b"]
+
+    projectSessionIDs.forEach { metadata.unpin($0) }
+    metadata.setProjectArchived("project-a", archived: true)
+
+    #expect(!metadata.isSessionPinned("session-a"))
+    #expect(!metadata.isSessionPinned("session-b"))
+    #expect(metadata.isProjectArchived("project-a"))
 }
 
 @Test
@@ -202,6 +237,67 @@ func archivedProjectReturnsToItsCanonicalPosition() {
     #expect(
         catalog.projects.map(\.projectID)
             == ["project-c", "project-b", "project-a"]
+    )
+}
+
+@Test
+func unorderedConversationsDefaultToNewestFirst() {
+    let catalog = SessionCatalog.build(
+        sessions: [
+            session(
+                "old",
+                project: "project-a",
+                lastActivityAt: Date(timeIntervalSince1970: 100)
+            ),
+            session("missing", project: "project-a"),
+            session(
+                "new",
+                project: "project-a",
+                lastActivityAt: Date(timeIntervalSince1970: 1_000)
+            ),
+        ],
+        metadata: .empty
+    )
+
+    #expect(
+        catalog.projects.first?.conversations.map(\.id)
+            == ["new", "old", "missing"]
+    )
+}
+
+@Test
+func newlyDiscoveredConversationAppearsAboveExplicitExistingOrder() {
+    var metadata = MetadataDocument.empty
+    metadata.reorderVisibleConversations(
+        in: "project-a",
+        to: ["session-a", "session-b"],
+        allKnownSessionIDs: ["session-a", "session-b"]
+    )
+
+    let catalog = SessionCatalog.build(
+        sessions: [
+            session(
+                "session-a",
+                project: "project-a",
+                lastActivityAt: Date(timeIntervalSince1970: 100)
+            ),
+            session(
+                "session-new",
+                project: "project-a",
+                lastActivityAt: Date(timeIntervalSince1970: 1_000)
+            ),
+            session(
+                "session-b",
+                project: "project-a",
+                lastActivityAt: Date(timeIntervalSince1970: 200)
+            ),
+        ],
+        metadata: metadata
+    )
+
+    #expect(
+        catalog.projects.first?.conversations.map(\.id)
+            == ["session-new", "session-a", "session-b"]
     )
 }
 

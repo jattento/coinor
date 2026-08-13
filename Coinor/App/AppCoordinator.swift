@@ -11,18 +11,6 @@ private struct DetachedRuntimeState {
     let leaderSocket: GrokLeaderSocket?
 }
 
-struct ArchiveConfirmation: Identifiable, Equatable {
-    enum Target: Equatable {
-        case conversation(sessionID: String)
-        case project(projectID: String)
-    }
-
-    let id = UUID()
-    let target: Target
-    let title: String
-    let message: String
-}
-
 private struct TerminalControlConfiguration {
     let socket: TerminalControlSocket
     let token: String
@@ -60,7 +48,6 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var warningMessage: String?
     @Published var selectedSessionID: String?
     @Published var showsArchivedItems = false
-    @Published var archiveConfirmation: ArchiveConfirmation?
 
     private(set) var runtimeManager: ConversationRuntimeManager?
 
@@ -111,6 +98,9 @@ final class AppCoordinator: ObservableObject {
     private var lifecycleGeneration = 0
     private var started = false
     private let notifications = AttentionNotificationService()
+    private var remoteDisconnectEpisodes = RemoteDisconnectNotificationEpisodes()
+    private var agenticFinder: GrokAgenticConversationFinder?
+    private var conversationExcerptLoader: GrokConversationExcerptLoader?
     private let isApplicationActive: () -> Bool = { NSApp.isActive }
     private var activationObserver: (any NSObjectProtocol)?
     private let leaderProcessManager = GrokLeaderProcessManager()
@@ -188,6 +178,15 @@ final class AppCoordinator: ObservableObject {
                 terminalControlConfiguration
 
             let executable = try GrokExecutable.resolve()
+            let finder = GrokAgenticConversationFinder(
+                executable: executable,
+                supportDirectory: supportDirectory
+            )
+            agenticFinder = finder
+            await finder.cleanupPendingSessions()
+            conversationExcerptLoader = GrokConversationExcerptLoader(
+                executable: executable
+            )
             let leaderSocket = try GrokLeaderSocket.coinorDefault(
                 supportDirectory: supportDirectory
             )
@@ -468,6 +467,7 @@ final class AppCoordinator: ObservableObject {
 
     func removeRemoteHost(_ alias: RemoteHostAlias) {
         remoteEventTasks.removeValue(forKey: alias)?.cancel()
+        remoteDisconnectEpisodes.remove(alias)
         let host = remoteHosts.removeValue(forKey: alias)
         hostAliasBySessionID = hostAliasBySessionID.filter { $0.value != alias }
         mergeCatalogState()
@@ -548,9 +548,7 @@ final class AppCoordinator: ObservableObject {
         let aliases = metadata.remoteHostAliases
         guard !aliases.isEmpty else { return }
         for alias in aliases where remoteHosts[alias] == nil {
-            if let failure = await connectRemoteHost(alias) {
-                warningMessage = failure
-            }
+            _ = await connectRemoteHost(alias, reportsFailure: false)
         }
     }
 
@@ -582,6 +580,7 @@ final class AppCoordinator: ObservableObject {
             uniquingKeysWith: { _, refreshed in refreshed }
         )
         host.unreachableReason = nil
+        remoteDisconnectEpisodes.markConnected(alias)
         for session in sessions {
             hostAliasBySessionID[session.id.rawValue] = alias
         }
@@ -702,10 +701,9 @@ final class AppCoordinator: ObservableObject {
                     continue
                 case .terminated(let error):
                     host.unreachableReason = error.localizedDescription
-                    self.warningMessage = RemoteHostError.unreachable(
-                        alias: alias.rawValue,
-                        detail: host.unreachableReason ?? ""
-                    ).localizedDescription
+                    if self.remoteDisconnectEpisodes.markUnavailable(alias) {
+                        await self.notifications.notifyRemoteDisconnect(alias)
+                    }
                     return
                 }
             }
@@ -721,6 +719,9 @@ final class AppCoordinator: ObservableObject {
                 try await refreshRemoteHost(host)
             } catch {
                 host.unreachableReason = error.localizedDescription
+                if remoteDisconnectEpisodes.markUnavailable(host.alias) {
+                    await notifications.notifyRemoteDisconnect(host.alias)
+                }
             }
         }
 
@@ -1138,36 +1139,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     func archiveConversation(_ sessionID: String) {
-        if runtimeManager?.runtime(sessionID: sessionID) != nil {
-            let title = summaries.first {
-                $0.id == sessionID
-            }?.title ?? "this conversation"
-            archiveConfirmation = ArchiveConfirmation(
-                target: .conversation(sessionID: sessionID),
-                title: "Archive Conversation?",
-                message:
-                    "Archiving \(title) will immediately stop Grok, "
-                    + "all subagents, IDE tools, shell tabs, and managed "
-                    + "services for this conversation."
-            )
-            return
-        }
         performArchiveConversation(sessionID)
-    }
-
-    func confirmArchive() {
-        guard let confirmation = archiveConfirmation else { return }
-        archiveConfirmation = nil
-        switch confirmation.target {
-        case .conversation(let sessionID):
-            performArchiveConversation(sessionID)
-        case .project(let projectID):
-            performArchiveProject(projectID)
-        }
-    }
-
-    func cancelArchive() {
-        archiveConfirmation = nil
     }
 
     private func performArchiveConversation(_ sessionID: String) {
@@ -1193,23 +1165,6 @@ final class AppCoordinator: ObservableObject {
     }
 
     func archiveProject(_ projectID: String) {
-        let hasLoadedRuntime = summaries
-            .filter { $0.projectID == projectID }
-            .contains {
-                runtimeManager?.runtime(sessionID: $0.id) != nil
-            }
-        if hasLoadedRuntime {
-            archiveConfirmation = ArchiveConfirmation(
-                target: .project(projectID: projectID),
-                title: "Archive Project?",
-                message:
-                    "Archiving \(projectDisplayName(projectID)) will "
-                    + "immediately stop Grok, all subagents, IDE tools, "
-                    + "shell tabs, and managed services for every active "
-                    + "conversation in this project."
-            )
-            return
-        }
         performArchiveProject(projectID)
     }
 
@@ -1218,8 +1173,9 @@ final class AppCoordinator: ObservableObject {
             .filter { $0.projectID == projectID }
             .map(\.id)
         schedulePersistence { coordinator in
-            let persisted = await coordinator.persist {
-                $0.setProjectArchived(projectID, archived: true)
+            let persisted = await coordinator.persist { document in
+                sessionIDs.forEach { document.unpin($0) }
+                document.setProjectArchived(projectID, archived: true)
             }
             if persisted {
                 sessionIDs.forEach {
@@ -1321,11 +1277,14 @@ final class AppCoordinator: ObservableObject {
         pendingMaterializationTasks.removeAll()
         pendingLifecycleCatchup.removeAll()
         completedLifecycleCatchup.removeAll()
+        agenticFinder?.cancel()
+        conversationExcerptLoader?.cancel()
+        agenticFinder = nil
+        conversationExcerptLoader = nil
         terminalControlAuthorizer.reset()
         terminalControlServer?.stop()
         terminalControlServer = nil
         terminalControlConfiguration = nil
-        archiveConfirmation = nil
         hookCoordinator = nil
         runtimeManager?.shutdown()
         runtimeManager = nil
@@ -1486,6 +1445,104 @@ final class AppCoordinator: ObservableObject {
             sessions: summaries,
             metadata: metadata
         )
+    }
+
+    func makeAgenticFinderModel() -> AgenticConversationFinderModel? {
+        agenticFinder.map(AgenticConversationFinderModel.init(finder:))
+    }
+
+    func agenticFinderCandidates() async -> [AgenticFinderCandidate] {
+        let current = summaries
+        let localIDs = current.compactMap { summary in
+            hostAlias(forSession: summary.id) == nil ? summary.id : nil
+        }
+        async let localExcerpts = conversationExcerptLoader?.excerpts(
+            for: localIDs
+        ) ?? [:]
+        async let remoteExcerpts = remoteAgenticFinderExcerpts(for: current)
+        let excerpts = await localExcerpts.merging(remoteExcerpts) {
+            local, _ in local
+        }
+        return current.map { summary in
+            AgenticFinderCandidate(
+                id: summary.id,
+                title: summary.title,
+                project: projectDisplayName(summary.projectID),
+                lastActivity: summary.lastActivityAt.map {
+                    ISO8601DateFormatter().string(from: $0)
+                },
+                archived: metadata.isSessionArchived(summary.id)
+                    || metadata.isProjectArchived(summary.projectID),
+                pinned: metadata.isSessionPinned(summary.id),
+                excerpt: excerpts[summary.id]
+            )
+        }
+    }
+
+    private func remoteAgenticFinderExcerpts(
+        for summaries: [SessionSummary]
+    ) async -> [String: String] {
+        let grouped = Dictionary(grouping: summaries.compactMap { summary in
+            hostAlias(forSession: summary.id).map { ($0, summary.id) }
+        }, by: \.0)
+        return await withTaskGroup(of: [String: String].self) { group in
+            for (alias, values) in grouped {
+                guard let host = remoteHosts[alias] else { continue }
+                let sessionIDs = values.map(\.1)
+                let runner = host.commandRunner
+                let executable = host.host.grokExecutablePath
+                group.addTask {
+                    GrokConversationExcerptLoader.remoteExcerpts(
+                        for: sessionIDs,
+                        executablePath: executable,
+                        runner: runner
+                    )
+                }
+            }
+            var result: [String: String] = [:]
+            for await excerpts in group {
+                result.merge(excerpts) { current, _ in current }
+            }
+            return result
+        }
+    }
+
+    func isAgenticConversationPinned(_ sessionID: String) -> Bool {
+        metadata.isSessionPinned(sessionID)
+    }
+
+    func agenticConversationSummary(
+        _ sessionID: String
+    ) -> (title: String, archived: Bool)? {
+        guard let summary = summaries.first(where: { $0.id == sessionID }) else {
+            return nil
+        }
+        return (
+            summary.title,
+            metadata.isSessionArchived(sessionID)
+                || metadata.isProjectArchived(summary.projectID)
+        )
+    }
+
+    func applyAgenticFinderMatch(_ match: AgenticFinderMatch) {
+        guard let summary = summaries.first(where: {
+            $0.id == match.sessionID
+        }) else {
+            return
+        }
+        let plan = AgenticFinderActionPlan.resolve(
+            match: match,
+            summary: summary,
+            metadata: metadata
+        )
+        schedulePersistence { coordinator in
+            let persisted = await coordinator.persist { document in
+                plan.apply(to: &document)
+            }
+            if persisted, plan.shouldOpen {
+                coordinator.selectConversation(plan.sessionID)
+            }
+        }
     }
 
     private var summaries: [SessionSummary] {

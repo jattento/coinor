@@ -311,13 +311,6 @@ struct RemoteHostsManagementView: View {
                 }
                 .font(.system(size: 12))
 
-                if let unreachableReason {
-                    Text(unreachableReason)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(nsColor: .systemRed))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
                 if let maximumSessions = runtime.host.maximumSessions,
                    maximumSessions < 20 {
                     Label {

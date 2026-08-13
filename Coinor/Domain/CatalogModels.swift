@@ -110,7 +110,9 @@ extension SessionCatalog {
                 projectSessions.map { ($0.id, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
-            let defaultConversationOrder = projectSessions.map(\.id)
+            let defaultConversationOrder = projectSessions
+                .sorted(by: newestConversationFirst)
+                .map(\.id)
             let availableSessionIDs = Set(defaultConversationOrder)
             var seenSessionIDs: Set<String> = []
             let storedConversationOrder = metadata
@@ -123,7 +125,7 @@ extension SessionCatalog {
                 !seenSessionIDs.contains($0)
             }
             let conversations = (
-                storedConversationOrder + remainingSessionIDs
+                remainingSessionIDs + storedConversationOrder
             ).compactMap { sessionID -> ConversationRow? in
                 guard let session = sessionsByID[sessionID],
                       isVisible(session),
@@ -142,6 +144,18 @@ extension SessionCatalog {
         }
 
         return SessionCatalog(pinned: pinned, projects: projectRows)
+    }
+
+    private static func newestConversationFirst(
+        _ lhs: SessionSummary,
+        _ rhs: SessionSummary
+    ) -> Bool {
+        let lhsDate = lhs.lastActivityAt ?? .distantPast
+        let rhsDate = rhs.lastActivityAt ?? .distantPast
+        if lhsDate != rhsDate {
+            return lhsDate > rhsDate
+        }
+        return lhs.id < rhs.id
     }
 }
 

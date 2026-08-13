@@ -53,11 +53,11 @@ Conan Code can archive and unarchive individual conversations and complete
 projects. Pinning and archiving affect only Conan Code's local organization
 metadata; they do not modify or delete the underlying Grok sessions.
 
-Archiving an inactive conversation or project updates organization metadata
-immediately. Archiving an item with a loaded runtime first shows a destructive
-confirmation. Confirming immediately stops root Grok, active subagents, Fresh,
-Lazygit, ordinary shell tabs, managed terminal tabs, and their child processes.
-Archiving never deletes the durable Grok session.
+Archiving a conversation or project updates organization metadata immediately
+without a confirmation window. If the item has a loaded runtime, archiving also
+stops root Grok, active subagents, Fresh, Lazygit, ordinary shell tabs, managed
+terminal tabs, and their child processes. Archiving never deletes the durable
+Grok session.
 
 Archived conversations and projects are managed from a dedicated view opened
 from the sidebar. Archived items are not rendered as a permanent sidebar
@@ -68,7 +68,9 @@ underlying Grok session through Grok's session administration API; Conan Code do
 not store a separate display-title alias.
 
 Projects, pinned conversations, and the conversations within each project can
-be dragged to user-defined orders. Each drag lifts a visible preview with the
+be dragged to user-defined orders. Until the user reorders a section, newly
+discovered and newly pinned conversations appear at its top; later discoveries
+remain above the user's established relative order. Each drag lifts a visible preview with the
 row's real content, moves that preview with the pointer, and opens an animated
 space between candidate neighbors before the user releases it. Releasing
 outside a valid destination cancels the preview without changing stored order.
@@ -89,7 +91,16 @@ A fuzzy conversation search field appears above `Pinned`. While an effective
 query is present, the sidebar shows one flat result list rather than duplicating
 the normal sections. Textual closeness is the primary ranking signal; more
 recent activity breaks ties, and archived conversations or projects never
-appear.
+appear in fuzzy results.
+
+A `Search with Grok` toggle in the same field expands a compact native agent
+panel. It semantically searches active and archived conversation titles and
+first user prompts, explains up to five matches, and opens a selected result.
+Natural-language requests may explicitly ask the finder to open or pin a match;
+opening an archived result unarchives it first. Merely asking for matches never
+changes organization metadata. Each request runs in an isolated temporary
+workspace with memory disabled, deletes its Grok session on completion, and the
+panel retains no transcript after it closes or Conan Code relaunches.
 
 `Command-Option-Up Arrow` and `Command-Option-Down Arrow` select the previous
 or next conversation in the sidebar's current visible order, even while a
@@ -122,9 +133,11 @@ browser as a fallback.
 
 A computer that is asleep, restarted, or off the network keeps its projects in
 the sidebar with a red badge, and Conan Code keeps retrying it in the
-background until it answers. The remote computers view also offers an explicit
-`Reconnect` and explains why the computer is unavailable. Removing and adding
-the computer again is never necessary.
+background until it answers. A host that disconnects after being connected
+produces one native macOS notification per disconnect episode instead of a
+persistent in-app warning; initial startup failures do not notify. The remote
+computers view also offers an explicit `Reconnect`. Removing and adding the
+computer again is never necessary.
 
 Work continues on the remote computer when the connection drops or Conan Code
 quits. A pane whose connection dropped reconnects automatically for a bounded
@@ -260,7 +273,7 @@ agent leaves a tab open only when the user explicitly asks to keep that
 specific service running. A tab closed manually by the user remains gone.
 
 Archiving a loaded runtime closes main, IDE, ordinary shell, and managed
-terminal surfaces immediately after confirmation.
+terminal surfaces immediately.
 
 ## Terminal configuration
 

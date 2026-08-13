@@ -187,7 +187,7 @@ Implement:
 - pin/unpin without duplicate project rows
 - project and conversation archive/unarchive
 - dedicated archived-items view
-- destructive archive confirmation for loaded runtimes
+- immediate archive teardown for loaded runtimes without confirmation
 - immediate archive teardown of all runtime processes
 - sidebar rename through `x.ai/session/rename`
 - activity glyph aggregation
@@ -209,8 +209,8 @@ Acceptance criteria:
 - pin, archive, and project registration survive relaunch
 - Grok titles update outside Coinor after rename
 - archive never deletes a Grok session
-- archiving a loaded runtime requires confirmation and stops all owned
-  processes immediately
+- archiving a loaded runtime stops all owned processes immediately without a
+  confirmation window
 - subagent attention reaches the root row and correct pane
 - rapid sidebar reorders cannot be overwritten by stale persistence
 - conversations cannot be dragged across projects or between project and
@@ -277,8 +277,8 @@ Acceptance criteria:
 - `Command-T`, `Command-W`, `Command-1...8`, `Command-9`, and equivalent
   Ghostty actions operate on Coinor tabs
 - attention marks main without switching away from IDE or a shell
-- confirmed archive closes main, IDE, ordinary shells, managed tabs, root
-  Grok, and subagents immediately
+- archive closes main, IDE, ordinary shells, managed tabs, root Grok, and
+  subagents immediately without confirmation
 - a missing base directory produces an inline tab error without falling back
   to another directory
 

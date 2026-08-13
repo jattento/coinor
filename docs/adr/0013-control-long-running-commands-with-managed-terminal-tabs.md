@@ -54,9 +54,8 @@ request to start a service for the task does not imply that it should remain
 running. The only exception is an explicit user request to leave a specific
 service running.
 
-Archiving is an immediate destructive runtime action. If a conversation or
-project has a loaded runtime, Conan Code confirms before archiving. After
-confirmation it stops root Grok, active subagents, Fresh, Lazygit, ordinary
-shell tabs, managed tabs, and their child processes before unloading the
-runtime. Inactive items archive without confirmation. Archiving still changes
-only Conan Code metadata and never deletes the durable Grok session.
+Archiving is an immediate destructive runtime action. Conan Code archives
+without a confirmation window and stops root Grok, active subagents, Fresh,
+Lazygit, ordinary shell tabs, managed tabs, and their child processes before
+unloading any loaded runtime. Archiving still changes only Conan Code metadata
+and never deletes the durable Grok session.

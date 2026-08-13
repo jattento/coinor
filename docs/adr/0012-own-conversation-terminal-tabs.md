@@ -23,6 +23,6 @@ conversation runtime is live.
 Ghostty actions that target tabs are mapped into this Coinor-owned model so
 native Ghostty windows or tab chrome never escape the application shell.
 
-ADR 0013 supersedes this ADR's archive-retention rule. After confirmation for
-a loaded runtime, Conan Code immediately closes main, IDE, ordinary shell, and
-managed terminal surfaces.
+ADR 0013 supersedes this ADR's archive-retention and confirmation rules.
+Archiving a loaded runtime requires no confirmation and immediately closes main,
+IDE, ordinary shell, and managed terminal surfaces.

@@ -13,16 +13,23 @@ struct AppShellSidebar: View {
     @State private var worktreeName = ""
     @State private var appearanceProjectID: String?
     @State private var searchText = ""
+    @State private var agenticSearchEnabled = false
+    @State private var agenticFinderModel: AgenticConversationFinderModel?
+    @State private var agenticFinderUnavailableMessage: String?
     @State private var remoteSheet: RemoteSidebarSheet?
     @FocusState private var focusedProjectMenuID: String?
+    @FocusState private var agenticSearchFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             searchField
+            if agenticSearchEnabled {
+                agenticSearchPanel
+            }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if isSearching {
+                    if isSearching && !agenticSearchEnabled {
                         searchResultsSection
                     } else {
                         pinnedSection
@@ -362,6 +369,10 @@ struct AppShellSidebar: View {
 
     private var keyboardNavigationConversationIDs: [String] {
         guard !reorder.isActive else { return [] }
+        if agenticSearchEnabled, let agenticFinderModel,
+           case .results(let response) = agenticFinderModel.state {
+            return response.matches.map(\.sessionID)
+        }
         if isSearching {
             return searchResults.map(\.id)
         }
@@ -378,16 +389,37 @@ struct AppShellSidebar: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.tertiary)
-            TextField("Search conversations", text: $searchText)
+            TextField(
+                agenticSearchEnabled
+                    ? "Describe the conversation"
+                    : "Search conversations",
+                text: agenticSearchEnabled
+                    ? Binding(
+                        get: { agenticFinderModel?.query ?? "" },
+                        set: { agenticFinderModel?.query = $0 }
+                    )
+                    : $searchText
+            )
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .focused($agenticSearchFieldFocused)
+                .disabled(
+                    agenticSearchEnabled && agenticFinderModel == nil
+                )
+                .onSubmit {
+                    submitAgenticSearch()
+                }
                 .onExitCommand {
-                    searchText = ""
+                    if agenticSearchEnabled {
+                        setAgenticSearchEnabled(false)
+                    } else {
+                        searchText = ""
+                    }
                 }
                 .accessibilityIdentifier(
                     AppShellIdentifier.conversationSearchField
                 )
-            if isSearching {
+            if isSearching && !agenticSearchEnabled {
                 Button {
                     searchText = ""
                 } label: {
@@ -399,6 +431,26 @@ struct AppShellSidebar: View {
                 .help("Clear Search")
                 .accessibilityLabel("Clear Search")
             }
+            Button {
+                setAgenticSearchEnabled(!agenticSearchEnabled)
+            } label: {
+                Image(systemName: agenticSearchEnabled ? "sparkles" : "sparkle.magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(
+                        agenticSearchEnabled
+                            ? Color.accentColor
+                            : Color.secondary
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(agenticSearchEnabled ? "Close Agent Search" : "Search with Grok")
+            .accessibilityLabel("Search with Grok")
+            .accessibilityValue(agenticSearchEnabled ? "On" : "Off")
+            .accessibilityHint(
+                agenticSearchEnabled
+                    ? "Turns off semantic conversation search"
+                    : "Turns on semantic conversation search"
+            )
         }
         .padding(.horizontal, 9)
         .frame(height: 30)
@@ -413,6 +465,165 @@ struct AppShellSidebar: View {
         .padding(.horizontal, SidebarStyle.rowInset)
         .padding(.top, 8)
         .padding(.bottom, 2)
+    }
+
+    private var agenticSearchPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let model = agenticFinderModel {
+                HStack {
+                    Text("Agent Search")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if case .searching = model.state {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Find") {
+                        submitAgenticSearch()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(
+                        model.query.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty || model.state == .searching
+                    )
+                }
+
+                switch model.state {
+                case .idle:
+                    Text("Try: “Find yesterday's remote-host conversation and open it.”")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                case .searching:
+                    Text("Reading conversation summaries…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                case .failed(let message):
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemRed))
+                case .results(let response):
+                    Text(response.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    if response.matches.isEmpty {
+                        Text("No matching conversations")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        ForEach(response.matches) { match in
+                            agenticMatchRow(match)
+                        }
+                    }
+                }
+            } else {
+                Text("Agent Search Unavailable")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(
+                    agenticFinderUnavailableMessage
+                        ?? "Grok conversation search is unavailable. Check that the configured Grok executable is ready."
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(Color(nsColor: .systemRed))
+            }
+        }
+        .padding(10)
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.accentColor.opacity(0.07))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.16))
+        }
+        .padding(.horizontal, SidebarStyle.rowInset)
+        .padding(.top, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private func agenticMatchRow(_ match: AgenticFinderMatch) -> some View {
+        let summary = coordinator.agenticConversationSummary(match.sessionID)
+        let title = summary?.title ?? "Conversation"
+        let openingAccessibilityLabel = summary?.archived == true
+            ? "Open \(title). Opening restores it from Archive. \(match.reason)"
+            : "Open \(title). \(match.reason)"
+        return HStack(spacing: 8) {
+            Button {
+                coordinator.applyAgenticFinderMatch(match.openingAction)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(title)
+                            .lineLimit(1)
+                        if summary?.archived == true {
+                            Text("Archived")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.app")
+                            .foregroundStyle(.tertiary)
+                    }
+                    Text(match.reason)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(openingAccessibilityLabel)
+
+            if !coordinator.isAgenticConversationPinned(match.sessionID) {
+                Button("Pin") {
+                    coordinator.applyAgenticFinderMatch(match.pinningAction)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Pin \(title)")
+                .accessibilityHint(
+                    "Pins the conversation without opening it"
+                )
+            }
+        }
+    }
+
+    private func setAgenticSearchEnabled(_ enabled: Bool) {
+        let model = enabled ? coordinator.makeAgenticFinderModel() : nil
+        withAnimation(.easeOut(duration: 0.16)) {
+            agenticSearchEnabled = enabled
+        }
+        searchText = ""
+        if enabled {
+            agenticFinderModel = model
+            agenticFinderUnavailableMessage = model == nil
+                ? "Grok conversation search is unavailable. Check that the configured Grok executable is ready."
+                : nil
+            reorder.cancel()
+            Task { @MainActor in
+                await Task.yield()
+                agenticSearchFieldFocused = model != nil
+            }
+        } else {
+            agenticFinderModel?.reset()
+            agenticFinderModel = nil
+            agenticFinderUnavailableMessage = nil
+            agenticSearchFieldFocused = false
+        }
+    }
+
+    private func submitAgenticSearch() {
+        guard agenticSearchEnabled, let agenticFinderModel else { return }
+        agenticFinderModel.submit {
+            await coordinator.agenticFinderCandidates()
+        } onResponse: { response in
+            response.explicitActions.forEach {
+                coordinator.applyAgenticFinderMatch($0.requestedAction)
+            }
+        }
     }
 
     /// Emits a project as a header followed by the conversations it owns.

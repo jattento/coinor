@@ -305,9 +305,9 @@ The IDE commands and persisted shell tabs are recreated when their conversation
 runtime activates. Managed tabs are appended after persisted shells, do not
 change selection when created, and are never reconstructed from metadata.
 
-Archiving a loaded runtime requires confirmation and then shuts down root Grok,
-descendants, IDE tools, ordinary shells, and managed tabs immediately. There is
-no archive-retention grace state.
+Archiving a loaded runtime immediately shuts down root Grok, descendants, IDE
+tools, ordinary shells, and managed tabs without a confirmation window. There
+is no archive-retention grace state.
 
 ### Sidebar presentation
 
@@ -363,9 +363,11 @@ Control-plane work is routed to the leader that owns the session.
 `TerminalLaunchRequest` carries an optional `RemoteExecution`. When present,
 the local Ghostty surface runs `ssh`, starts in the local home directory, and
 inherits none of Coinor's environment; the working directory and environment
-are applied on the remote side. A pane whose `ssh` exits 255 reconnects with
-bounded backoff and shows a banner, because the remote leader keeps the
-session alive across a dropped client.
+are applied on the remote side. A pane whose `ssh` exits 255 reconnects with bounded backoff, because the
+remote leader keeps the session alive across a dropped client. A host-level
+transition from connected to unavailable emits one native macOS notification
+per disconnect episode; retries retain the red badge without persistent banner
+or notification spam.
 
 Agent-managed terminal tabs stay local-only: a remote agent inherits neither
 the control socket nor the instance token, so the skill fails closed.
@@ -397,9 +399,20 @@ current Grok catalog. It compares normalized exact, prefix, substring, token,
 and subsequence matches in that order. Activity time sorts equal-quality
 matches, using the newest available catalog or live-roster timestamp.
 
+`GrokAgenticConversationFinder` is an opt-in semantic path embedded beside that
+field. It exports only the first user prompt of each root conversation into a
+bounded candidate payload, invokes the absolute installed Grok binary in
+headless structured-output mode with cross-session memory disabled, and always
+deletes the generated Grok session in `defer`. The process works in an isolated
+Application Support subdirectory and never joins Coinor's private leader, so
+the finder is absent from the sidebar and its transcript disappears after each
+request. `AgenticFinderActionPlan` is the narrow mutation boundary: listing is
+read-only; explicit open may unarchive and select, and explicit pin may pin.
+
 Project order, pinned order, and each project's conversation order are stored
 as canonical ID sequences. Rendering filters those sequences to currently
-visible rows and appends newly discovered IDs. Reordering replaces only visible
+visible rows and places newly discovered or newly pinned IDs at the top, while
+preserving the established relative order beneath them. Reordering replaces only visible
 slots, leaving archived projects and hidden pinned or archived conversations in
 their relative positions. The coordinator publishes an optimistic order
 immediately and generation-checks serialized persistence completions so stale

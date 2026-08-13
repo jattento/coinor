@@ -336,11 +336,12 @@ extension MetadataDocument {
 // MARK: - Mutations
 
 extension MetadataDocument {
-    /// Pins a session. Order is significant and preserved; pinning an
-    /// already-pinned session is a no-op rather than moving it to the end.
+    /// Pins a session at the top of the section. Order is significant and
+    /// preserved; pinning an already-pinned session is a no-op rather than
+    /// moving it again.
     mutating func pin(_ sessionID: String) {
         guard !pinnedSessionIDs.contains(sessionID) else { return }
-        pinnedSessionIDs.append(sessionID)
+        pinnedSessionIDs.insert(sessionID, at: 0)
     }
 
     mutating func unpin(_ sessionID: String) {
