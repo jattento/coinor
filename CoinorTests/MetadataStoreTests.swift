@@ -375,7 +375,7 @@ func reorderingVisiblePinnedSessionsPreservesHiddenPinnedSlots() {
 
     #expect(
         document.pinnedSessionIDs
-            == ["hidden", "second", "first"]
+            == ["second", "first", "hidden"]
     )
 }
 

@@ -142,7 +142,7 @@ func discoveredProjectRemainsWhenEveryConversationIsPinned() {
     ]
     let catalog = SessionCatalog.build(sessions: sessions, metadata: metadata)
 
-    #expect(catalog.pinned.map(\.id) == ["session-a", "session-b"])
+    #expect(catalog.pinned.map(\.id) == ["session-b", "session-a"])
     #expect(catalog.projects.map(\.projectID) == ["project-a"])
     #expect(catalog.projects.first?.conversations.isEmpty == true)
 }

@@ -472,6 +472,153 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
     #expect(invocations[1].prefix(2) == ["sessions", "delete"])
 }
 
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment[
+            "COINOR_RUN_LIVE_AGENTIC_FINDER"
+        ] == "1"
+    ),
+    .timeLimit(.minutes(5))
+)
+func liveInstalledGrokFinderListsOpensPinsAndCleansWorkspaces() async throws {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let grokURL = home
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("grok")
+    let executable = try GrokExecutable.resolve(
+        configuredPath: grokURL.path
+    )
+    let supportDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "CoinorLiveAgenticFinder-\(UUID().uuidString)",
+            isDirectory: true
+        )
+    try FileManager.default.createDirectory(
+        at: supportDirectory,
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: supportDirectory) }
+
+    let finder = GrokAgenticConversationFinder(
+        executable: executable,
+        supportDirectory: supportDirectory
+    )
+    let token = "coinor-live-finder-\(UUID().uuidString.lowercased())"
+    let candidates = [
+        AgenticFinderCandidate(
+            id: "active-live-candidate",
+            title: "Active \(token)",
+            project: "Coinor",
+            lastActivity: "2026-08-13T05:00:00Z",
+            archived: false,
+            pinned: false,
+            excerpt: "Active conversation about \(token)."
+        ),
+        AgenticFinderCandidate(
+            id: "archived-live-candidate",
+            title: "Archived \(token)",
+            project: "Coinor",
+            lastActivity: "2026-08-12T05:00:00Z",
+            archived: true,
+            pinned: false,
+            excerpt: "Archived conversation about \(token)."
+        ),
+    ]
+
+    var metadata = MetadataDocument.empty
+    metadata.setSessionArchived("archived-live-candidate", archived: true)
+    metadata.setProjectArchived("coinor-live-project", archived: true)
+    let archivedSummary = SessionSummary(
+        id: "archived-live-candidate",
+        projectID: "coinor-live-project",
+        title: "Archived \(token)"
+    )
+    let activeSummary = SessionSummary(
+        id: "active-live-candidate",
+        projectID: "coinor-live-project",
+        title: "Active \(token)"
+    )
+
+    let listing = try await finder.find(
+        AgenticFinderRequest(
+            query: "Find the conversations about \(token), but do not open or pin anything.",
+            candidates: candidates
+        )
+    )
+    #expect(
+        Set(listing.matches.map(\.sessionID)).isSuperset(
+            of: ["active-live-candidate", "archived-live-candidate"]
+        )
+    )
+    #expect(listing.matches.allSatisfy { !$0.open && !$0.pin })
+    let beforeListing = metadata
+    listing.matches.forEach {
+        AgenticFinderActionPlan.resolve(
+            match: $0,
+            summary: $0.sessionID == archivedSummary.id
+                ? archivedSummary
+                : activeSummary,
+            metadata: metadata
+        ).apply(to: &metadata)
+    }
+    #expect(metadata == beforeListing)
+
+    let opening = try await finder.find(
+        AgenticFinderRequest(
+            query: "Open the archived conversation about \(token).",
+            candidates: candidates
+        )
+    )
+    let archived = try #require(
+        opening.matches.first { $0.sessionID == "archived-live-candidate" }
+    )
+    #expect(archived.open)
+    #expect(!archived.pin)
+    let openingPlan = AgenticFinderActionPlan.resolve(
+        match: archived,
+        summary: archivedSummary,
+        metadata: metadata
+    )
+    #expect(openingPlan.shouldOpen)
+    #expect(openingPlan.shouldUnarchiveConversation)
+    #expect(openingPlan.shouldUnarchiveProject)
+    openingPlan.apply(to: &metadata)
+    #expect(!metadata.isSessionArchived(archivedSummary.id))
+    #expect(!metadata.isProjectArchived(archivedSummary.projectID))
+    #expect(!metadata.isSessionPinned(archivedSummary.id))
+
+    let pinning = try await finder.find(
+        AgenticFinderRequest(
+            query: "Pin the active conversation about \(token), but do not open it.",
+            candidates: candidates
+        )
+    )
+    let active = try #require(
+        pinning.matches.first { $0.sessionID == "active-live-candidate" }
+    )
+    #expect(!active.open)
+    #expect(active.pin)
+    let pinningPlan = AgenticFinderActionPlan.resolve(
+        match: active,
+        summary: activeSummary,
+        metadata: metadata
+    )
+    #expect(!pinningPlan.shouldOpen)
+    #expect(pinningPlan.shouldPin)
+    pinningPlan.apply(to: &metadata)
+    #expect(metadata.isSessionPinned(activeSummary.id))
+
+    let finderRoot = supportDirectory.appendingPathComponent(
+        "AgenticFinder",
+        isDirectory: true
+    )
+    let remainingWorkspaces = try FileManager.default.contentsOfDirectory(
+        at: finderRoot,
+        includingPropertiesForKeys: nil
+    )
+    #expect(remainingWorkspaces.isEmpty)
+}
+
 @Test
 func remoteExcerptLoadingRunsQuotedGrokExportAndUsesTranscriptContext() {
     final class Runner: RemoteCommandRunning, @unchecked Sendable {
@@ -560,13 +707,18 @@ func excerptLoadingIsBoundedDrainsPipesAndCanBeCancelled() async throws {
     let task = Task {
         await loader.excerpts(for: (0..<12).map { "session-\($0)" })
     }
-    for _ in 0..<200 {
+    var reachedConcurrencyLimit = false
+    for _ in 0..<500 {
         let values = try String(contentsOf: state, encoding: .utf8)
             .split(separator: " ")
             .compactMap { Int($0) }
-        if values.first == 4 { break }
-        try await Task.sleep(for: .milliseconds(5))
+        if values.first == 4 {
+            reachedConcurrencyLimit = true
+            break
+        }
+        try await Task.sleep(for: .milliseconds(10))
     }
+    #expect(reachedConcurrencyLimit)
     task.cancel()
     let result = await task.value
 
