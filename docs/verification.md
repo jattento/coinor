@@ -14,6 +14,52 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.27 Verification
+
+A dismissible Agent Search panel, context-scoped remote-disconnect
+notifications, and a Conan Code-native `sidechat` skill ship as version
+`0.5.27` build `34`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passes: macOS 26.5.1, Xcode 26.6 (17F113), macOS
+  SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allow, writable build and temp directories.
+- Swift 6 Debug and Release builds succeed.
+- The hosted unit suite runs green through `scripts/dev/run-tests.sh`: 305
+  Swift Testing tests in 33 suites plus 46 XCTest cases, 0 failures. That suite
+  now also drives the Agent Search dismissal unit, the remote-disconnect
+  predicate across the full context matrix, and the shipped `sidechat.sh`
+  against a stub control client that answers exactly what
+  `TerminalControlServer` answers.
+- `scripts/dev/run-tests.sh` itself was broken for the documented
+  no-extra-arguments invocation (bash 3.2 rejects `"${empty[@]}"` under
+  `set -u`) and is fixed.
+- `scripts/release/verify-app.sh` passes and now also pins the bundled
+  `sidechat-SKILL.md` / `sidechat.sh` to their sources and parses the script.
+- `git diff --check` passes; `scripts/release/security-scan.sh` passes against
+  the release candidate bundle.
+
+XCUITest remains unrunnable unattended on this machine. `testmanagerd` raises a
+SecurityAgent authorization prompt — *"XCTest is trying to Enable UI
+Automation"* — that requires Touch ID or the account password. It is an
+Authorization Services right, not a TCC toggle, so a synthetic click cannot
+answer it and `security authorizationdb write` needs `sudo`. The runner
+therefore fails with `Timed out while enabling automation mode` before any test
+executes. This release does not claim a completed XCUITest run.
+
+Manual and automated UX verification was performed instead through `peekaboo`
+4.0.0, which does hold Screen Recording and Accessibility, against a running
+build with the real sidebar populated:
+
+- The Agent Search panel exposes a `Close Agent Search` control; clicking it
+  returns the finder to not-presented and flips the sparkle toggle back to
+  `Off`.
+- Escape sent to the application dismisses the panel from the same state.
+- With a registered but unreachable remote computer (`jattentom2-home`), the
+  sidebar badge reports `Remote computer …, unavailable` while a purely local
+  context raises no disconnect notification.
+
 ## Conan Code 0.5.26 Verification
 
 Conversation ordering, immediate archive behavior, remote disconnect episodes,

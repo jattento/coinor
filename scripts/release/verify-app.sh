@@ -33,6 +33,8 @@ TERMINFO="$APP_BUNDLE/Contents/Resources/terminfo"
 CONTROL_CLIENT="$APP_BUNDLE/Contents/Resources/coinorctl"
 SKILL="$APP_BUNDLE/Contents/Resources/conan-code-long-running-SKILL.md"
 SKILL_WRAPPER="$APP_BUNDLE/Contents/Resources/conan-code-terminal.sh"
+SIDECHAT_SKILL="$APP_BUNDLE/Contents/Resources/sidechat-SKILL.md"
+SIDECHAT_SCRIPT="$APP_BUNDLE/Contents/Resources/sidechat.sh"
 MANAGED_BOOTSTRAP="$APP_BUNDLE/Contents/Resources/managed-terminal-bootstrap.zsh"
 
 require_file "$EXECUTABLE"
@@ -42,6 +44,8 @@ require_file "$SOURCE_MANIFEST"
 require_file "$CONTROL_CLIENT"
 require_file "$SKILL"
 require_file "$SKILL_WRAPPER"
+require_file "$SIDECHAT_SKILL"
+require_file "$SIDECHAT_SCRIPT"
 require_file "$MANAGED_BOOTSTRAP"
 require_directory "$GHOSTTY_RESOURCES"
 require_directory "$TERMINFO"
@@ -58,6 +62,11 @@ cmp -s "$REPO_ROOT/Coinor/Resources/conan-code-long-running-SKILL.md" \
   "$SKILL" || die "bundled Grok skill does not match its source"
 cmp -s "$REPO_ROOT/Coinor/Resources/conan-code-terminal.sh" \
   "$SKILL_WRAPPER" || die "bundled Grok skill wrapper does not match its source"
+cmp -s "$REPO_ROOT/Coinor/Resources/sidechat-SKILL.md" \
+  "$SIDECHAT_SKILL" || die "bundled sidechat skill does not match its source"
+cmp -s "$REPO_ROOT/Coinor/Resources/sidechat.sh" \
+  "$SIDECHAT_SCRIPT" || die "bundled sidechat script does not match its source"
+/bin/sh -n "$SIDECHAT_SCRIPT" || die "bundled sidechat script does not parse"
 cmp -s "$REPO_ROOT/Coinor/Resources/managed-terminal-bootstrap.zsh" \
   "$MANAGED_BOOTSTRAP" || \
   die "bundled managed-terminal bootstrap does not match its source"
