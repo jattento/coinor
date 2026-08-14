@@ -41,6 +41,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+"$REPO_ROOT/scripts/dev/preflight.sh"
+
 running_coinor_pids() {
   pgrep -f 'Coinor\.app/Contents/MacOS/Coinor' || true
 }

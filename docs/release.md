@@ -33,6 +33,20 @@ ACP stream and does not install files in `~/.grok/hooks`.
 
 ## Prerequisites
 
+Run the unattended-development gate before any build, test, UI automation, or
+release work:
+
+```sh
+scripts/dev/preflight.sh
+```
+
+The gate pins the validated macOS, Xcode build, and macOS SDK combination and
+checks the Xcode license, first-launch components, Developer Tools access,
+`system.privilege.taskport`, Swift 6, the arm64 macOS destination, and writable
+build/temp directories. It never changes system configuration. If it fails,
+perform the printed administrator or GUI remediation while a human is present,
+then rerun it successfully before starting unattended work.
+
 - Apple Silicon Mac
 - macOS 13 or newer
 - Xcode and command-line tools with Swift 6
@@ -151,24 +165,31 @@ path, Coinor's private leader socket, and no writes into `grok-build` or
 
 ## Install
 
-Quit any running copy of Conan Code, then replace the installed bundle with the
-verified application:
+Quit every running copy of Conan Code. `/Applications/Coinor.app` is the only
+canonical installation. Unregister and remove stale duplicates before
+replacing it with the exact verified bundle:
 
 ```sh
 APP=.build/DerivedData/Build/Products/Release/Coinor.app
-mkdir -p "$HOME/Applications"
-if [ -e "$HOME/Applications/Coinor.app" ]; then
-  OLD_APP="$(mktemp -d)/Coinor.app"
-  mv "$HOME/Applications/Coinor.app" "$OLD_APP"
-fi
-ditto "$APP" "$HOME/Applications/Coinor.app"
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+"$LSREGISTER" -u "$HOME/Applications/Coinor.app" 2>/dev/null || true
+rm -rf "$HOME/Applications/Coinor.app"
+rm -rf /Applications/Coinor.app
+ditto "$APP" /Applications/Coinor.app
 ```
 
-Launch it:
+Launch the canonical bundle and verify the running executable path, version,
+build, and SHA-256 against the published asset:
 
 ```sh
-open "$HOME/Applications/Coinor.app"
+open /Applications/Coinor.app
 ```
+
+Do not consider the release installed while a duplicate `Coinor.app` remains
+under `~/Applications` or another user-facing application location. Build
+products may remain in DerivedData, but LaunchServices, Spotlight, Dock, and the
+running process must resolve the user-facing app to `/Applications/Coinor.app`.
 
 ## Repair Or Upgrade
 

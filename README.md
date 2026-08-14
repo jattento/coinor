@@ -33,6 +33,23 @@ notarized and is not intended for App Store distribution.
 Conan Code does not require Herdr, Paseo, `/Applications/Ghostty.app`, or a global
 Grok `use_leader` setting.
 
+## Unattended Development Preflight
+
+Before an unattended build, test, UI-automation, or release run, execute:
+
+```sh
+scripts/dev/preflight.sh
+```
+
+The preflight is read-only with respect to system configuration. It verifies
+that the validated macOS/Xcode/SDK combination is selected, the Xcode license
+and first-launch components are already complete, Developer Tools and taskport
+authorization will not raise an authentication dialog, Swift 6 and the arm64
+macOS destination are available, and build/temp directories are writable. If
+an administrator action is required, the script fails before work begins and
+prints the exact remediation; perform it interactively, then rerun the
+preflight before leaving the machine unattended.
+
 ## First Build
 
 `Vendor/Ghostty` is intentionally ignored by Git. A clean clone must first
@@ -86,14 +103,20 @@ procedure. Final test evidence and the acceptance mapping are recorded in
 
 ## Local Installation
 
-After the Release bundle passes verification:
+After the Release bundle passes verification, install only the canonical copy:
 
 ```sh
 APP=.build/DerivedData/Build/Products/Release/Coinor.app
-mkdir -p "$HOME/Applications"
-ditto "$APP" "$HOME/Applications/Coinor.app"
-open "$HOME/Applications/Coinor.app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -u "$HOME/Applications/Coinor.app" 2>/dev/null || true
+rm -rf "$HOME/Applications/Coinor.app"
+rm -rf /Applications/Coinor.app
+ditto "$APP" /Applications/Coinor.app
+open /Applications/Coinor.app
 ```
+
+Verify that no duplicate `Coinor.app` remains under `~/Applications` before
+considering the release installed.
 
 ## Local Data
 
