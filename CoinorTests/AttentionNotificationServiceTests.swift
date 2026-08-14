@@ -94,6 +94,98 @@ func remoteDisconnectNotificationUsesNativeEnglishCopyEvenWhileFocused() async t
 }
 
 @Test
+func remoteDisconnectNotificationScopeStaysQuietOnlyOutsideRemoteWork() {
+    let matrix: [(RemoteDisconnectNotificationScope, Bool)] = [
+        (
+            RemoteDisconnectNotificationScope(
+                isViewingRemoteConversation: false,
+                isRemoteHostsInterfacePresented: false
+            ),
+            false
+        ),
+        (
+            RemoteDisconnectNotificationScope(
+                isViewingRemoteConversation: true,
+                isRemoteHostsInterfacePresented: false
+            ),
+            true
+        ),
+        (
+            RemoteDisconnectNotificationScope(
+                isViewingRemoteConversation: false,
+                isRemoteHostsInterfacePresented: true
+            ),
+            true
+        ),
+        (
+            RemoteDisconnectNotificationScope(
+                isViewingRemoteConversation: true,
+                isRemoteHostsInterfacePresented: true
+            ),
+            true
+        ),
+    ]
+
+    for (scope, expected) in matrix {
+        #expect(scope.allowsDisconnectNotification == expected)
+    }
+    #expect(!RemoteDisconnectNotificationScope.quiet.allowsDisconnectNotification)
+}
+
+@Test
+func remoteDisconnectScopeReadsTheSelectedConversationsHost() throws {
+    let alias = try #require(RemoteHostAlias(rawValue: "work-mac"))
+
+    let localAndClosed = RemoteDisconnectNotificationScope(
+        selectedConversationHost: nil,
+        isRemoteHostsInterfacePresented: false
+    )
+    let remoteConversation = RemoteDisconnectNotificationScope(
+        selectedConversationHost: alias,
+        isRemoteHostsInterfacePresented: false
+    )
+    let localButManaging = RemoteDisconnectNotificationScope(
+        selectedConversationHost: nil,
+        isRemoteHostsInterfacePresented: true
+    )
+
+    #expect(!localAndClosed.allowsDisconnectNotification)
+    #expect(remoteConversation.allowsDisconnectNotification)
+    #expect(remoteConversation.isViewingRemoteConversation)
+    #expect(localButManaging.allowsDisconnectNotification)
+}
+
+@Test
+@MainActor
+func coordinatorStaysQuietUntilTheRemoteInterfaceIsPresented() {
+    let coordinator = AppCoordinator()
+
+    #expect(coordinator.remoteDisconnectNotificationScope == .quiet)
+    #expect(
+        !coordinator.remoteDisconnectNotificationScope
+            .allowsDisconnectNotification
+    )
+
+    coordinator.selectedSessionID = "local-session"
+
+    #expect(
+        !coordinator.remoteDisconnectNotificationScope
+            .allowsDisconnectNotification
+    )
+
+    coordinator.isRemoteHostsInterfacePresented = true
+
+    #expect(
+        coordinator.remoteDisconnectNotificationScope
+            .allowsDisconnectNotification
+    )
+    #expect(
+        !coordinator.remoteDisconnectNotificationScope
+            .isViewingRemoteConversation
+    )
+}
+
+@Test
 func remoteDisconnectEpisodesNotifyOnlyAfterAConnectedHostDrops() throws {
     let alias = try #require(RemoteHostAlias(rawValue: "work-mac"))
     var episodes = RemoteDisconnectNotificationEpisodes()

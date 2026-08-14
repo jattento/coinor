@@ -91,6 +91,48 @@ final class AttentionNotificationService {
     }
 }
 
+/// Where the user is standing when a registered remote computer drops.
+///
+/// A computer that goes away is only worth interrupting for while the user is
+/// actually looking at remote work: a remote conversation is selected, or the
+/// remote-computers interface is on screen. Everywhere else the sidebar badge
+/// already carries the state, so the alert would be noise about a machine the
+/// user is not using.
+struct RemoteDisconnectNotificationScope: Equatable {
+    /// The selected conversation runs on a remote computer.
+    var isViewingRemoteConversation: Bool
+    /// The add/manage remote-computer interface is presented.
+    var isRemoteHostsInterfacePresented: Bool
+
+    static let quiet = RemoteDisconnectNotificationScope(
+        isViewingRemoteConversation: false,
+        isRemoteHostsInterfacePresented: false
+    )
+
+    /// Builds the scope from what the shell knows: which computer owns the
+    /// selected conversation, if any, and whether the remote-computers
+    /// interface is up.
+    init(
+        selectedConversationHost: RemoteHostAlias?,
+        isRemoteHostsInterfacePresented: Bool
+    ) {
+        self.isViewingRemoteConversation = selectedConversationHost != nil
+        self.isRemoteHostsInterfacePresented = isRemoteHostsInterfacePresented
+    }
+
+    init(
+        isViewingRemoteConversation: Bool,
+        isRemoteHostsInterfacePresented: Bool
+    ) {
+        self.isViewingRemoteConversation = isViewingRemoteConversation
+        self.isRemoteHostsInterfacePresented = isRemoteHostsInterfacePresented
+    }
+
+    var allowsDisconnectNotification: Bool {
+        isViewingRemoteConversation || isRemoteHostsInterfacePresented
+    }
+}
+
 struct RemoteDisconnectNotificationEpisodes {
     private var previouslyConnected: Set<RemoteHostAlias> = []
     private var notifiedUnavailable: Set<RemoteHostAlias> = []

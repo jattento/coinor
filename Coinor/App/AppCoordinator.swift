@@ -48,6 +48,9 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var warningMessage: String?
     @Published var selectedSessionID: String?
     @Published var showsArchivedItems = false
+    /// Set by the sidebar while the add/manage remote-computer interface is
+    /// presented, so a disconnect can interrupt only where it is relevant.
+    @Published var isRemoteHostsInterfacePresented = false
 
     private(set) var runtimeManager: ConversationRuntimeManager?
 
@@ -614,6 +617,28 @@ final class AppCoordinator: ObservableObject {
     }
 
     /// The computer that owns a conversation, or `nil` when it is local.
+    /// The context a remote disconnect would land in right now.
+    var remoteDisconnectNotificationScope: RemoteDisconnectNotificationScope {
+        RemoteDisconnectNotificationScope(
+            selectedConversationHost: selectedSessionID
+                .flatMap { hostAlias(forSession: $0) },
+            isRemoteHostsInterfacePresented: isRemoteHostsInterfacePresented
+        )
+    }
+
+    /// Notifies about a dropped remote computer only where the user can act on
+    /// it. Out of scope the episode stays unclaimed, so the next retry raises
+    /// it once the user is back in remote territory.
+    private func notifyRemoteDisconnectIfInScope(
+        _ alias: RemoteHostAlias
+    ) async {
+        guard remoteDisconnectNotificationScope.allowsDisconnectNotification,
+              remoteDisconnectEpisodes.markUnavailable(alias) else {
+            return
+        }
+        await notifications.notifyRemoteDisconnect(alias)
+    }
+
     func hostAlias(forSession sessionID: String) -> RemoteHostAlias? {
         if let alias = hostAliasBySessionID[sessionID] { return alias }
         guard let projectID = projectIDBySessionID[sessionID] else {
@@ -701,9 +726,7 @@ final class AppCoordinator: ObservableObject {
                     continue
                 case .terminated(let error):
                     host.unreachableReason = error.localizedDescription
-                    if self.remoteDisconnectEpisodes.markUnavailable(alias) {
-                        await self.notifications.notifyRemoteDisconnect(alias)
-                    }
+                    await self.notifyRemoteDisconnectIfInScope(alias)
                     return
                 }
             }
@@ -719,9 +742,7 @@ final class AppCoordinator: ObservableObject {
                 try await refreshRemoteHost(host)
             } catch {
                 host.unreachableReason = error.localizedDescription
-                if remoteDisconnectEpisodes.markUnavailable(host.alias) {
-                    await notifications.notifyRemoteDisconnect(host.alias)
-                }
+                await notifyRemoteDisconnectIfInScope(host.alias)
             }
         }
 

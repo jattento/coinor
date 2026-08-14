@@ -11,6 +11,8 @@ enum AppShellIdentifier {
     static let projectsSection = "AppShellSidebarProjects"
     static let conversationSearchField = "AppShellConversationSearch"
     static let searchResultsSection = "AppShellSearchResults"
+    static let agenticSearchPanel = "AppShellAgenticSearchPanel"
+    static let agenticSearchClose = "AppShellAgenticSearchClose"
     static let searchEmptyState = "AppShellSearchEmptyState"
     static let grokUpdateButton = "AppShellGrokUpdate"
     static let terminalRegion = "AppShellTerminalRegion"

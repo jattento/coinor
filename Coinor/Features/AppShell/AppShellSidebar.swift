@@ -13,9 +13,7 @@ struct AppShellSidebar: View {
     @State private var worktreeName = ""
     @State private var appearanceProjectID: String?
     @State private var searchText = ""
-    @State private var agenticSearchEnabled = false
-    @State private var agenticFinderModel: AgenticConversationFinderModel?
-    @State private var agenticFinderUnavailableMessage: String?
+    @State private var agenticSearch = AgenticSearchPanelState()
     @State private var remoteSheet: RemoteSidebarSheet?
     @FocusState private var focusedProjectMenuID: String?
     @FocusState private var agenticSearchFieldFocused: Bool
@@ -23,13 +21,13 @@ struct AppShellSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
-            if agenticSearchEnabled {
+            if agenticSearch.isPresented {
                 agenticSearchPanel
             }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if isSearching && !agenticSearchEnabled {
+                    if isSearching && !agenticSearch.isPresented {
                         searchResultsSection
                     } else {
                         pinnedSection
@@ -145,6 +143,12 @@ struct AppShellSidebar: View {
                     alias: alias
                 )
             }
+        }
+        .onChange(of: remoteSheet) { sheet in
+            coordinator.isRemoteHostsInterfacePresented = sheet != nil
+        }
+        .onDisappear {
+            coordinator.isRemoteHostsInterfacePresented = false
         }
         .alert("Rename Conversation", isPresented: renamePresented) {
             TextField("Conversation name", text: $renameText)
@@ -369,8 +373,8 @@ struct AppShellSidebar: View {
 
     private var keyboardNavigationConversationIDs: [String] {
         guard !reorder.isActive else { return [] }
-        if agenticSearchEnabled, let agenticFinderModel,
-           case .results(let response) = agenticFinderModel.state {
+        if agenticSearch.isPresented, let model = agenticSearch.model,
+           case .results(let response) = model.state {
             return response.matches.map(\.sessionID)
         }
         if isSearching {
@@ -390,13 +394,13 @@ struct AppShellSidebar: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.tertiary)
             TextField(
-                agenticSearchEnabled
+                agenticSearch.isPresented
                     ? "Describe the conversation"
                     : "Search conversations",
-                text: agenticSearchEnabled
+                text: agenticSearch.isPresented
                     ? Binding(
-                        get: { agenticFinderModel?.query ?? "" },
-                        set: { agenticFinderModel?.query = $0 }
+                        get: { agenticSearch.model?.query ?? "" },
+                        set: { agenticSearch.model?.query = $0 }
                     )
                     : $searchText
             )
@@ -404,14 +408,14 @@ struct AppShellSidebar: View {
                 .font(.system(size: 13))
                 .focused($agenticSearchFieldFocused)
                 .disabled(
-                    agenticSearchEnabled && agenticFinderModel == nil
+                    agenticSearch.isPresented && !agenticSearch.acceptsInput
                 )
                 .onSubmit {
                     submitAgenticSearch()
                 }
                 .onExitCommand {
-                    if agenticSearchEnabled {
-                        setAgenticSearchEnabled(false)
+                    if agenticSearch.isPresented {
+                        dismissAgenticSearch()
                     } else {
                         searchText = ""
                     }
@@ -419,7 +423,7 @@ struct AppShellSidebar: View {
                 .accessibilityIdentifier(
                     AppShellIdentifier.conversationSearchField
                 )
-            if isSearching && !agenticSearchEnabled {
+            if isSearching && !agenticSearch.isPresented {
                 Button {
                     searchText = ""
                 } label: {
@@ -432,22 +436,34 @@ struct AppShellSidebar: View {
                 .accessibilityLabel("Clear Search")
             }
             Button {
-                setAgenticSearchEnabled(!agenticSearchEnabled)
+                if agenticSearch.isPresented {
+                    dismissAgenticSearch()
+                } else {
+                    presentAgenticSearch()
+                }
             } label: {
-                Image(systemName: agenticSearchEnabled ? "sparkles" : "sparkle.magnifyingglass")
+                Image(
+                    systemName: agenticSearch.isPresented
+                        ? "sparkles"
+                        : "sparkle.magnifyingglass"
+                )
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(
-                        agenticSearchEnabled
+                        agenticSearch.isPresented
                             ? Color.accentColor
                             : Color.secondary
                     )
             }
             .buttonStyle(.plain)
-            .help(agenticSearchEnabled ? "Close Agent Search" : "Search with Grok")
+            .help(
+                agenticSearch.isPresented
+                    ? "Close Agent Search"
+                    : "Search with Grok"
+            )
             .accessibilityLabel("Search with Grok")
-            .accessibilityValue(agenticSearchEnabled ? "On" : "Off")
+            .accessibilityValue(agenticSearch.isPresented ? "On" : "Off")
             .accessibilityHint(
-                agenticSearchEnabled
+                agenticSearch.isPresented
                     ? "Turns off semantic conversation search"
                     : "Turns on semantic conversation search"
             )
@@ -469,7 +485,7 @@ struct AppShellSidebar: View {
 
     private var agenticSearchPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let model = agenticFinderModel {
+            if let model = agenticSearch.model {
                 HStack {
                     Text("Agent Search")
                         .font(.system(size: 11, weight: .semibold))
@@ -489,6 +505,7 @@ struct AppShellSidebar: View {
                             in: .whitespacesAndNewlines
                         ).isEmpty || model.state == .searching
                     )
+                    agenticSearchCloseButton
                 }
 
                 switch model.state {
@@ -519,12 +536,16 @@ struct AppShellSidebar: View {
                     }
                 }
             } else {
-                Text("Agent Search Unavailable")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Agent Search Unavailable")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    agenticSearchCloseButton
+                }
                 Text(
-                    agenticFinderUnavailableMessage
-                        ?? "Grok conversation search is unavailable. Check that the configured Grok executable is ready."
+                    agenticSearch.unavailableMessage
+                        ?? AgenticSearchPanelState.unavailableMessage
                 )
                 .font(.system(size: 11))
                 .foregroundStyle(Color(nsColor: .systemRed))
@@ -542,6 +563,30 @@ struct AppShellSidebar: View {
         .padding(.horizontal, SidebarStyle.rowInset)
         .padding(.top, 6)
         .transition(.move(edge: .top).combined(with: .opacity))
+        .onExitCommand {
+            dismissAgenticSearch()
+        }
+        .accessibilityIdentifier(AppShellIdentifier.agenticSearchPanel)
+    }
+
+    /// The panel's own way out. The sparkle toggle also closes it, but a user
+    /// who opened this from the toggle looks for the dismissal inside the thing
+    /// that appeared, not back at the control that summoned it.
+    private var agenticSearchCloseButton: some View {
+        Button {
+            dismissAgenticSearch()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.escape, modifiers: [])
+        .help("Close Agent Search")
+        .accessibilityLabel("Close Agent Search")
+        .accessibilityIdentifier(AppShellIdentifier.agenticSearchClose)
     }
 
     private func agenticMatchRow(_ match: AgenticFinderMatch) -> some View {
@@ -591,33 +636,31 @@ struct AppShellSidebar: View {
         }
     }
 
-    private func setAgenticSearchEnabled(_ enabled: Bool) {
-        let model = enabled ? coordinator.makeAgenticFinderModel() : nil
-        withAnimation(.easeOut(duration: 0.16)) {
-            agenticSearchEnabled = enabled
-        }
+    private func presentAgenticSearch() {
+        let model = coordinator.makeAgenticFinderModel()
         searchText = ""
-        if enabled {
-            agenticFinderModel = model
-            agenticFinderUnavailableMessage = model == nil
-                ? "Grok conversation search is unavailable. Check that the configured Grok executable is ready."
-                : nil
-            reorder.cancel()
-            Task { @MainActor in
-                await Task.yield()
-                agenticSearchFieldFocused = model != nil
-            }
-        } else {
-            agenticFinderModel?.reset()
-            agenticFinderModel = nil
-            agenticFinderUnavailableMessage = nil
-            agenticSearchFieldFocused = false
+        reorder.cancel()
+        withAnimation(.easeOut(duration: 0.16)) {
+            agenticSearch.present(model)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            agenticSearchFieldFocused = agenticSearch.acceptsInput
+        }
+    }
+
+    private func dismissAgenticSearch() {
+        guard agenticSearch.isPresented else { return }
+        searchText = ""
+        agenticSearchFieldFocused = false
+        withAnimation(.easeOut(duration: 0.16)) {
+            agenticSearch.dismiss()
         }
     }
 
     private func submitAgenticSearch() {
-        guard agenticSearchEnabled, let agenticFinderModel else { return }
-        agenticFinderModel.submit {
+        guard let model = agenticSearch.model else { return }
+        model.submit {
             await coordinator.agenticFinderCandidates()
         } onResponse: { response in
             response.explicitActions.forEach {
@@ -1315,7 +1358,7 @@ private struct SidebarFooterGlyph: View {
     }
 }
 
-private enum RemoteSidebarSheet: Identifiable {
+private enum RemoteSidebarSheet: Identifiable, Equatable {
     case addHost
     case manageHosts
     case addProject(RemoteHostAlias)

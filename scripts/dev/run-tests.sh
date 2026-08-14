@@ -146,10 +146,12 @@ else
   echo "Live installed-Grok Agent Search test: disabled"
 fi
 
-XCODEBUILD_ARGUMENTS=("$@")
-UNIT_ARGUMENTS=("${XCODEBUILD_ARGUMENTS[@]}")
-UI_ARGUMENTS=("${XCODEBUILD_ARGUMENTS[@]}")
-for index in "${!XCODEBUILD_ARGUMENTS[@]}"; do
+# Bash 3.2 treats "${empty[@]}" as unbound under `set -u`, so every expansion
+# of a possibly-empty argument array is guarded.
+XCODEBUILD_ARGUMENTS=(${@+"$@"})
+UNIT_ARGUMENTS=(${XCODEBUILD_ARGUMENTS[@]+"${XCODEBUILD_ARGUMENTS[@]}"})
+UI_ARGUMENTS=(${XCODEBUILD_ARGUMENTS[@]+"${XCODEBUILD_ARGUMENTS[@]}"})
+for index in ${!XCODEBUILD_ARGUMENTS[@]+"${!XCODEBUILD_ARGUMENTS[@]}"}; do
   if [[ "${XCODEBUILD_ARGUMENTS[$index]}" == "-resultBundlePath" ]] \
       && (( index + 1 < ${#XCODEBUILD_ARGUMENTS[@]} )); then
     result_path="${XCODEBUILD_ARGUMENTS[$((index + 1))]}"
@@ -169,11 +171,11 @@ caffeinate -dimsu xcodebuild \
   -xctestrun "$ISOLATED_XCTESTRUN" \
   -destination 'platform=macOS,arch=arm64' \
   -only-testing:CoinorTests \
-  "${UNIT_ARGUMENTS[@]}"
+  ${UNIT_ARGUMENTS[@]+"${UNIT_ARGUMENTS[@]}"}
 
 caffeinate -dimsu xcodebuild \
   test-without-building \
   -xctestrun "$ISOLATED_XCTESTRUN" \
   -destination 'platform=macOS,arch=arm64' \
   -only-testing:CoinorUITests \
-  "${UI_ARGUMENTS[@]}"
+  ${UI_ARGUMENTS[@]+"${UI_ARGUMENTS[@]}"}

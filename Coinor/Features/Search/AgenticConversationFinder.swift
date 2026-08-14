@@ -776,3 +776,41 @@ final class AgenticConversationFinderModel: ObservableObject {
         state = .idle
     }
 }
+
+/// Presentation state for the sidebar's agent-search panel.
+///
+/// Opening the panel, dismissing it, and the unavailable fallback are one
+/// decision kept outside the view so every entry point — the toggle, the
+/// panel's close button, and Escape — lands on the same code and can be
+/// exercised without SwiftUI.
+@MainActor
+struct AgenticSearchPanelState {
+    static let unavailableMessage = """
+        Grok conversation search is unavailable. Check that the configured \
+        Grok executable is ready.
+        """
+
+    private(set) var isPresented = false
+    private(set) var model: AgenticConversationFinderModel?
+    private(set) var unavailableMessage: String?
+
+    /// True once the panel is up with a finder behind it, so the search field
+    /// only accepts input it can actually run.
+    var acceptsInput: Bool { isPresented && model != nil }
+
+    /// Opens the panel around `model`, or around the unavailable explanation
+    /// when Grok could not supply one.
+    mutating func present(_ model: AgenticConversationFinderModel?) {
+        self.model = model
+        unavailableMessage = model == nil ? Self.unavailableMessage : nil
+        isPresented = true
+    }
+
+    /// Closes the panel and cancels whatever the finder was doing.
+    mutating func dismiss() {
+        model?.reset()
+        model = nil
+        unavailableMessage = nil
+        isPresented = false
+    }
+}
