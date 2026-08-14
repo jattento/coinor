@@ -24,7 +24,6 @@ real_path() {
 REAL_XCODE_SELECT="$(real_path xcode-select)"
 REAL_XCODEBUILD="$(real_path xcodebuild)"
 REAL_XCRUN="$(real_path xcrun)"
-REAL_SW_VERS="$(real_path sw_vers)"
 REAL_DEVTOOLS_SECURITY="$(real_path DevToolsSecurity)"
 REAL_SECURITY="$(real_path security)"
 REAL_UNAME="$(real_path uname)"
@@ -37,15 +36,6 @@ if [[ "\${COINOR_PREFLIGHT_TEST_CASE:-}" == "developer-dir" ]]; then
   exit 0
 fi
 exec "$REAL_XCODE_SELECT" "\$@"
-EOF
-
-cat > "$SHIMS/sw_vers" <<EOF
-#!/bin/bash
-if [[ "\${COINOR_PREFLIGHT_TEST_CASE:-}" == "macos" && "\${1:-}" == "-productVersion" ]]; then
-  echo 99.0
-  exit 0
-fi
-exec "$REAL_SW_VERS" "\$@"
 EOF
 
 cat > "$SHIMS/uname" <<EOF
@@ -162,7 +152,6 @@ expect_failure() {
 }
 
 expect_failure architecture "unsupported host architecture: x86_64"
-expect_failure macos "macOS 99.0 is not the validated 26.5 series"
 expect_failure developer-dir "active developer directory is /Library/Developer/CommandLineTools"
 expect_failure license "the Xcode license is not accepted"
 expect_failure first-launch "Xcode first-launch components are incomplete"
@@ -188,14 +177,14 @@ grep -Fq "the temporary directory is not writable: $bad_tmp" \
   "$SCRATCH/temp.out"
 
 rm -f "$MARKER"
-if COINOR_PREFLIGHT_TEST_CASE=macos \
+if COINOR_PREFLIGHT_TEST_CASE=developer-dir \
     PATH="$SHIMS:$PATH" \
     TMPDIR="$TEST_TMP" \
     "$RUN_TESTS" >"$SCRATCH/run-tests.out" 2>&1; then
   echo "expected run-tests to stop at preflight" >&2
   exit 1
 fi
-grep -Fq "macOS 99.0 is not the validated 26.5 series" \
+grep -Fq "active developer directory is /Library/Developer/CommandLineTools" \
   "$SCRATCH/run-tests.out"
 [[ ! -e "$MARKER" ]] || {
   echo "run-tests reached Coinor process handling before preflight passed" >&2

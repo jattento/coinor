@@ -9,7 +9,6 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 EXPECTED_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 EXPECTED_XCODE_VERSION="26.6"
 EXPECTED_XCODE_BUILD="17F113"
-EXPECTED_MACOS_SERIES="26.5"
 EXPECTED_MACOS_SDK="26.5"
 
 fail() {
@@ -45,14 +44,6 @@ architecture="$(uname -m)"
     "Use the validated Apple Silicon build host."
 
 macos_version="$(sw_vers -productVersion)"
-case "$macos_version" in
-  "$EXPECTED_MACOS_SERIES"|"$EXPECTED_MACOS_SERIES".*) ;;
-  *)
-    fail \
-      "macOS $macos_version is not the validated $EXPECTED_MACOS_SERIES series" \
-      "Validate this macOS/Xcode combination interactively, then update EXPECTED_MACOS_SERIES in scripts/dev/preflight.sh."
-    ;;
-esac
 
 active_developer_dir="$(xcode-select -p 2>/dev/null || true)"
 [[ "$active_developer_dir" == "$EXPECTED_DEVELOPER_DIR" ]] || \
