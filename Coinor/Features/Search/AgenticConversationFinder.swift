@@ -7,12 +7,109 @@ struct AgenticFinderCandidate: Codable, Equatable, Identifiable, Sendable {
     let lastActivity: String?
     let archived: Bool
     let pinned: Bool
+    /// Absolute path to this conversation's Grok chat history, when it lives on
+    /// this computer. The finder greps and reads it instead of receiving the
+    /// transcript through its prompt.
+    let transcriptPath: String?
+    /// Set when the conversation belongs to a remote computer, whose transcript
+    /// is not readable from here.
+    let remoteHost: String?
+    /// Only carried for a remote conversation, where there is no local file to
+    /// search. Local conversations leave this empty by design.
     let excerpt: String?
+
+    init(
+        id: String,
+        title: String,
+        project: String,
+        lastActivity: String?,
+        archived: Bool,
+        pinned: Bool,
+        transcriptPath: String? = nil,
+        remoteHost: String? = nil,
+        excerpt: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.project = project
+        self.lastActivity = lastActivity
+        self.archived = archived
+        self.pinned = pinned
+        self.transcriptPath = transcriptPath
+        self.remoteHost = remoteHost
+        self.excerpt = excerpt
+    }
 }
 
 struct AgenticFinderRequest: Codable, Equatable, Sendable {
     let query: String
     let candidates: [AgenticFinderCandidate]
+}
+
+/// The candidate catalog, written to a file the finder reads for itself.
+///
+/// Conversations used to travel inside the prompt. That does not scale: Grok
+/// offloads any prompt past a fixed size to a file and asks the model to read
+/// it back, so a few hundred conversations silently arrived truncated and the
+/// finder answered from whatever survived. The catalog is a file now, and the
+/// prompt only names it, so prompt size no longer depends on how many
+/// conversations exist.
+enum AgenticFinderIndex {
+    static let fileName = "conversations.jsonl"
+
+    /// One JSON object per line: greppable as text, parseable line by line, and
+    /// immune to the escaping problems a flat table would have with transcript
+    /// titles.
+    static func lines(for candidates: [AgenticFinderCandidate]) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let rows = candidates.compactMap { candidate -> String? in
+            guard let data = try? encoder.encode(candidate) else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+        return rows.joined(separator: "\n") + "\n"
+    }
+}
+
+/// The finder's instructions. Fixed size: it names the index instead of
+/// carrying it, so the prompt is the same length for ten conversations and for
+/// ten thousand.
+enum AgenticFinderPrompt {
+    static func text(query: String, indexPath: String) -> String {
+        """
+        You are Conan Code's conversation finder.
+
+        The user is looking for: \(query)
+
+        Every candidate conversation is one JSON object per line in this file:
+        \(indexPath)
+
+        Fields: `id`, `title`, `project`, `lastActivity` (ISO 8601), `archived`, \
+        `pinned`, and then either `transcriptPath` — an absolute path to that \
+        conversation's chat history, which you may grep and read — or \
+        `remoteHost` plus a short `excerpt`, for a conversation that lives on \
+        another computer and whose transcript you cannot read from here.
+
+        How to work:
+        1. Read the index file.
+        2. Shortlist on title, project, and recency.
+        3. Grep the `transcriptPath` files to confirm a shortlisted candidate \
+        or to find one whose title does not mention what the user asked for. \
+        The transcripts are JSONL and the matches are noisy; that is expected.
+        4. Read a transcript only when grep alone is not enough.
+
+        Rules: return at most five matches, and only `id` values that appear in \
+        the index. Never invent a session ID. Set `open` to true only when the \
+        user explicitly asks to open, show, or take them to a conversation. Set \
+        `pin` to true only when they explicitly ask to pin it. An archived match \
+        may still be returned; Conan Code will unarchive it only when `open` is \
+        true. Merely listing or finding results must not mutate anything.
+
+        Write a concise English message. If some conversations could not be \
+        searched — a remote host, or an unreadable transcript — say so rather \
+        than implying the search was complete.
+        """
+    }
 }
 
 struct AgenticFinderMatch: Codable, Equatable, Identifiable, Sendable {
@@ -90,11 +187,6 @@ protocol AgenticConversationFinding: Sendable {
     func cancel()
 }
 
-protocol ConversationExcerptLoading: Sendable {
-    func excerpts(for sessionIDs: [String]) async -> [String: String]
-    func cancel()
-}
-
 private enum AgenticFinderProcessControl {
     static func requestTermination(_ process: Process) {
         guard process.isRunning else { return }
@@ -105,42 +197,6 @@ private enum AgenticFinderProcessControl {
             guard process.isRunning else { return }
             kill(process.processIdentifier, SIGKILL)
         }
-    }
-}
-
-private final class AgenticFinderProcessRegistry: @unchecked Sendable {
-    private let lock = NSLock()
-    private var processes: [ObjectIdentifier: Process] = [:]
-    private var cancelled = false
-
-    func register(_ process: Process) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !cancelled else { return false }
-        processes[ObjectIdentifier(process)] = process
-        return true
-    }
-
-    func unregister(_ process: Process) {
-        lock.lock()
-        processes.removeValue(forKey: ObjectIdentifier(process))
-        lock.unlock()
-    }
-
-    func cancelAll() {
-        lock.lock()
-        cancelled = true
-        let current = Array(processes.values)
-        lock.unlock()
-        for process in current {
-            AgenticFinderProcessControl.requestTermination(process)
-        }
-    }
-
-    var isCancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cancelled
     }
 }
 
@@ -209,103 +265,13 @@ private struct AgenticFinderProcessResult {
     let error: String
 }
 
-final class GrokConversationExcerptLoader: ConversationExcerptLoading, @unchecked Sendable {
-    private static let maximumConcurrentExports = 4
-    private static let maximumExportCaptureBytes = 8 * 1024 * 1024
-    private static let maximumErrorCaptureBytes = 16 * 1024
-
-    let executable: GrokExecutable
-    private let environment: [String: String]
-    private let lock = NSLock()
-    private var activeRegistry: AgenticFinderProcessRegistry?
-
-    init(
-        executable: GrokExecutable,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) {
-        self.executable = executable
-        self.environment = environment
-    }
-
-    func cancel() {
-        currentRegistry()?.cancelAll()
-    }
-
-    func excerpts(for sessionIDs: [String]) async -> [String: String] {
-        let registry = AgenticFinderProcessRegistry()
-        replaceActiveRegistry(with: registry)?.cancelAll()
-        defer { clearActiveRegistry(if: registry) }
-        return await withTaskCancellationHandler {
-            guard !Task.isCancelled else { return [:] }
-            return await withTaskGroup(of: (String, String?).self) { group in
-                var iterator = sessionIDs.makeIterator()
-                for _ in 0..<min(
-                    Self.maximumConcurrentExports,
-                    sessionIDs.count
-                ) {
-                    guard let sessionID = iterator.next() else { break }
-                    group.addTask { [self, registry] in
-                        (
-                            sessionID,
-                            firstUserExcerpt(
-                                sessionID: sessionID,
-                                registry: registry
-                            )
-                        )
-                    }
-                }
-
-                var result: [String: String] = [:]
-                while let (sessionID, excerpt) = await group.next() {
-                    if Task.isCancelled {
-                        group.cancelAll()
-                        registry.cancelAll()
-                        return [:]
-                    }
-                    if let excerpt { result[sessionID] = excerpt }
-                    if let nextSessionID = iterator.next() {
-                        group.addTask { [self, registry] in
-                            (
-                                nextSessionID,
-                                firstUserExcerpt(
-                                    sessionID: nextSessionID,
-                                    registry: registry
-                                )
-                            )
-                        }
-                    }
-                }
-                return result
-            }
-        } onCancel: { [registry] in
-            registry.cancelAll()
-        }
-    }
-
-    private func currentRegistry() -> AgenticFinderProcessRegistry? {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeRegistry
-    }
-
-    private func replaceActiveRegistry(
-        with registry: AgenticFinderProcessRegistry
-    ) -> AgenticFinderProcessRegistry? {
-        lock.lock()
-        defer { lock.unlock() }
-        let previous = activeRegistry
-        activeRegistry = registry
-        return previous
-    }
-
-    private func clearActiveRegistry(
-        if registry: AgenticFinderProcessRegistry
-    ) {
-        lock.lock()
-        if activeRegistry === registry { activeRegistry = nil }
-        lock.unlock()
-    }
-
+/// Reads the first exchanges of a conversation that lives on another
+/// computer, where the finder cannot grep a local transcript.
+///
+/// Local conversations deliberately have no equivalent: exporting hundreds
+/// of them was both slow and pointless once the finder learned to search the
+/// transcripts on disk itself.
+enum GrokConversationExcerptLoader {
     static func remoteExcerpts(
         for sessionIDs: [String],
         executablePath: String,
@@ -328,28 +294,6 @@ final class GrokConversationExcerptLoader: ConversationExcerptLoading, @unchecke
         return result
     }
 
-    private func firstUserExcerpt(
-        sessionID: String,
-        registry: AgenticFinderProcessRegistry
-    ) -> String? {
-        guard !Task.isCancelled, !registry.isCancelled else { return nil }
-        let result: AgenticFinderProcessResult
-        do {
-            result = try runProcess(
-                arguments: ["export", sessionID],
-                registry: registry
-            )
-        } catch {
-            return nil
-        }
-        guard !Task.isCancelled,
-              !registry.isCancelled,
-              result.status == 0 else {
-            return nil
-        }
-        return Self.transcriptExcerpt(result.output)
-    }
-
     private static func transcriptExcerpt(_ transcript: String) -> String? {
         let sections = transcript.components(separatedBy: "\n## ")
         let text = sections.compactMap { section -> String? in
@@ -370,58 +314,6 @@ final class GrokConversationExcerptLoader: ConversationExcerptLoading, @unchecke
         .joined(separator: "\n")
         guard !text.isEmpty else { return nil }
         return String(text.prefix(2_000))
-    }
-
-    private func runProcess(
-        arguments: [String],
-        registry: AgenticFinderProcessRegistry
-    ) throws -> AgenticFinderProcessResult {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        let outputDrain = AgenticFinderPipeDrain(
-            maximumBytes: Self.maximumExportCaptureBytes
-        )
-        let errorDrain = AgenticFinderPipeDrain(
-            maximumBytes: Self.maximumErrorCaptureBytes
-        )
-        process.executableURL = executable.url
-        process.arguments = arguments
-        process.environment = environment
-        process.standardOutput = output
-        process.standardError = errors
-        outputDrain.start(output.fileHandleForReading)
-        errorDrain.start(errors.fileHandleForReading)
-
-        do {
-            try process.run()
-        } catch {
-            outputDrain.stop(output.fileHandleForReading)
-            errorDrain.stop(errors.fileHandleForReading)
-            throw AgenticFinderError.unavailable(
-                "Conan Code could not start Grok conversation export."
-            )
-        }
-        guard registry.register(process) else {
-            AgenticFinderProcessControl.requestTermination(process)
-            process.waitUntilExit()
-            outputDrain.waitForEOF()
-            errorDrain.waitForEOF()
-            throw CancellationError()
-        }
-        defer { registry.unregister(process) }
-
-        if registry.isCancelled {
-            AgenticFinderProcessControl.requestTermination(process)
-        }
-        process.waitUntilExit()
-        outputDrain.waitForEOF()
-        errorDrain.waitForEOF()
-        return AgenticFinderProcessResult(
-            status: process.terminationStatus,
-            output: outputDrain.value(),
-            error: errorDrain.value()
-        )
     }
 }
 
@@ -537,14 +429,20 @@ final class GrokAgenticConversationFinder: AgenticConversationFinding, @unchecke
             attributes: [.posixPermissions: NSNumber(value: 0o700)]
         )
 
-        let requestData = try JSONEncoder().encode(request)
-        let requestJSON = String(decoding: requestData, as: UTF8.self)
-        let prompt = """
-        You are Conan Code's conversation finder. Use only the candidate data below. Return at most five matches. Prefer semantic evidence from title and excerpt, then recency. Never invent a session ID. Set open=true only when the user explicitly asks to open, show, or take them to a conversation. Set pin=true only when they explicitly ask to pin it. An archived match may still be returned; Conan Code will unarchive it only when open=true. Merely listing or finding results must not mutate anything. Write a concise English message.
-
-        REQUEST JSON:
-        \(requestJSON)
-        """
+        let indexURL = workspace.appendingPathComponent(
+            AgenticFinderIndex.fileName,
+            isDirectory: false
+        )
+        try Data(AgenticFinderIndex.lines(for: request.candidates).utf8)
+            .write(to: indexURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o600)],
+            ofItemAtPath: indexURL.path
+        )
+        let prompt = AgenticFinderPrompt.text(
+            query: request.query,
+            indexPath: indexURL.path
+        )
 
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .userInitiated) { [self] in
@@ -688,9 +586,16 @@ final class GrokAgenticConversationFinder: AgenticConversationFinding, @unchecke
         )
     }
 
+    /// `read_file`, `grep`, and `list_dir` are the finder's whole job: it
+    /// searches the conversation index and the transcripts it points at. Every
+    /// tool that could change something, run something, or reach the network
+    /// stays denied, and the process is additionally started with
+    /// `--permission-mode plan`, no memory, no subagents, and no web search.
+    static let allowedTools = ["read_file", "grep", "list_dir"]
+
     private static let disallowedTools = [
-        "run_terminal_cmd", "bash", "read_file", "search_replace",
-        "write", "edit", "list_dir", "grep", "kill_task", "todo_write",
+        "run_terminal_cmd", "bash", "search_replace",
+        "write", "edit", "kill_task", "todo_write",
         "get_task_output", "wait_tasks", "task", "scheduler_create",
         "scheduler_delete", "scheduler_list", "monitor", "search_tool",
         "use_tool", "update_goal", "workflow", "web_search", "web_fetch",

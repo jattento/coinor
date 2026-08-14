@@ -103,7 +103,9 @@ final class AppCoordinator: ObservableObject {
     private let notifications = AttentionNotificationService()
     private var remoteDisconnectEpisodes = RemoteDisconnectNotificationEpisodes()
     private var agenticFinder: GrokAgenticConversationFinder?
-    private var conversationExcerptLoader: GrokConversationExcerptLoader?
+    private let sessionTranscriptLocator = GrokSessionTranscriptLocator(
+        root: GrokSessionTranscriptLocator.defaultRoot()
+    )
     private let isApplicationActive: () -> Bool = { NSApp.isActive }
     private var activationObserver: (any NSObjectProtocol)?
     private let leaderProcessManager = GrokLeaderProcessManager()
@@ -187,9 +189,6 @@ final class AppCoordinator: ObservableObject {
             )
             agenticFinder = finder
             await finder.cleanupPendingSessions()
-            conversationExcerptLoader = GrokConversationExcerptLoader(
-                executable: executable
-            )
             let leaderSocket = try GrokLeaderSocket.coinorDefault(
                 supportDirectory: supportDirectory
             )
@@ -1299,9 +1298,7 @@ final class AppCoordinator: ObservableObject {
         pendingLifecycleCatchup.removeAll()
         completedLifecycleCatchup.removeAll()
         agenticFinder?.cancel()
-        conversationExcerptLoader?.cancel()
         agenticFinder = nil
-        conversationExcerptLoader = nil
         terminalControlAuthorizer.reset()
         terminalControlServer?.stop()
         terminalControlServer = nil
@@ -1472,30 +1469,36 @@ final class AppCoordinator: ObservableObject {
         agenticFinder.map(AgenticConversationFinderModel.init(finder:))
     }
 
+    /// Describes every conversation for the finder. A local conversation is
+    /// described by the path to its transcript, which the finder greps itself;
+    /// only a remote conversation, whose transcript lives on another computer,
+    /// still carries a short excerpt fetched over SSH.
     func agenticFinderCandidates() async -> [AgenticFinderCandidate] {
         let current = summaries
-        let localIDs = current.compactMap { summary in
-            hostAlias(forSession: summary.id) == nil ? summary.id : nil
-        }
-        async let localExcerpts = conversationExcerptLoader?.excerpts(
-            for: localIDs
-        ) ?? [:]
+        let locator = sessionTranscriptLocator
+        async let transcripts = Task.detached(priority: .userInitiated) {
+            locator.transcriptPaths()
+        }.value
         async let remoteExcerpts = remoteAgenticFinderExcerpts(for: current)
-        let excerpts = await localExcerpts.merging(remoteExcerpts) {
-            local, _ in local
-        }
+        let (transcriptPaths, excerpts) = await (transcripts, remoteExcerpts)
+        let formatter = ISO8601DateFormatter()
         return current.map { summary in
-            AgenticFinderCandidate(
+            let remoteHost = hostAlias(forSession: summary.id)
+            return AgenticFinderCandidate(
                 id: summary.id,
                 title: summary.title,
                 project: projectDisplayName(summary.projectID),
                 lastActivity: summary.lastActivityAt.map {
-                    ISO8601DateFormatter().string(from: $0)
+                    formatter.string(from: $0)
                 },
                 archived: metadata.isSessionArchived(summary.id)
                     || metadata.isProjectArchived(summary.projectID),
                 pinned: metadata.isSessionPinned(summary.id),
-                excerpt: excerpts[summary.id]
+                transcriptPath: remoteHost == nil
+                    ? transcriptPaths[summary.id]
+                    : nil,
+                remoteHost: remoteHost?.rawValue,
+                excerpt: remoteHost == nil ? nil : excerpts[summary.id]
             )
         }
     }

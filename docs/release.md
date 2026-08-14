@@ -120,6 +120,20 @@ right once removes the dialog permanently:
 sudo security authorizationdb write system.privilege.taskport allow
 ```
 
+XCUITest asks `testmanagerd` to enter automation mode, which is a *second*
+authorization right: `com.apple.dt.AutomationModeUI`. macOS ships no rule for
+it, so it falls back to authenticating an administrator and raises a Touch ID
+or password dialog on every single run, caching nothing. Neither
+`DevToolsSecurity -enable` nor the `taskport` grant covers it. Grant it once:
+
+```sh
+sudo security authorizationdb write com.apple.dt.AutomationModeUI allow
+```
+
+`scripts/dev/preflight.sh` checks both rights and refuses to continue while
+either is missing, so an unattended run fails with the remediation printed
+instead of stopping on a dialog nobody is there to answer.
+
 Build the arm64 Release bundle:
 
 ```sh

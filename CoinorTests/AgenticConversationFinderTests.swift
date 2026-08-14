@@ -419,6 +419,20 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
             log.write(json.dumps(sys.argv[1:]) + "\n")
         if sys.argv[1:3] == ["sessions", "delete"]:
             sys.exit(0)
+        argv = sys.argv[1:]
+        prompt = argv[argv.index("-p") + 1]
+        index_path = [
+            line.strip() for line in prompt.splitlines()
+            if line.strip().endswith("conversations.jsonl")
+        ][0]
+        with open(index_path, encoding="utf-8") as index:
+            body = index.read()
+        with open(
+            os.path.join(os.environ["FAKE_GROK_HOME"], "captured-index"),
+            "w",
+            encoding="utf-8",
+        ) as out:
+            out.write(body)
         print(json.dumps({
             "structuredOutput": {
                 "message": "I found one conversation.",
@@ -438,7 +452,10 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
     let finder = GrokAgenticConversationFinder(
         executable: fixture.executable,
         supportDirectory: fixture.directory,
-        environment: ["FAKE_GROK_LOG": log.path]
+        environment: [
+            "FAKE_GROK_LOG": log.path,
+            "FAKE_GROK_HOME": fixture.directory.path,
+        ]
     )
 
     let response = try await finder.find(
@@ -452,7 +469,7 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
                     lastActivity: nil,
                     archived: true,
                     pinned: false,
-                    excerpt: "Changing tabs gets slower."
+                    transcriptPath: "/tmp/does-not-matter/chat_history.jsonl"
                 ),
             ]
         )
@@ -470,6 +487,27 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
     #expect(invocations[0].contains("--disallowed-tools"))
     #expect(!invocations[0].contains("--always-approve"))
     #expect(invocations[1].prefix(2) == ["sessions", "delete"])
+
+    // The catalog must reach the finder as a file it can grep, never inlined in
+    // the prompt: Grok offloads an oversized prompt to disk and asks the model
+    // to read it back, which this finder used to be forbidden from doing.
+    let promptIndex = try #require(invocations[0].firstIndex(of: "-p"))
+    let prompt = invocations[0][invocations[0].index(after: promptIndex)]
+    #expect(prompt.contains(AgenticFinderIndex.fileName))
+    #expect(!prompt.contains("Changing tabs gets slower."))
+    #expect(prompt.utf8.count < 8_000)
+
+    let capturedIndex = try String(
+        contentsOf: fixture.directory.appendingPathComponent("captured-index"),
+        encoding: .utf8
+    )
+    let indexed = try JSONDecoder().decode(
+        AgenticFinderCandidate.self,
+        from: Data(capturedIndex.split(separator: "\n")[0].utf8)
+    )
+    #expect(indexed.id == "session-real-path")
+    #expect(indexed.title == "Slow tabs")
+    #expect(indexed.transcriptPath == "/tmp/does-not-matter/chat_history.jsonl")
 }
 
 @Test(
@@ -504,6 +542,19 @@ func liveInstalledGrokFinderListsOpensPinsAndCleansWorkspaces() async throws {
         supportDirectory: supportDirectory
     )
     let token = "coinor-live-finder-\(UUID().uuidString.lowercased())"
+    // Real transcripts on disk, so the live run exercises what the finder
+    // actually does now: read the index, then grep the files it names.
+    func writeTranscript(_ name: String, body: String) throws -> String {
+        let url = supportDirectory.appendingPathComponent(
+            "\(name)-chat_history.jsonl",
+            isDirectory: false
+        )
+        try #"{"type":"user","content":"\#(body)"}"# .replacingOccurrences(
+            of: "\n",
+            with: " "
+        ).write(to: url, atomically: true, encoding: .utf8)
+        return url.path
+    }
     let candidates = [
         AgenticFinderCandidate(
             id: "active-live-candidate",
@@ -512,7 +563,10 @@ func liveInstalledGrokFinderListsOpensPinsAndCleansWorkspaces() async throws {
             lastActivity: "2026-08-13T05:00:00Z",
             archived: false,
             pinned: false,
-            excerpt: "Active conversation about \(token)."
+            transcriptPath: try writeTranscript(
+                "active",
+                body: "Active conversation about \(token)."
+            )
         ),
         AgenticFinderCandidate(
             id: "archived-live-candidate",
@@ -521,7 +575,10 @@ func liveInstalledGrokFinderListsOpensPinsAndCleansWorkspaces() async throws {
             lastActivity: "2026-08-12T05:00:00Z",
             archived: true,
             pinned: false,
-            excerpt: "Archived conversation about \(token)."
+            transcriptPath: try writeTranscript(
+                "archived",
+                body: "Archived conversation about \(token)."
+            )
         ),
     ]
 
@@ -654,79 +711,6 @@ func remoteExcerptLoadingRunsQuotedGrokExportAndUsesTranscriptContext() {
     ])
     #expect(excerpts["session-remote"]?.contains("remote deployment") == true)
     #expect(excerpts["session-remote"]?.contains("SSH leader") == true)
-}
-
-@Test
-func excerptLoadingIsBoundedDrainsPipesAndCanBeCancelled() async throws {
-    let fixture = try TestGrokFixture.make(
-        script: #"""
-        #!/usr/bin/env python3
-        import fcntl
-        import os
-        import sys
-        import time
-
-        state_path = os.environ["FAKE_EXPORT_STATE"]
-        with open(state_path, "a+", encoding="utf-8") as state:
-            fcntl.flock(state, fcntl.LOCK_EX)
-            state.seek(0)
-            values = [int(value) for value in state.read().split() or ["0", "0"]]
-            active = values[0] + 1
-            maximum = max(values[1], active)
-            state.seek(0)
-            state.truncate()
-            state.write(f"{active} {maximum}")
-            state.flush()
-            fcntl.flock(state, fcntl.LOCK_UN)
-        try:
-            sys.stderr.write("e" * 131072)
-            sys.stderr.flush()
-            print("## User")
-            print(f"first prompt for {sys.argv[2]}")
-            print("## Assistant")
-            time.sleep(10)
-        finally:
-            with open(state_path, "r+", encoding="utf-8") as state:
-                fcntl.flock(state, fcntl.LOCK_EX)
-                values = [int(value) for value in state.read().split()]
-                state.seek(0)
-                state.truncate()
-                state.write(f"{max(0, values[0] - 1)} {values[1]}")
-                state.flush()
-                fcntl.flock(state, fcntl.LOCK_UN)
-        """#
-    )
-    defer { try? FileManager.default.removeItem(at: fixture.directory) }
-    let state = fixture.directory.appendingPathComponent("state.txt")
-    try Data("0 0".utf8).write(to: state)
-    let loader = GrokConversationExcerptLoader(
-        executable: fixture.executable,
-        environment: ["FAKE_EXPORT_STATE": state.path]
-    )
-
-    let task = Task {
-        await loader.excerpts(for: (0..<12).map { "session-\($0)" })
-    }
-    var reachedConcurrencyLimit = false
-    for _ in 0..<500 {
-        let values = try String(contentsOf: state, encoding: .utf8)
-            .split(separator: " ")
-            .compactMap { Int($0) }
-        if values.first == 4 {
-            reachedConcurrencyLimit = true
-            break
-        }
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(reachedConcurrencyLimit)
-    task.cancel()
-    let result = await task.value
-
-    #expect(result.isEmpty)
-    let values = try String(contentsOf: state, encoding: .utf8)
-        .split(separator: " ")
-        .compactMap { Int($0) }
-    #expect(values.last == 4)
 }
 
 @Test

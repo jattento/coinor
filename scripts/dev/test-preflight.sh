@@ -102,16 +102,36 @@ fi
 exec "$REAL_DEVTOOLS_SECURITY" "\$@"
 EOF
 
+# Both authorization rights are answered by the shim, never by the host, so a
+# case such as `destination` cannot be masked by whatever this machine happens
+# to have granted.
 cat > "$SHIMS/security" <<EOF
 #!/bin/bash
-if [[ "\${COINOR_PREFLIGHT_TEST_CASE:-}" == "taskport" ]]; then
-  cat <<'PLIST'
+emit_rule() {
+  cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>rule</key><array><string>authenticate-admin</string></array></dict></plist>
+<plist version="1.0"><dict><key>rule</key><array><string>\$1</string></array></dict></plist>
 PLIST
+}
+case "\$1 \$2 \$3" in
+"authorizationdb read system.privilege.taskport")
+  if [[ "\${COINOR_PREFLIGHT_TEST_CASE:-}" == "taskport" ]]; then
+    emit_rule authenticate-admin
+  else
+    emit_rule allow
+  fi
   exit 0
-fi
+  ;;
+"authorizationdb read com.apple.dt.AutomationModeUI")
+  case "\${COINOR_PREFLIGHT_TEST_CASE:-}" in
+  automation-mode-missing) exit 1 ;;
+  automation-mode) emit_rule authenticate-admin ;;
+  *) emit_rule allow ;;
+  esac
+  exit 0
+  ;;
+esac
 exec "$REAL_SECURITY" "\$@"
 EOF
 
@@ -151,6 +171,10 @@ expect_failure sdk "macOS SDK 99.0 is active"
 expect_failure swift "Swift 6 is required"
 expect_failure developer-tools "Developer Tools access is disabled"
 expect_failure taskport "system.privilege.taskport is not pre-authorized"
+expect_failure automation-mode-missing \
+  "com.apple.dt.AutomationModeUI has no authorization rule"
+expect_failure automation-mode \
+  "com.apple.dt.AutomationModeUI is not pre-authorized"
 expect_failure destination "the Coinor scheme has no arm64 macOS destination"
 
 bad_tmp="$SCRATCH/not-a-directory"

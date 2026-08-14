@@ -14,6 +14,50 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.28 Verification
+
+Agent Search searches the conversations on disk instead of pasting them into a
+prompt, and the unattended gate covers the authorization right that actually
+blocked XCUITest. Ships as version `0.5.28` build `35`.
+
+The bug this release fixes: the finder inlined every candidate — title, project
+and up to 2,000 characters of transcript excerpt — into one `-p` prompt. Grok
+offloads any prompt over 25,000 bytes (`LARGE_PROMPT_THRESHOLD` in
+`prompt_build.rs`) to a file and instructs the model to read it back with
+`read_file`, which this finder listed as a disallowed tool. With a catalog of
+420 conversations the prompt was roughly 927 KB against a 25 KB budget, so the
+model saw a truncated fragment, could not read the offloaded remainder, and
+answered confidently from whatever survived. It never disclosed the truncation.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passes, now including
+  `automation_mode_authorization=allow`.
+- `scripts/dev/test-preflight.sh` passes, with new cases for a missing
+  `com.apple.dt.AutomationModeUI` rule and for a rule that is not `allow`. Its
+  `security` shim answers both rights so the cases test the script rather than
+  whatever the host happens to have granted.
+- `scripts/dev/run-tests.sh` passes end to end for the first time on this
+  machine: 312 Swift Testing tests in 33 suites, 46 XCTest cases, and the
+  XCUITest phase, with no authentication dialog. Earlier releases could not run
+  XCUITest at all.
+- `COINOR_RUN_LIVE_AGENTIC_FINDER=1` exercises the finder against the installed
+  Grok: it writes the index, greps the transcripts named in it, and returns
+  structured matches.
+- New regression tests pin the defect directly: the prompt is byte-identical
+  regardless of catalog size and stays under half the offload threshold, while a
+  500-conversation index is deliberately larger than that threshold and lives
+  only in the file.
+- `scripts/release/verify-app.sh`, `git diff --check`, and
+  `scripts/release/security-scan.sh` pass against the release candidate.
+
+Manual verification against the user's real data: an index built from all 691
+on-disk conversations (306 KB) was searched for the daily standup conversation
+in `claude-sandbox`. The finder read the index, grepped the transcripts, and
+returned both `Keyway Daily Standup` sessions plus three related ones in 40
+seconds over five turns. The previous implementation reported that no such
+conversation existed.
+
 ## Conan Code 0.5.27 Verification
 
 A dismissible Agent Search panel, context-scoped remote-disconnect
