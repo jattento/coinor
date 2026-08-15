@@ -7,6 +7,10 @@ private enum Identifier {
     static let sidebar = "AppShellSidebar"
     static let conversationSearch = "AppShellConversationSearch"
     static let terminalRegion = "AppShellTerminalRegion"
+    static let workflowsDestination = "AppShellWorkflowsDestination"
+    static let workflowCenter = "WorkflowCenter"
+    static let workflowRefresh = "WorkflowRefreshButton"
+    static let workflowBack = "WorkflowBackButton"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
 }
 
@@ -111,6 +115,29 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))
     }
 
+    func testWorkflowsDestinationOpensAndReturnsToTheConversation() {
+        let app = launchApp()
+        XCTAssertTrue(element(Identifier.sidebar, in: app).waitForExistence(timeout: 15))
+
+        let workflows = element(Identifier.workflowsDestination, in: app)
+        XCTAssertTrue(workflows.waitForExistence(timeout: 5))
+        workflows.click()
+
+        XCTAssertTrue(
+            element(Identifier.workflowCenter, in: app).waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(
+            app.buttons["Refresh Workflows"].waitForExistence(timeout: 5)
+        )
+
+        let back = app.buttons["Back to Conversation"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.click()
+        XCTAssertTrue(
+            element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 5)
+        )
+    }
+
     func testHealthyStartupClearsDiagnosticsAfterLeaderConnects() {
         let app = launchApp()
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))
@@ -134,11 +161,23 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         wait(forValue: "Off", of: toggle)
 
+        let carriedQuery = "find yesterday remote \(UUID().uuidString)"
+        searchField.click()
+        searchField.typeText(carriedQuery)
+        wait(forValue: carriedQuery, of: searchField)
+
         enableAgentSearch(in: app, toggle: toggle)
         XCTAssertTrue(app.staticTexts["Agent Search"].waitForExistence(timeout: 5))
         wait(forPlaceholder: "Describe the conversation", of: searchField)
+        wait(forValue: carriedQuery, of: searchField)
         XCTAssertTrue(app.buttons["Find"].waitForExistence(timeout: 5))
 
+        toggle.click()
+        wait(forValue: "Off", of: toggle)
+        XCTAssertTrue(app.staticTexts["Agent Search"].waitForNonExistence(timeout: 5))
+        wait(forPlaceholder: "Search conversations", of: searchField)
+
+        enableAgentSearch(in: app, toggle: toggle)
         let firstQuery = "temporary finder query \(UUID().uuidString)"
         searchField.click()
         searchField.typeText(firstQuery)

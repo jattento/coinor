@@ -14,6 +14,39 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.5.29 Verification
+
+Native Grok Workflows, complete live-subagent working state, and exact-once
+Agent Search activation ship as version `0.5.29` build `36`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` passed end to end: 46 XCTest cases, 394 Swift
+  Testing tests in 33 suites, and 5 application-shell XCUITests. The opt-in
+  live remote-host UI test remained skipped because `COINOR_LIVE_REMOTE_HOST`
+  was not set.
+- Workflow tests drive production JSON-RPC requests, snapshot/notification
+  parsing, revision gating, cross-run event ordering, context-generation
+  guards, launch argument validation, and status-specific controls.
+- The real application UI opened the Workflows destination, exposed native
+  refresh/back controls, and returned to the conversation.
+- Subagent activity tests cover idle root plus live child, last-child finish,
+  active root, and `needsInput` precedence. Agent Search tests cover exact text
+  carry-over, single submission, whitespace-only input, dismissal, and repeat
+  activation.
+- The arm64 Release build, `scripts/release/verify-app.sh`, `git diff --check`,
+  and `scripts/release/security-scan.sh` passed against the final bundle.
+- The published archive checksum and GitHub asset digest matched, and the
+  canonical `/Applications/Coinor.app` installation matched the public asset.
+
+Manual/native verification covered normal and compact workflow layouts plus
+loading/no-context behavior. Grok remains the owner of workflow scripts and run
+state; Conan Code only presents and forwards user intent.
+
 ## Conan Code 0.5.28 Verification
 
 Agent Search searches the conversations on disk instead of pasting them into a

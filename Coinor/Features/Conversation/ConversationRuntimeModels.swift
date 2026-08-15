@@ -29,6 +29,18 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable, CaseIterable {
         values.min { $0.rank < $1.rank } ?? .idle
     }
 
+    static func aggregate(
+        root: RuntimeActivity,
+        liveDescendantIDs: [String],
+        descendantActivity: [String: RuntimeActivity]
+    ) -> RuntimeActivity {
+        aggregate(
+            [root] + liveDescendantIDs.map {
+                descendantActivity[$0] ?? .idle
+            }
+        )
+    }
+
     init(grokActivity: GrokSessionActivity) {
         switch grokActivity {
         case .working:
@@ -48,6 +60,14 @@ enum RuntimeActivity: String, Codable, Equatable, Sendable, CaseIterable {
 
     /// Whether the conversation still has work in flight.
     var isBusy: Bool { self == .working }
+
+    /// Activity a descendant pane starts with.
+    ///
+    /// Grok hides `session_kind=subagent` from the roster, so Coinor never
+    /// receives a later working/idle row for that child. A live pane means
+    /// the child is in flight; this seed keeps the conversation spinning
+    /// until the pane closes.
+    static let descendantSeed: RuntimeActivity = .working
 }
 
 /// Why a conversation is asking for the user.

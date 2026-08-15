@@ -135,9 +135,9 @@ final class ConversationRuntime: ObservableObject, Identifiable {
 
     var aggregateActivity: RuntimeActivity {
         RuntimeActivity.aggregate(
-            [rootActivity] + descendants.map {
-                descendantActivity[$0.id] ?? .idle
-            }
+            root: rootActivity,
+            liveDescendantIDs: descendants.map(\.id),
+            descendantActivity: descendantActivity
         )
     }
 
@@ -203,6 +203,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             sessionID: session.id
         )
         bindMainSession(session)
+        descendantActivity[session.id] = .descendantSeed
         descendants.append(session)
         descendants.sort {
             let left = descendantOrders[$0.id] ?? SubagentStartOrder(

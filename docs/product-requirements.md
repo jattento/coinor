@@ -109,6 +109,31 @@ inside expanded projects, and the current search results. It skips project and
 section headers, stops at the first and last visible conversations, and is
 disabled while a drag reorder is active.
 
+## Grok Workflows
+
+The sidebar exposes a first-class `Workflows` destination. The last selected
+conversation is its execution context; switching conversations returns to the
+conversation surface and changes which Grok session subsequent launches and
+controls target.
+
+The native workflow center distinguishes project, personal, built-in, and
+unknown workflow definitions. A launch can use friendly key/value arguments or
+advanced raw JSON, with an explicit agent budget between 1 and 1,024. Coinor
+forwards the selected definition, arguments, and budget to Grok rather than
+copying or editing workflow scripts itself.
+
+Runs update live from Grok and remain inspectable after completion. The center
+shows status, current phase, elapsed time, agent usage, individual agents,
+recent events, pause reasons, and result summaries. Loading, empty, failed,
+paused, blocked, interrupted, budget-limited, completed, cancelled, and unknown
+future states remain distinct. Pause, resume, and stop appear only when Grok's
+status permits them; a budget-limited run requires a new absolute budget above
+both the previous limit and agents already used.
+
+Grok owns workflow discovery, scripts, execution, revisions, and run state.
+Coinor owns responsive native presentation, context selection, validation, and
+forwarding user intent through the private ACP control connection.
+
 ## Remote computers
 
 Conan Code can register other Macs as remote hosts, chosen from the `Host`

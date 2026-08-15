@@ -16,8 +16,26 @@ enum AppShellIdentifier {
     static let searchEmptyState = "AppShellSearchEmptyState"
     static let grokUpdateButton = "AppShellGrokUpdate"
     static let terminalRegion = "AppShellTerminalRegion"
+    static let workflowsDestination = "AppShellWorkflowsDestination"
+    static let workflowCenter = "WorkflowCenter"
+    static let workflowCatalogSearch = "WorkflowCatalogSearch"
+    static let workflowCatalog = "WorkflowCatalog"
+    static let workflowLauncher = "WorkflowLauncher"
+    static let workflowRuns = "WorkflowRuns"
+    static let workflowInspector = "WorkflowInspector"
+    static let workflowLaunchButton = "WorkflowLaunchButton"
+    static let workflowRefreshButton = "WorkflowRefreshButton"
+    static let workflowBackButton = "WorkflowBackButton"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
     static let refreshStartupChecks = "AppShellRefreshStartupChecks"
+
+    static func workflowDefinition(_ name: String) -> String {
+        "WorkflowDefinition.\(name)"
+    }
+
+    static func workflowRun(_ runID: String) -> String {
+        "WorkflowRun.\(runID)"
+    }
 
     static func startupCheckRow(_ kind: StartupCheck.Kind) -> String {
         "AppShellStartupCheck.\(kind.rawValue)"

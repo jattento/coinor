@@ -261,6 +261,27 @@ final class AppFoundationTests: XCTestCase {
             "AppShellGrokUpdate"
         )
         XCTAssertEqual(AppShellIdentifier.terminalRegion, "AppShellTerminalRegion")
+        XCTAssertEqual(
+            AppShellIdentifier.workflowsDestination,
+            "AppShellWorkflowsDestination"
+        )
+        XCTAssertEqual(AppShellIdentifier.workflowCenter, "WorkflowCenter")
+        XCTAssertEqual(AppShellIdentifier.workflowCatalogSearch, "WorkflowCatalogSearch")
+        XCTAssertEqual(AppShellIdentifier.workflowCatalog, "WorkflowCatalog")
+        XCTAssertEqual(AppShellIdentifier.workflowLauncher, "WorkflowLauncher")
+        XCTAssertEqual(AppShellIdentifier.workflowRuns, "WorkflowRuns")
+        XCTAssertEqual(AppShellIdentifier.workflowInspector, "WorkflowInspector")
+        XCTAssertEqual(AppShellIdentifier.workflowLaunchButton, "WorkflowLaunchButton")
+        XCTAssertEqual(AppShellIdentifier.workflowRefreshButton, "WorkflowRefreshButton")
+        XCTAssertEqual(AppShellIdentifier.workflowBackButton, "WorkflowBackButton")
+        XCTAssertEqual(
+            AppShellIdentifier.workflowDefinition("deep-research"),
+            "WorkflowDefinition.deep-research"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.workflowRun("wf_123"),
+            "WorkflowRun.wf_123"
+        )
         XCTAssertEqual(AppShellIdentifier.startupDiagnostics, "AppShellStartupDiagnostics")
         XCTAssertEqual(AppShellIdentifier.refreshStartupChecks, "AppShellRefreshStartupChecks")
         XCTAssertEqual(

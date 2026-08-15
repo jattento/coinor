@@ -682,6 +682,16 @@ final class AgenticConversationFinderModel: ObservableObject {
     }
 }
 
+/// How the sparkle toggle treats whatever is already in the fuzzy field.
+///
+/// The toggle is a mode switch, not a reset. A non-empty string is already
+/// the request, so the panel should run it instead of asking for Return.
+enum AgenticSearchActivation {
+    static func shouldSubmit(carriedQuery: String) -> Bool {
+        !carriedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 /// Presentation state for the sidebar's agent-search panel.
 ///
 /// Opening the panel, dismissing it, and the unavailable fallback are one
@@ -709,6 +719,19 @@ struct AgenticSearchPanelState {
         self.model = model
         unavailableMessage = model == nil ? Self.unavailableMessage : nil
         isPresented = true
+    }
+
+    /// Opens the panel and copies the fuzzy-field text into the AI query.
+    ///
+    /// Returns whether that text should be submitted immediately.
+    @discardableResult
+    mutating func present(
+        _ model: AgenticConversationFinderModel?,
+        carrying query: String
+    ) -> Bool {
+        model?.query = query
+        present(model)
+        return AgenticSearchActivation.shouldSubmit(carriedQuery: query)
     }
 
     /// Closes the panel and cancels whatever the finder was doing.

@@ -645,6 +645,341 @@ func fansRosterChangesOutToEveryListener() async throws {
     await client.shutdown()
 }
 
+// MARK: - Workflows
+
+@Test
+func listsWorkflowsWithExactWireRequest() async throws {
+    let payload = try GrokFixture.json("workflows-list")
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    let workflows = try await client.listWorkflows(sessionID: "session-1")
+
+    #expect(workflows.map(\.name) == [
+        "review-changes",
+        "release-checklist",
+        "personal-notes-triage",
+        "experimental-fork-only",
+    ])
+    let request = try #require(transport.request("_x.ai/workflows/list"))
+    #expect(request["params"] == ["sessionId": "session-1"])
+    await client.shutdown()
+}
+
+@Test
+func snapshotsWorkflowsWithExactWireRequest() async throws {
+    let payload = try GrokFixture.json("workflows-snapshot")
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    let runs = try await client.snapshotWorkflows(sessionID: "session-1")
+
+    #expect(runs.map(\.runID) == ["wf-run-4f2c9a", "wf-run-9b71ee", "wf-run-legacy-minimal"])
+    #expect(runs.allSatisfy { $0.sessionID == "session-1" })
+    let request = try #require(transport.request("_x.ai/workflows/snapshot"))
+    #expect(request["params"] == ["sessionId": "session-1"])
+    await client.shutdown()
+}
+
+@Test
+func launchesWorkflowsWithArbitraryArgsAndOmitsNilValues() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, [
+            "runId": request["params"]?["name"] == "with-args" ? "run-with-args" : "run-minimal",
+            "name": request["params"]?["name"] ?? .null,
+        ]))
+    }
+    let args: GrokJSONValue = .object([
+        "targets": .array([.string("Coinor/Grok"), .int(7), .bool(true), .null]),
+        "options": .object(["strict": .bool(false), "threshold": .double(0.75)]),
+    ])
+
+    let launched = try await client.launchWorkflow(
+        sessionID: "session-1",
+        name: "with-args",
+        args: args,
+        agentBudget: 256
+    )
+    let minimal = try await client.launchWorkflow(
+        sessionID: "session-1",
+        name: "minimal",
+        args: nil,
+        agentBudget: nil
+    )
+
+    #expect(launched == GrokWorkflowLaunchResult(runID: "run-with-args", name: "with-args"))
+    #expect(minimal == GrokWorkflowLaunchResult(runID: "run-minimal", name: "minimal"))
+    let requests = transport.requests.filter { $0["method"]?.stringValue == "_x.ai/workflows/launch" }
+    #expect(requests.count == 2)
+    #expect(requests[0]["params"] == [
+        "sessionId": "session-1",
+        "name": "with-args",
+        "args": args,
+        "agentBudget": 256,
+    ])
+    #expect(requests[1]["params"] == [
+        "sessionId": "session-1",
+        "name": "minimal",
+    ])
+    await client.shutdown()
+}
+
+@Test
+func controlsWorkflowsWithExactWireRequestsAndSuppliedSessionID() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        let operation = request["params"]?["operation"]?.stringValue ?? ""
+        transport.emit(result(for: request, [
+            "run": [
+                "run_id": request["params"]?["runId"] ?? .null,
+                "name": "review-changes",
+                "status": operation == "pause" ? "user_paused" : "active",
+            ],
+        ]))
+    }
+
+    let paused = try await client.controlWorkflow(
+        sessionID: "session-1",
+        runID: "run-1",
+        operation: .pause,
+        agentBudget: nil
+    )
+    let resumed = try await client.controlWorkflow(
+        sessionID: "session-1",
+        runID: "run-1",
+        operation: .resume,
+        agentBudget: 512
+    )
+
+    #expect(paused.sessionID == "session-1")
+    #expect(paused.status == .userPaused)
+    #expect(resumed.sessionID == "session-1")
+    #expect(resumed.status == .active)
+    let requests = transport.requests.filter { $0["method"]?.stringValue == "_x.ai/workflows/control" }
+    #expect(requests.count == 2)
+    #expect(requests[0]["params"] == [
+        "sessionId": "session-1",
+        "runId": "run-1",
+        "operation": "pause",
+    ])
+    #expect(requests[1]["params"] == [
+        "sessionId": "session-1",
+        "runId": "run-1",
+        "operation": "resume",
+        "agentBudget": 512,
+    ])
+    await client.shutdown()
+}
+
+@Test
+func workflowErrorsPreferTheStructuredActionableMessage() async throws {
+    let detail = "agentBudget must be higher than both the current limit (128) and agents used (64)"
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(failure(
+            for: request,
+            code: -32600,
+            message: "Invalid Request",
+            data: [
+                "code": "workflow_budget_not_raised",
+                "message": .string(detail),
+                "data": ["currentLimit": 128, "agentsUsed": 64],
+            ]
+        ))
+    }
+
+    await #expect(throws: GrokControlError.requestFailed(
+        method: GrokMethod.workflowsControl,
+        code: -32600,
+        message: detail,
+        data: nil
+    )) {
+        _ = try await client.controlWorkflow(
+            sessionID: "session-1",
+            runID: "run-1",
+            operation: .resume,
+            agentBudget: 256
+        )
+    }
+    await client.shutdown()
+}
+
+@Test(arguments: [0, 1025])
+func rejectsInvalidWorkflowAgentBudgetsBeforeSending(_ agentBudget: Int) async throws {
+    let (client, transport, _) = try await connectedClient()
+    let requestCount = transport.requests.count
+
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: GrokMethod.workflowsLaunch,
+        detail: "agentBudget must be between 1 and 1024"
+    )) {
+        _ = try await client.launchWorkflow(
+            sessionID: "session-1",
+            name: "review-changes",
+            args: nil,
+            agentBudget: agentBudget
+        )
+    }
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: GrokMethod.workflowsControl,
+        detail: "agentBudget must be between 1 and 1024"
+    )) {
+        _ = try await client.controlWorkflow(
+            sessionID: "session-1",
+            runID: "run-1",
+            operation: .resume,
+            agentBudget: agentBudget
+        )
+    }
+    #expect(transport.requests.count == requestCount)
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["workflows": .null]),
+    GrokJSONValue.object(["workflows": "not-an-array"]),
+])
+func rejectsMalformedWorkflowLists(_ payload: GrokJSONValue) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: GrokMethod.workflowsList,
+        detail: "workflows must be an array"
+    )) {
+        _ = try await client.listWorkflows(sessionID: "session-1")
+    }
+    await client.shutdown()
+}
+
+@Test
+func rejectsMalformedWorkflowListRows() async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, ["workflows": [["description": "missing name"]]]))
+    }
+
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: GrokMethod.workflowsList,
+        detail: "a workflow definition has no name"
+    )) {
+        _ = try await client.listWorkflows(sessionID: "session-1")
+    }
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["runs": .null]),
+    GrokJSONValue.object(["runs": "not-an-array"]),
+])
+func rejectsMalformedWorkflowSnapshots(_ payload: GrokJSONValue) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: GrokMethod.workflowsSnapshot,
+        detail: "runs must be an array"
+    )) {
+        _ = try await client.snapshotWorkflows(sessionID: "session-1")
+    }
+    await client.shutdown()
+}
+
+@Test
+func rejectsMalformedWorkflowSnapshotRows() async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, ["runs": [["name": "missing run", "status": "active"]]]))
+    }
+
+    await #expect(throws: GrokControlError.malformedPayload(
+        method: "workflow_updated",
+        detail: "a workflow run has no run_id"
+    )) {
+        _ = try await client.snapshotWorkflows(sessionID: "session-1")
+    }
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["runId": "", "name": "review-changes"]),
+    GrokJSONValue.object(["runId": "run-1", "name": ""]),
+])
+func rejectsMalformedWorkflowLaunchPayloads(_ payload: GrokJSONValue) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    await #expect(throws: GrokControlError.self) {
+        _ = try await client.launchWorkflow(
+            sessionID: "session-1",
+            name: "review-changes",
+            args: nil,
+            agentBudget: nil
+        )
+    }
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["run": .null]),
+    GrokJSONValue.object(["run": "not-an-object"]),
+    GrokJSONValue.object(["run": ["name": "missing run", "status": "active"]]),
+])
+func rejectsMalformedWorkflowControlPayloads(_ payload: GrokJSONValue) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, payload))
+    }
+
+    await #expect(throws: GrokControlError.self) {
+        _ = try await client.controlWorkflow(
+            sessionID: "session-1",
+            runID: "run-1",
+            operation: .stop,
+            agentBudget: nil
+        )
+    }
+    await client.shutdown()
+}
+
+@Test
+func workflowUpdatesPublishWithoutDisruptingSubagentLifecycle() async throws {
+    let (client, transport, _) = try await connectedClient()
+    var events = await client.events().makeAsyncIterator()
+    transport.emit(try GrokFixture.json("workflow-updated"))
+
+    guard case let .workflowUpdated(run)? = await events.next() else {
+        Issue.record("the workflow update was not decoded")
+        return
+    }
+    #expect(run.runID == "wf-run-4f2c9a")
+    #expect(run.sessionID == "00000000-0000-7000-8000-000000000001")
+
+    transport.emit([
+        "jsonrpc": "2.0",
+        "method": "_x.ai/session_notification",
+        "params": [
+            "sessionId": "root",
+            "update": [
+                "sessionUpdate": "subagent_spawned",
+                "child_session_id": "child",
+                "parent_session_id": "root",
+            ],
+        ],
+    ])
+    guard case let .subagentLifecycle(observation)? = await events.next() else {
+        Issue.record("the subagent lifecycle update was disrupted")
+        return
+    }
+    #expect(observation.childSessionID == "child")
+    #expect(observation.kind == .started)
+    await client.shutdown()
+}
+
 // MARK: - Subagent lifecycle
 
 @Test

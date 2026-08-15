@@ -48,6 +48,7 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var warningMessage: String?
     @Published var selectedSessionID: String?
     @Published var showsArchivedItems = false
+    let workflowCenter = WorkflowCenterModel()
     /// Set by the sidebar while the add/manage remote-computer interface is
     /// presented, so a disconnect can interrupt only where it is relevant.
     @Published var isRemoteHostsInterfacePresented = false
@@ -413,6 +414,221 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    // MARK: - Workflow center
+
+    /// Sets the workflow center's execution context to the current
+    /// conversation and loads its catalog and run snapshot. Does not change
+    /// selection or launch any terminal.
+    func prepareWorkflowCenter() {
+        guard let sessionID = selectedSessionID,
+              let summary = summaries.first(where: { $0.id == sessionID }) else {
+            workflowCenter.enterNoContext()
+            return
+        }
+        let generation = workflowCenter.beginContext(
+            sessionID: sessionID,
+            conversationTitle: summary.title,
+            projectTitle: projectDisplayName(summary.projectID),
+            remoteHostTitle: hostAlias(forSession: sessionID)?.rawValue
+        )
+        loadWorkflowCenter(sessionID: sessionID, generation: generation)
+    }
+
+    /// Reloads the current workflow center context's catalog and run
+    /// snapshot. A no-op with no context.
+    func refreshWorkflowCenter() {
+        guard let sessionID = workflowCenter.context?.sessionID else { return }
+        loadWorkflowCenter(sessionID: sessionID, generation: workflowCenter.generation)
+    }
+
+    private func loadWorkflowCenter(sessionID: String, generation: Int) {
+        guard let control = controlClient(forSession: sessionID) else {
+            let message = "Conan Code has no control connection for this conversation."
+            workflowCenter.beginCatalogLoad(generation: generation, sessionID: sessionID)
+            workflowCenter.failCatalogLoad(
+                generation: generation,
+                sessionID: sessionID,
+                error: message
+            )
+            workflowCenter.beginRunsLoad(generation: generation, sessionID: sessionID)
+            workflowCenter.failRunsLoad(
+                generation: generation,
+                sessionID: sessionID,
+                error: message
+            )
+            return
+        }
+        loadWorkflowCatalog(sessionID: sessionID, generation: generation, control: control)
+        loadWorkflowRuns(sessionID: sessionID, generation: generation, control: control)
+    }
+
+    private func loadWorkflowCatalog(
+        sessionID: String,
+        generation: Int,
+        control: GrokControlClient
+    ) {
+        workflowCenter.beginCatalogLoad(generation: generation, sessionID: sessionID)
+        Task { [weak self] in
+            do {
+                let definitions = try await control.listWorkflows(sessionID: sessionID)
+                self?.workflowCenter.completeCatalogLoad(
+                    generation: generation,
+                    sessionID: sessionID,
+                    definitions: definitions
+                )
+            } catch {
+                self?.workflowCenter.failCatalogLoad(
+                    generation: generation,
+                    sessionID: sessionID,
+                    error: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func loadWorkflowRuns(
+        sessionID: String,
+        generation: Int,
+        control: GrokControlClient
+    ) {
+        workflowCenter.beginRunsLoad(generation: generation, sessionID: sessionID)
+        Task { [weak self] in
+            do {
+                let runs = try await control.snapshotWorkflows(sessionID: sessionID)
+                self?.workflowCenter.completeRunsLoad(
+                    generation: generation,
+                    sessionID: sessionID,
+                    runs: runs
+                )
+            } catch {
+                self?.workflowCenter.failRunsLoad(
+                    generation: generation,
+                    sessionID: sessionID,
+                    error: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    /// Launches a workflow in the current context's conversation. The launch
+    /// response carries no run state, so once it succeeds the run snapshot is
+    /// reloaded to show the run's initial state even if its first
+    /// `workflow_updated` notification has not arrived yet.
+    func launchWorkflow(name: String, args: GrokJSONValue?, agentBudget: Int?) {
+        guard let context = workflowCenter.context else { return }
+        let sessionID = context.sessionID
+        let generation = workflowCenter.generation
+        let actionID = "launch:\(name)"
+        guard let control = controlClient(forSession: sessionID) else {
+            workflowCenter.beginAction(
+                actionID,
+                generation: generation,
+                sessionID: sessionID
+            )
+            workflowCenter.failAction(
+                actionID,
+                generation: generation,
+                sessionID: sessionID,
+                error: "Conan Code has no control connection for this conversation."
+            )
+            return
+        }
+        workflowCenter.beginAction(
+            actionID,
+            generation: generation,
+            sessionID: sessionID
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await control.launchWorkflow(
+                    sessionID: sessionID,
+                    name: name,
+                    args: args,
+                    agentBudget: agentBudget
+                )
+                guard self.workflowCenter.generation == generation,
+                      self.workflowCenter.context?.sessionID == sessionID else { return }
+                self.workflowCenter.endAction(
+                    actionID,
+                    generation: generation,
+                    sessionID: sessionID
+                )
+                self.loadWorkflowRuns(
+                    sessionID: sessionID,
+                    generation: generation,
+                    control: control
+                )
+            } catch {
+                self.workflowCenter.failAction(
+                    actionID,
+                    generation: generation,
+                    sessionID: sessionID,
+                    error: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    /// Pauses, resumes, or stops a run in the current context's conversation.
+    /// The run the control call returns is ingested directly, so the model
+    /// reflects it without waiting for a notification.
+    func controlWorkflow(
+        runID: String,
+        operation: GrokWorkflowControlOperation,
+        agentBudget: Int?
+    ) {
+        guard let context = workflowCenter.context else { return }
+        let sessionID = context.sessionID
+        let generation = workflowCenter.generation
+        let actionID = "control:\(runID):\(operation.rawValue)"
+        guard let control = controlClient(forSession: sessionID) else {
+            workflowCenter.beginAction(
+                actionID,
+                generation: generation,
+                sessionID: sessionID
+            )
+            workflowCenter.failAction(
+                actionID,
+                generation: generation,
+                sessionID: sessionID,
+                error: "Conan Code has no control connection for this conversation."
+            )
+            return
+        }
+        workflowCenter.beginAction(
+            actionID,
+            generation: generation,
+            sessionID: sessionID
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let run = try await control.controlWorkflow(
+                    sessionID: sessionID,
+                    runID: runID,
+                    operation: operation,
+                    agentBudget: agentBudget
+                )
+                guard self.workflowCenter.generation == generation,
+                      self.workflowCenter.context?.sessionID == sessionID else { return }
+                self.workflowCenter.ingest(run)
+                self.workflowCenter.endAction(
+                    actionID,
+                    generation: generation,
+                    sessionID: sessionID
+                )
+            } catch {
+                self.workflowCenter.failAction(
+                    actionID,
+                    generation: generation,
+                    sessionID: sessionID,
+                    error: error.localizedDescription
+                )
+            }
+        }
+    }
+
     // MARK: - Remote hosts
 
     /// Aliases from `~/.ssh/config` that are not registered yet. Conan Code
@@ -721,6 +937,8 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
+                case .workflowUpdated(let run):
+                    self.workflowCenter.ingest(run)
                 case .notification:
                     continue
                 case .terminated(let error):
@@ -1821,6 +2039,8 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
+                case .workflowUpdated(let run):
+                    self.workflowCenter.ingest(run)
                 case .terminated(let error):
                     await self.controlTerminated(
                         control,

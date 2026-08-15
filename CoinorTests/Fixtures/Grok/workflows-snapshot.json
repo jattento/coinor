@@ -1,0 +1,79 @@
+{
+  "result": {
+    "sessionId": "00000000-0000-7000-8000-000000000001",
+    "runs": [
+      {
+        "run_id": "wf-run-4f2c9a",
+        "revision": 9,
+        "name": "review-changes",
+        "objective": "Review the outstanding diff for correctness, style, and test coverage before opening a pull request.",
+        "status": "complete",
+        "foreground": false,
+        "phases": [
+          { "title": "Plan", "state": "complete" },
+          { "title": "Review", "state": "complete" },
+          { "title": "Summarize", "state": "complete" }
+        ],
+        "current_phase": "Summarize",
+        "agent_budget": 128,
+        "agents_used": 5,
+        "agents_reserved": 0,
+        "agents_remaining": 123,
+        "agent_usage_incomplete": false,
+        "elapsed_ms": 91340,
+        "active_agents": 0,
+        "current_agent_label": null,
+        "agents": [
+          {
+            "agent_id": "agent-1",
+            "label": "reviewer-1",
+            "phase": "Review",
+            "model": "grok-4",
+            "state": "complete",
+            "tokens_used": 18234,
+            "duration_ms": 15020
+          }
+        ],
+        "last_event": "run_complete",
+        "last_event_detail": "All reviewers finished with no blocking findings.",
+        "last_event_timestamp": "2026-08-05T18:30:10.001Z",
+        "pause_message": null,
+        "result_summary": "No blocking issues found; two style nits filed as follow-ups."
+      },
+      {
+        "run_id": "wf-run-9b71ee",
+        "revision": 3,
+        "name": "release-checklist",
+        "objective": "Cut release 1.4.0.",
+        "status": "budget_limited",
+        "foreground": true,
+        "phases": [
+          { "title": "Build", "state": "complete" },
+          { "title": "Test", "state": "active" }
+        ],
+        "current_phase": "Test",
+        "agent_budget": 1024,
+        "agents_used": 1024,
+        "agents_reserved": 0,
+        "agents_remaining": 0,
+        "agent_usage_incomplete": true,
+        "elapsed_ms": 512300,
+        "active_agents": 0,
+        "current_agent_label": null,
+        "agents": [],
+        "last_event": "budget_exhausted",
+        "last_event_detail": "Run stopped after using its full 1024-agent budget.",
+        "last_event_timestamp": "2026-08-05T19:02:44.900Z",
+        "pause_message": "Resume with a higher agentBudget to continue.",
+        "result_summary": null
+      },
+      {
+        "run_id": "wf-run-legacy-minimal",
+        "revision": 1,
+        "name": "legacy-minimal",
+        "status": "failed",
+        "elapsed_ms": 1200
+      }
+    ]
+  }
+}

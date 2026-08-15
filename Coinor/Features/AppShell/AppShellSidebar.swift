@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppShellSidebar: View {
     @ObservedObject var coordinator: AppCoordinator
+    @Binding var destination: AppShellDestination
     @StateObject private var reorder = SidebarReorderModel()
 
     @State private var renameSessionID: String?
@@ -24,6 +25,8 @@ struct AppShellSidebar: View {
             if agenticSearch.isPresented {
                 agenticSearchPanel
             }
+
+            workflowDestinationRow
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -223,6 +226,46 @@ struct AppShellSidebar: View {
         }
     }
 
+    private var workflowDestinationRow: some View {
+        SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
+            Button {
+                reorder.cancel()
+                if agenticSearch.isPresented {
+                    dismissAgenticSearch()
+                }
+                destination = .workflows
+                coordinator.prepareWorkflowCenter()
+            } label: {
+                HStack(spacing: SidebarStyle.iconGap) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: SidebarStyle.iconWidth)
+                    Text("Workflows")
+                        .font(SidebarStyle.projectFont)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .padding(.horizontal, SidebarStyle.rowPadding)
+                .frame(height: SidebarReorderMetrics.projectHeaderHeight)
+                .background(
+                    SidebarRowBackground(
+                        isSelected: destination == .workflows,
+                        isHovered: isHovered
+                    )
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, SidebarStyle.rowInset)
+            .padding(.vertical, 5)
+            .accessibilityLabel("Workflows")
+            .accessibilityIdentifier(AppShellIdentifier.workflowsDestination)
+        }
+    }
+
     @ViewBuilder
     private var searchResultsSection: some View {
         VStack(alignment: .leading, spacing: SidebarStyle.rowSpacing) {
@@ -318,6 +361,7 @@ struct AppShellSidebar: View {
             isReordering: reorder.isActive
         ) {
         case let .activate(sessionID):
+            destination = .conversation
             coordinator.selectConversation(sessionID)
         case .ignore:
             break
@@ -638,10 +682,15 @@ struct AppShellSidebar: View {
 
     private func presentAgenticSearch() {
         let model = coordinator.makeAgenticFinderModel()
+        let carried = searchText
         searchText = ""
         reorder.cancel()
+        var shouldSubmit = false
         withAnimation(.easeOut(duration: 0.16)) {
-            agenticSearch.present(model)
+            shouldSubmit = agenticSearch.present(model, carrying: carried)
+        }
+        if shouldSubmit {
+            submitAgenticSearch()
         }
         Task { @MainActor in
             await Task.yield()
@@ -948,7 +997,8 @@ struct AppShellSidebar: View {
                 isReordering: reorder.isActive
             )
 
-            let isSelected = coordinator.selectedSessionID == conversation.id
+            let isSelected = destination == .conversation
+                && coordinator.selectedSessionID == conversation.id
 
             Button {
                 activateConversation(conversation.id)

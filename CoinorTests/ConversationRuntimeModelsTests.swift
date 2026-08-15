@@ -241,6 +241,47 @@ func needsInputWinsAggregationAndRoutesFocusToFirstPane() {
 }
 
 @Test
+func liveDescendantActivityKeepsTheConversationWorkingUntilItFinishes() {
+    let childID = "child"
+    let childActivity = [childID: RuntimeActivity.descendantSeed]
+
+    let whileChildIsLive = RuntimeActivity.aggregate(
+        root: .idle,
+        liveDescendantIDs: [childID],
+        descendantActivity: childActivity
+    )
+    #expect(whileChildIsLive == .working)
+    #expect(
+        ConversationIndicator.resolve(
+            activity: whileChildIsLive,
+            attention: nil
+        ) == .working
+    )
+
+    #expect(
+        RuntimeActivity.aggregate(
+            root: .idle,
+            liveDescendantIDs: [],
+            descendantActivity: childActivity
+        ) == .idle
+    )
+    #expect(
+        RuntimeActivity.aggregate(
+            root: .working,
+            liveDescendantIDs: [],
+            descendantActivity: childActivity
+        ) == .working
+    )
+    #expect(
+        RuntimeActivity.aggregate(
+            root: .needsInput,
+            liveDescendantIDs: [childID],
+            descendantActivity: childActivity
+        ) == .needsInput
+    )
+}
+
+@Test
 func activityAggregationIsStableAcrossOrdering() {
     let permutations: [[RuntimeActivity]] = [
         [.working, .failed],
