@@ -135,26 +135,21 @@ taskport_rule="$(
     "system.privilege.taskport is not pre-authorized for unattended UI tests" \
     "Before leaving the machine unattended, run sudo security authorizationdb write system.privilege.taskport allow and rerun scripts/dev/preflight.sh."
 
-# XCUITest asks testmanagerd to enter automation mode, which is authorized by
-# com.apple.dt.AutomationModeUI. macOS ships no rule for that right, so it falls
-# back to authenticating an administrator and raises a Touch ID / password
-# dialog on EVERY run — an unattended session cannot answer it, and an attended
-# one is asked again the next time. Granting the right once is what makes the
-# dialog stop.
-automation_payload="$(
-  security authorizationdb read com.apple.dt.AutomationModeUI 2>/dev/null
-)" || fail \
-  "com.apple.dt.AutomationModeUI has no authorization rule, so XCUITest will raise a Touch ID prompt it cannot answer" \
-  "Run sudo security authorizationdb write com.apple.dt.AutomationModeUI allow once, then rerun scripts/dev/preflight.sh."
-automation_rule="$(
-  printf '%s' "$automation_payload" \
-    | plutil -extract rule.0 raw -o - - 2>/dev/null \
-    || true
-)"
-[[ "$automation_rule" == "allow" ]] || \
-  fail \
-    "com.apple.dt.AutomationModeUI is not pre-authorized for unattended UI tests" \
-    "Run sudo security authorizationdb write com.apple.dt.AutomationModeUI allow once, then rerun scripts/dev/preflight.sh."
+# XCUITest asks testmanagerd to enter automation mode, a privileged machine
+# state guarded by Authorization Services rather than by an authorization
+# database right. Until the machine is configured to enter it without
+# authenticating, every run raises a Touch ID / password dialog that an
+# unattended session cannot answer, and the runner fails with "Timed out while
+# enabling automation mode".
+automation_status="$(automationmodetool 2>&1 || true)"
+case "$automation_status" in
+  *"DOES NOT REQUIRE user authentication"*) ;;
+  *)
+    fail \
+      "automation mode still requires user authentication, so XCUITest will raise a Touch ID prompt it cannot answer" \
+      "Run automationmodetool enable-automationmode-without-authentication once and authenticate as an administrator, then rerun scripts/dev/preflight.sh."
+    ;;
+esac
 
 [[ -f "$REPO_ROOT/Coinor.xcodeproj/project.pbxproj" ]] || \
   fail "Coinor.xcodeproj is missing" "Run the preflight from a complete Coinor checkout."
@@ -194,5 +189,5 @@ printf 'macos_sdk=%s\n' "$sdk_version"
 printf 'swift=%s\n' "$swift_version"
 printf 'developer_tools_security=enabled\n'
 printf 'taskport_authorization=allow\n'
-printf 'automation_mode_authorization=allow\n'
+printf 'automation_mode=no-authentication-required\n'
 printf 'destination=platform:macOS,arch:arm64\n'

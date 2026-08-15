@@ -120,19 +120,26 @@ right once removes the dialog permanently:
 sudo security authorizationdb write system.privilege.taskport allow
 ```
 
-XCUITest asks `testmanagerd` to enter automation mode, which is a *second*
-authorization right: `com.apple.dt.AutomationModeUI`. macOS ships no rule for
-it, so it falls back to authenticating an administrator and raises a Touch ID
-or password dialog on every single run, caching nothing. Neither
-`DevToolsSecurity -enable` nor the `taskport` grant covers it. Grant it once:
+XCUITest asks `testmanagerd` to enter automation mode, a privileged machine
+state guarded by Authorization Services instead of by an authorization database
+right. Until the machine is configured to enter it without authenticating, every
+run raises a Touch ID or password dialog that caches nothing, and an unattended
+runner dies with `Timed out while enabling automation mode`. Neither
+`DevToolsSecurity -enable` nor the `taskport` grant covers it, and `sudo` does
+not satisfy it either: the tool authenticates an administrator in the shell.
+Configure it once:
 
 ```sh
-sudo security authorizationdb write com.apple.dt.AutomationModeUI allow
+automationmodetool enable-automationmode-without-authentication
 ```
 
-`scripts/dev/preflight.sh` checks both rights and refuses to continue while
-either is missing, so an unattended run fails with the remediation printed
-instead of stopping on a dialog nobody is there to answer.
+`automationmodetool` with no arguments reports the state; it must print
+`DOES NOT REQUIRE user authentication`. The setting survives reboots.
+
+`scripts/dev/preflight.sh` checks the `taskport` grant and the automation mode
+state, and refuses to continue while either is missing, so an unattended run
+fails with the remediation printed instead of stopping on a dialog nobody is
+there to answer.
 
 Build the arm64 Release bundle:
 

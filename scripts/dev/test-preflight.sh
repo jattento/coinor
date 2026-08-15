@@ -113,16 +113,19 @@ case "\$1 \$2 \$3" in
   fi
   exit 0
   ;;
-"authorizationdb read com.apple.dt.AutomationModeUI")
-  case "\${COINOR_PREFLIGHT_TEST_CASE:-}" in
-  automation-mode-missing) exit 1 ;;
-  automation-mode) emit_rule authenticate-admin ;;
-  *) emit_rule allow ;;
-  esac
-  exit 0
-  ;;
 esac
 exec "$REAL_SECURITY" "\$@"
+EOF
+
+cat > "$SHIMS/automationmodetool" <<EOF
+#!/bin/bash
+if [[ "\${COINOR_PREFLIGHT_TEST_CASE:-}" == "automation-mode" ]]; then
+  echo "Automation Mode is disabled."
+  echo "This device requires user authentication to enable Automation Mode."
+  exit 0
+fi
+echo "Automation Mode is disabled."
+echo "This device DOES NOT REQUIRE user authentication to enable Automation Mode."
 EOF
 
 cat > "$SHIMS/pgrep" <<EOF
@@ -160,10 +163,8 @@ expect_failure sdk "macOS SDK 99.0 is active"
 expect_failure swift "Swift 6 is required"
 expect_failure developer-tools "Developer Tools access is disabled"
 expect_failure taskport "system.privilege.taskport is not pre-authorized"
-expect_failure automation-mode-missing \
-  "com.apple.dt.AutomationModeUI has no authorization rule"
 expect_failure automation-mode \
-  "com.apple.dt.AutomationModeUI is not pre-authorized"
+  "automation mode still requires user authentication"
 expect_failure destination "the Coinor scheme has no arm64 macOS destination"
 
 bad_tmp="$SCRATCH/not-a-directory"
