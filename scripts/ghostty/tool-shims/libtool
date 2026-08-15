@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Ghostty's LibtoolStep invokes a bare `libtool`, which resolves to Apple's
+# cctools libtool. From Xcode 26 that libtool silently drops every archive
+# member whose data does not start on an 8-byte boundary, and Zig 0.15.2 emits
+# roughly half of its members at offset % 8 == 4 — including the object that
+# holds the Ghostty core. The archive links clean and exports nothing.
+# build.sh puts this directory first on PATH and points COINOR_LIBTOOL_BIN at
+# llvm-libtool-darwin, which pads misaligned members instead of discarding them.
+exec "${COINOR_LIBTOOL_BIN:?COINOR_LIBTOOL_BIN is unset; run scripts/ghostty/build.sh}" "$@"

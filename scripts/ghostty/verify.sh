@@ -162,7 +162,23 @@ actual_resources_sha="$(sha256_tree "$resources")"
 
 file "$library" | grep -q 'current ar archive' || die "Ghostty library is not a static archive"
 
-if nm -gU "$library" 2>/dev/null | grep -qi sentry; then
+# Checksums only prove the archive is the one this build produced, not that it
+# is usable: an archiver that drops members yields a well-formed archive that
+# exports nothing and fails at app link time. Assert the entry points the app
+# actually calls.
+library_symbols="$(nm -gU "$library" 2>/dev/null)"
+for required_symbol in \
+  _ghostty_app_new \
+  _ghostty_app_free \
+  _ghostty_app_tick \
+  _ghostty_app_set_focus \
+  _ghostty_app_update_config
+do
+  grep -q " T $required_symbol\$" <<<"$library_symbols" || \
+    die "Ghostty static library does not export $required_symbol; the archiver dropped members"
+done
+
+if grep -qi sentry <<<"$library_symbols"; then
   die "Ghostty static library unexpectedly exports Sentry symbols"
 fi
 

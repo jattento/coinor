@@ -14,6 +14,17 @@ zig="$("$SCRIPT_DIR/bootstrap.sh")"
 /usr/bin/xcrun --sdk macosx metal --version >/dev/null 2>&1 || \
   die "Xcode Metal Toolchain is required; install it with: xcodebuild -downloadComponent MetalToolchain"
 
+# Ghostty archives the build with a bare `libtool`. Apple's cctools libtool from
+# Xcode 26 discards every archive member that is not 8-byte aligned, which is
+# most of what Zig 0.15.2 emits, and the resulting archive exports none of the
+# Ghostty core. llvm-libtool-darwin pads those members instead, so the shim
+# directory takes over the name for this build.
+libtool_bin="${COINOR_LIBTOOL_BIN:-$(brew --prefix llvm@20 2>/dev/null)/bin/llvm-libtool-darwin}"
+[[ -x "$libtool_bin" ]] || \
+  die "llvm-libtool-darwin is required to archive Ghostty; install it with brew install llvm@20, or set COINOR_LIBTOOL_BIN."
+export COINOR_LIBTOOL_BIN="$libtool_bin"
+export PATH="$SCRIPT_DIR/tool-shims:$PATH"
+
 rm -rf \
   "$GHOSTTY_INSTALL_PREFIX" \
   "$GHOSTTY_ARTIFACT_ROOT" \
