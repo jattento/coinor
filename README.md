@@ -24,8 +24,9 @@ paths retain the internal name Coinor for compatibility.
 - A compatible custom Grok executable at `~/bin/grok`
 - Fresh available as `fresh`
 - Lazygit available as `lazygit`
-- Internet access and Xcode's optional Metal Toolchain only when rebuilding
-  the pinned Ghostty artifact
+- Only when rebuilding the pinned Ghostty artifact: internet access, Xcode's
+  optional Metal Toolchain, a patched Zig 0.15.2 (`brew install zig@0.15`) and
+  `llvm-libtool-darwin` (`brew install llvm@20`)
 
 Conan Code runs outside App Sandbox and uses a local ad-hoc signature. It is not
 notarized and is not intended for App Store distribution.
@@ -42,10 +43,11 @@ scripts/dev/preflight.sh
 ```
 
 The preflight is read-only with respect to system configuration. It verifies
-that the validated macOS/Xcode/SDK combination is selected, the Xcode license
-and first-launch components are already complete, Developer Tools and taskport
-authorization will not raise an authentication dialog, Swift 6 and the arm64
-macOS destination are available, and build/temp directories are writable. If
+that the validated Xcode/SDK combination is selected, the Xcode license
+and first-launch components are already complete, Developer Tools access,
+`system.privilege.taskport` and automation mode will not raise an
+authentication dialog, Swift 6 and the arm64 macOS destination are available,
+and build/temp directories are writable. If
 an administrator action is required, the script fails before work begins and
 prints the exact remediation; perform it interactively, then rerun the
 preflight before leaving the machine unattended.

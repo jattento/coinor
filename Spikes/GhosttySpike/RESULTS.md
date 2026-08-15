@@ -50,8 +50,10 @@ Apple Swift 6.2.3
 System Zig 0.16.0
 ```
 
-The system Zig is intentionally not used for Ghostty. The scripts bootstrap
-the pinned Zig 0.15.2 toolchain required by Ghostty v1.3.1.
+The system Zig is intentionally not used for Ghostty: Ghostty v1.3.1 requires
+Zig 0.15.2. The scripts resolve it from `COINOR_ZIG_BIN`, else Homebrew's
+patched `zig@0.15`, else the SHA-pinned ziglang.org tarball, which no longer
+links against the Xcode 26 SDK.
 
 ## Reproduction
 

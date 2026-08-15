@@ -17,8 +17,10 @@ and no writes into `grok-build` or `~/.grok/config.toml`.
 ## Conan Code 0.5.28 Verification
 
 Agent Search searches the conversations on disk instead of pasting them into a
-prompt, and the unattended gate covers the authorization right that actually
-blocked XCUITest. Ships as version `0.5.28` build `35`.
+prompt, and the unattended gate grew a check for what was then believed to be
+the authorization right blocking XCUITest. That belief was wrong and a later
+release replaced the check; see the automation mode section of
+`docs/release.md`. Ships as version `0.5.28` build `35`.
 
 The bug this release fixes: the finder inlined every candidate — title, project
 and up to 2,000 characters of transcript excerpt — into one `-p` prompt. Grok
@@ -31,12 +33,14 @@ answered confidently from whatever survived. It never disclosed the truncation.
 
 Automated verification:
 
-- `scripts/dev/preflight.sh` passes, now including
-  `automation_mode_authorization=allow`.
-- `scripts/dev/test-preflight.sh` passes, with new cases for a missing
+- `scripts/dev/preflight.sh` passed, then including
+  `automation_mode_authorization=allow`. That key and its check no longer
+  exist.
+- `scripts/dev/test-preflight.sh` passed, then with cases for a missing
   `com.apple.dt.AutomationModeUI` rule and for a rule that is not `allow`. Its
-  `security` shim answers both rights so the cases test the script rather than
-  whatever the host happens to have granted.
+  `security` shim answered both rights so the cases tested the script rather
+  than whatever the host happened to have granted. Those cases are gone: that
+  right governs nothing.
 - `scripts/dev/run-tests.sh` passes end to end for the first time on this
   machine: 312 Swift Testing tests in 33 suites, 46 XCTest cases, and the
   XCUITest phase, with no authentication dialog. Earlier releases could not run
@@ -84,13 +88,14 @@ Automated verification:
 - `git diff --check` passes; `scripts/release/security-scan.sh` passes against
   the release candidate bundle.
 
-XCUITest remains unrunnable unattended on this machine. `testmanagerd` raises a
-SecurityAgent authorization prompt — *"XCTest is trying to Enable UI
-Automation"* — that requires Touch ID or the account password. It is an
-Authorization Services right, not a TCC toggle, so a synthetic click cannot
-answer it and `security authorizationdb write` needs `sudo`. The runner
-therefore fails with `Timed out while enabling automation mode` before any test
-executes. This release does not claim a completed XCUITest run.
+XCUITest was unrunnable unattended on this machine at the time of this release.
+`testmanagerd` raised a SecurityAgent authorization prompt — *"XCTest is trying
+to Enable UI Automation"* — that required Touch ID or the account password, and
+the runner failed with `Timed out while enabling automation mode` before any
+test executed. This release does not claim a completed XCUITest run. The
+remedy, found later, is `automationmodetool
+enable-automationmode-without-authentication`; no `security authorizationdb`
+write affects this gate.
 
 Manual and automated UX verification was performed instead through `peekaboo`
 4.0.0, which does hold Screen Recording and Accessibility, against a running

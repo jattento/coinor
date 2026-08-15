@@ -36,14 +36,16 @@ Read `CONTEXT.md`, `docs/product-requirements.md`, `docs/architecture.md`,
 - Before accepting unattended or overnight build, test, UI automation, or
   release work, run `scripts/dev/preflight.sh` and require it to pass before
   the user leaves. Do not begin unattended work and discover Xcode setup later.
-- The validated build host uses `/Applications/Xcode.app` with the macOS,
-  Xcode, build, and SDK versions pinned in `scripts/dev/preflight.sh`. Treat an
-  OS or Xcode update as an explicit toolchain migration: validate it
-  interactively, update the pins, and rerun the preflight before unattended
-  work.
+- The validated build host uses `/Applications/Xcode.app` with the Xcode
+  version, Xcode build, and SDK versions pinned in `scripts/dev/preflight.sh`.
+  Treat an OS or Xcode update as an explicit toolchain migration: validate it
+  interactively, update the Xcode and SDK pins, and rerun the preflight before
+  unattended work.
 - Never accept the Xcode license, run Xcode first-launch setup, enable
-  Developer Tools access, or change `system.privilege.taskport` during an
-  unattended run. Those require human/admin preparation before the run starts.
+  Developer Tools access, change `system.privilege.taskport`, or configure
+  automation mode during an unattended run. Those require human/admin
+  preparation before the run starts; automation mode in particular authenticates
+  an administrator in the shell, which `sudo` does not satisfy.
 - Use `apply_patch` for manual file edits.
 - Keep changes within the ownership assigned by the root agent.
 - Do not weaken, skip, disable, or delete tests.

@@ -40,10 +40,11 @@ release work:
 scripts/dev/preflight.sh
 ```
 
-The gate pins the validated macOS, Xcode build, and macOS SDK combination and
-checks the Xcode license, first-launch components, Developer Tools access,
-`system.privilege.taskport`, Swift 6, the arm64 macOS destination, and writable
-build/temp directories. It never changes system configuration. If it fails,
+The gate pins the validated Xcode build and macOS SDK combination and checks the
+Xcode license, first-launch components, Developer Tools access,
+`system.privilege.taskport`, automation mode without authentication, Swift 6,
+the arm64 macOS destination, and writable build/temp directories. The host
+macOS version is reported, not enforced. It never changes system configuration. If it fails,
 perform the printed administrator or GUI remediation while a human is present,
 then rerun it successfully before starting unattended work.
 
@@ -57,9 +58,14 @@ then rerun it successfully before starting unattended work.
 - executable Fresh available as `fresh`
 - executable Lazygit available as `lazygit`
 
-Rebuilding Ghostty additionally requires internet access and Xcode's optional
-Metal Toolchain. Normal Coinor builds do not require either after
-`Vendor/Ghostty` has been installed.
+Rebuilding Ghostty additionally requires internet access, Xcode's optional Metal
+Toolchain, a patched Zig 0.15.2 (`brew install zig@0.15`) and
+`llvm-libtool-darwin` (`brew install llvm@20`). Stock Zig 0.15.2 from
+ziglang.org cannot link against the Xcode 26 SDK, and Apple's `libtool` from
+Xcode 26 silently drops archive members that are not 8-byte aligned, which
+removes the Ghostty core from the static library. `COINOR_ZIG_BIN` and
+`COINOR_LIBTOOL_BIN` override both tools. Normal Coinor builds require none of
+this after `Vendor/Ghostty` has been installed.
 
 ## Prepare Ghostty
 
@@ -74,7 +80,10 @@ scripts/ghostty/test-verification.sh
 ```
 
 The verifier binds the Ghostty tag and commit to the public header, static
-library, complete XCFramework, resources, and terminfo checksums. Do not mix
+library, complete XCFramework, resources, and terminfo checksums, and asserts
+that the static library still exports the Ghostty entry points the app calls.
+Checksums alone cannot catch an archiver that drops members: the archive stays
+well formed and matches its own manifest while exporting nothing. Do not mix
 files from different Ghostty builds.
 
 ## Build

@@ -14,8 +14,10 @@ integration boundaries had passing evidence.
 
 ## Environment and boundaries
 
-The validated host is macOS 26.5.1 on arm64 with Xcode 26.2, Swift 6.2.3, and
-the pinned Zig 0.15.2 used only from Coinor's ignored build cache.
+The host validated for Phase 0 was macOS 26.5.1 on arm64 with Xcode 26.2,
+Swift 6.2.3, and the pinned Zig 0.15.2 used only from Coinor's ignored build
+cache. Zig is now resolved through `COINOR_ZIG_BIN` or Homebrew's patched
+`zig@0.15`; see `docs/release.md`.
 
 The custom Grok binary under test reports:
 
@@ -118,8 +120,9 @@ unproven API boundary: scale/display forwarding and wake reconciliation are
 implemented and executed.
 
 The optional Xcode Metal Toolchain is required only to rebuild Ghostty from
-source. It was removed after the recorded clean build and currently reports
-`Status: uninstalled`.
+source. It was removed after the recorded clean build and reported
+`Status: uninstalled` at the time. A source rebuild now needs more than the
+Metal Toolchain; `docs/release.md` carries the current prerequisites.
 
 Detailed evidence: `Spikes/GhosttySpike/RESULTS.md`.
 
@@ -210,7 +213,8 @@ Detailed evidence: `Spikes/HookSpike/RESULTS.md`.
 
 - GhosttyKit's C API is unstable, so the header, static framework, resources,
   and commit pin must continue to move as one artifact.
-- A fresh Ghostty source build requires Xcode's optional Metal Toolchain.
+- A fresh Ghostty source build requires Xcode's optional Metal Toolchain, plus
+  the patched Zig and archiver listed in `docs/release.md`.
 - The current artifact is arm64-only, matching Coinor's personal Apple Silicon
   target.
 - Physical mixed-scale display movement and physical sleep/wake still require
