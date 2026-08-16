@@ -64,9 +64,28 @@ struct GrokSkillDescriptor: Sendable {
         ]
     )
 
+    static let providerHealth = GrokSkillDescriptor(
+        directoryName: "provider-health",
+        files: [
+            File(
+                resource: "provider-health-SKILL",
+                resourceExtension: "md",
+                installedName: "SKILL.md",
+                permissions: 0o600
+            ),
+            File(
+                resource: "provider-health",
+                resourceExtension: "sh",
+                installedName: "provider-health.sh",
+                permissions: 0o700
+            ),
+        ]
+    )
+
     static let all: [GrokSkillDescriptor] = [
         longRunningTerminals,
         sidechat,
+        providerHealth,
     ]
 }
 

@@ -17,11 +17,66 @@ private func temporaryHome() throws -> URL {
 }
 
 @Test
-func skillInstallerShipsBothConanCodeSkills() {
+func skillInstallerShipsEveryConanCodeSkill() {
     let directories = GrokSkillDescriptor.all.map(\.directoryName)
 
     #expect(directories.contains("conan-code-long-running"))
     #expect(directories.contains("sidechat"))
+    #expect(directories.contains("provider-health"))
+}
+
+/// The script is shipped, not compiled, so nothing else would catch a syntax
+/// error in it before the user runs a provider check for real.
+@Test
+func installedProviderHealthScriptParsesAndReportsWithoutAnyProviderTooling()
+    throws
+{
+    let home = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    try GrokSkillInstaller(skills: [.providerHealth]).install(homeDirectory: home)
+    let script = home
+        .appendingPathComponent(".grok/skills/provider-health/provider-health.sh")
+        .path
+
+    let syntax = try runShell(arguments: ["-n", script], environment: [:])
+    #expect(syntax.status == 0, Comment(rawValue: syntax.output))
+
+    // A machine with neither cliproxyapi nor codexbar must still get a report
+    // naming what is missing, rather than a crash or an empty run. `PATH` is
+    // stripped to the system binaries so no real provider tooling is found.
+    let bare = try runShell(
+        arguments: [script, "check"],
+        environment: [
+            "PATH": "/usr/bin:/bin",
+            "HOME": home.path,
+            "GROK_HOME": home.appendingPathComponent(".grok").path,
+            "PROVIDER_HEALTH_CLIPROXY_BIN": "",
+            "PROVIDER_HEALTH_CLIPROXY_CONF": "",
+        ]
+    )
+    #expect(bare.status == 2, Comment(rawValue: bare.output))
+    #expect(bare.output.contains("cliproxyapi"))
+    #expect(bare.output.contains("not installed"))
+}
+
+/// The report is the only place a credential could leak, so pin that it names
+/// providers and expiries and never the secret material next to them.
+@Test
+func providerHealthSkillDocumentsItsSecretHandling() throws {
+    let home = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    try GrokSkillInstaller(skills: [.providerHealth]).install(homeDirectory: home)
+    let skill = try String(
+        contentsOf: home.appendingPathComponent(
+            ".grok/skills/provider-health/SKILL.md"
+        ),
+        encoding: .utf8
+    )
+
+    #expect(skill.contains("never prints, copies, or transmits a secret value"))
+    #expect(skill.contains("does not run login flows"))
 }
 
 @Test
