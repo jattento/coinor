@@ -1,7 +1,7 @@
 ---
 name: provider-health
-description: Verify that every configured AI provider actually works, and repair the ones that do not. Checks the CLIProxyAPI proxy every model routes through, the expiry of each provider credential, live quota from the codexbar CLI, and whether every model named in Grok's config and in the subagent router is really served. Use whenever a model call fails for a reason that smells like the provider rather than the request, when a subagent falls back to another model unexpectedly, when quota or credentials look stale, or when the user asks to check, verify, fix, or re-authenticate providers. Also use before starting long unattended work that depends on several providers. Runs on both the personal and the work Mac, and checks the other machine too when it is reachable.
-allowed-tools: run_terminal_command
+description: Verify that every configured AI provider actually works, and repair the ones that do not, including driving the Google OAuth flow in the browser to renew an expired credential. Checks the CLIProxyAPI proxy every model routes through, the expiry of each provider credential, live quota from the codexbar CLI, and whether every model named in Grok's config and in the subagent router is really served. Use whenever a model call fails for a reason that smells like the provider rather than the request, when a subagent falls back to another model unexpectedly, when quota or credentials look stale, or when the user asks to check, verify, fix, or re-authenticate providers. Also use before starting long unattended work that depends on several providers. Runs on both the personal and the work Mac, and checks the other machine too when it is reachable.
+allowed-tools: run_terminal_command, chrome-devtools
 user-invocable: true
 compatibility: Requires cliproxyapi and codexbar on the machine being checked. Reports what is missing instead of failing when one of them is absent.
 ---
@@ -22,6 +22,10 @@ sh ~/.grok/skills/provider-health/provider-health.sh <command>
 | `check --json` | Same report as structured JSON, for when you need to reason over it. |
 | `check --with-remote [alias]` | Local report, then the same report from the other Mac when it is reachable. |
 | `fix` | Applies the repairs that need no human, then re-runs the check. |
+| `login <provider>` | Starts an OAuth re-authentication and prints the URL to drive. Returns immediately. |
+| `login-wait <provider> [s]` | Waits for that login to finish and reports the result. |
+| `login-paste <provider> <url>` | Recovery: hands the callback URL to a login whose listener already closed. |
+| `login-cancel <provider>` | Abandons a login in progress. |
 | `remote <alias>` | Runs `check` on the other Mac only. |
 
 Exit code: `0` healthy, `1` degraded, `2` broken.
@@ -35,16 +39,43 @@ Exit code: `0` healthy, `1` degraded, `2` broken.
 
 ## Repairing
 
-Run `fix` first. It handles what can be done unattended — currently restarting the proxy when it is down or not serving a catalog — and then re-checks.
+Run `fix` first for the unattended repairs — currently restarting the proxy when it is down or not serving a catalog. Then re-check.
 
-**It deliberately does not run login flows.** Every provider re-authentication is an OAuth or device-code flow that needs a human at a browser, so the report prints the exact command instead:
+## Renewing an expired credential
 
+Drive this yourself with the browser tools. The browser already holds the Google session, so the flow is choose-account plus confirm; no password is ever typed and none should be.
+
+```sh
+sh ~/.grok/skills/provider-health/provider-health.sh login <provider>
 ```
-FAIL  antigravity/...  expired-181d-ago-on-2026-02-16
-                       -> /opt/homebrew/bin/cliproxyapi -antigravity-login
+
+It prints the authentication URL and returns immediately, leaving the login process running and its callback port open.
+
+1. Navigate the browser to the printed URL.
+2. **Take an accessibility snapshot and click the account whose text contains `jose.attento@gmail.com`.** There are several Google accounts signed in and the others belong to different organisations, so match the email exactly — never pick by position. Use the snapshot `uid`, not a JavaScript `.click()`: a synthetic click does not advance Google's account chooser.
+3. Google then shows a confirmation screen titled about having downloaded the app from Google. Click its **Iniciar sesión** / **Sign in** button. Verify the email shown on that screen is the right one before clicking.
+4. Collect the result:
+
+```sh
+sh ~/.grok/skills/provider-health/provider-health.sh login-wait <provider>
 ```
 
-Give the user those commands to run. Do not start one in the background: it will hang waiting for input that never comes.
+Success looks like `ok: authentication saved to /Users/.../<provider>-....json`.
+
+Then re-run `check` and confirm the credential moved out of `FAIL`. A freshly minted token often reads `expires-today`, which is normal for a short-lived credential that refreshes itself.
+
+### When it goes wrong
+
+- **The browser lands on a `127.0.0.1` or `localhost` page that refused to connect.** The login process died before the callback arrived, usually because too much time passed. The authorisation code is still in the address bar, so recover without redoing the flow:
+  ```sh
+  sh ~/.grok/skills/provider-health/provider-health.sh login-paste <provider> '<full url from the address bar>'
+  ```
+- **Starting over.** `login-cancel <provider>` kills anything in flight; `login` also clears a previous attempt on its own.
+- **Do not run `cliproxyapi -<provider>-login` directly.** It reads stdin, so it dies instantly on EOF when started in the background, and it hangs forever when started in the foreground. The `login` command exists because it holds stdin open for exactly this reason.
+
+A different Google identity is a different credential: entries such as `gemini-cli/google-one-*` belong to other accounts, so signing in as `jose.attento@gmail.com` will not clear them. Ask the user before touching those.
+
+Override the expected account with `PROVIDER_HEALTH_GOOGLE_ACCOUNT` when working on a machine that uses a different one.
 
 ## The other Mac
 

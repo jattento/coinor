@@ -24,9 +24,15 @@ WITH_REMOTE=0
 REMOTE_ALIAS=""
 CMD="check"
 
+LOGIN_PROVIDER=""
+LOGIN_ARG=""
+
 while [ $# -gt 0 ]; do
   case "$1" in
     check|fix) CMD="$1"; shift ;;
+    login|login-wait|login-paste|login-cancel)
+      CMD="$1"; LOGIN_PROVIDER="${2-}"; LOGIN_ARG="${3-}"
+      shift; [ $# -gt 0 ] && shift; [ $# -gt 0 ] && shift ;;
     remote) CMD="remote"; REMOTE_ALIAS="${2-}"; shift 2 2>/dev/null || shift ;;
     --json) JSON=1; shift ;;
     --with-remote) WITH_REMOTE=1; [ -n "${2-}" ] && case "$2" in -*) ;; *) REMOTE_ALIAS="$2"; shift ;; esac; shift ;;
@@ -434,6 +440,113 @@ run_remote() {
     | sed 's/^/  /'
 }
 
+# ------------------------------------------------------- 7. driven logins ---
+# Every provider re-auth is an OAuth flow: the binary prints a URL, listens on
+# a random localhost callback port, and *also* offers to accept the callback URL
+# pasted on stdin. Two consequences shape everything below.
+#
+# It reads stdin, so a plain background start dies instantly on EOF. Its stdin
+# is held open by a FIFO opened read-write, which never signals EOF and never
+# blocks the way a write-only open would.
+#
+# And it must still be running when the browser finishes, or the callback lands
+# on a closed port. So `login` returns immediately with the URL, the caller
+# drives the browser, and `login-wait` collects the result.
+
+login_state_dir() { echo "${TMPDIR:-/tmp}/provider-health-login-$1"; }
+
+login_start() {
+  local provider="$1" flag dir
+  [ -n "$provider" ] || { echo "usage: login <provider>"; return 2; }
+  flag=$(login_flag_for "$provider")
+  [ -n "$flag" ] || { echo "no login flow known for '$provider'"; return 2; }
+  [ -n "$CLIPROXY_BIN" ] || { echo "cliproxyapi is not installed here"; return 2; }
+
+  dir=$(login_state_dir "$provider")
+  login_cancel "$provider" >/dev/null 2>&1
+  rm -rf "$dir"; mkdir -p "$dir" || return 2
+  mkfifo "$dir/stdin" || return 2
+
+  # 3<> keeps a reader and a writer on the FIFO for the life of this shell, so
+  # the child never sees EOF even though nothing has written to it yet.
+  exec 3<>"$dir/stdin"
+  nohup "$CLIPROXY_BIN" "$flag" <"$dir/stdin" >"$dir/log" 2>&1 &
+  echo $! >"$dir/pid"
+
+  local i url
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    sleep 1
+    url=$(grep -oE 'https://[^ ]*(oauth|auth|login)[^ ]*' "$dir/log" 2>/dev/null | head -1)
+    [ -n "$url" ] && break
+  done
+
+  if [ -z "$url" ]; then
+    echo "no authentication URL appeared within 15s; the log is at $dir/log"
+    return 1
+  fi
+
+  echo "provider:  $provider"
+  echo "account:   ${PROVIDER_HEALTH_GOOGLE_ACCOUNT:-jose.attento@gmail.com}"
+  # Providers disagree on the callback host: gemini uses 127.0.0.1, antigravity
+  # uses localhost. Accept either so the reported port is never blank.
+  echo "callback:  $(echo "$url" | sed -n 's/.*\(127\.0\.0\.1\|localhost\)%3A\([0-9]*\).*/\1:\2/p')"
+  echo "url:       $url"
+  echo
+  echo "now drive the browser to that url, then run: login-wait $provider"
+}
+
+login_wait() {
+  local provider="$1" seconds="${2:-180}" dir pid i
+  dir=$(login_state_dir "$provider")
+  [ -f "$dir/pid" ] || { echo "no login in progress for '$provider'"; return 2; }
+  pid=$(cat "$dir/pid")
+
+  i=0
+  while [ "$i" -lt "$seconds" ]; do
+    if ! ps -p "$pid" >/dev/null 2>&1; then
+      # Providers word this differently ("Authentication successful." vs
+      # "Antigravity authentication successful!"), so match the shape rather
+      # than one provider's exact sentence.
+      if grep -qiE 'authentication (successful|saved to)' "$dir/log" 2>/dev/null; then
+        echo "ok: $(grep -io 'authentication saved to .*' "$dir/log" | head -1)"
+        rm -rf "$dir"
+        return 0
+      fi
+      echo "login exited without succeeding; last lines:"
+      grep -viE 'plugin|pluginhost|^$' "$dir/log" 2>/dev/null | tail -5
+      rm -rf "$dir"
+      return 1
+    fi
+    sleep 2
+    i=$((i + 2))
+  done
+  echo "still waiting after ${seconds}s — the browser flow is not finished."
+  echo "if the browser reached a 127.0.0.1 page that refused to connect, the"
+  echo "callback listener is gone; recover with:"
+  echo "  login-paste $provider '<the full 127.0.0.1 url from the address bar>'"
+  return 1
+}
+
+# The paste path is the recovery route when the callback cannot be delivered:
+# the authorization code is in the browser's address bar even when the page
+# itself failed to load.
+login_paste() {
+  local provider="$1" url="$2" dir
+  dir=$(login_state_dir "$provider")
+  [ -p "$dir/stdin" ] || { echo "no login in progress for '$provider'"; return 2; }
+  [ -n "$url" ] || { echo "usage: login-paste <provider> <callback-url>"; return 2; }
+  printf '%s\n' "$url" >"$dir/stdin"
+  login_wait "$provider" 30
+}
+
+login_cancel() {
+  local provider="$1" dir
+  dir=$(login_state_dir "$provider")
+  [ -f "$dir/pid" ] && kill "$(cat "$dir/pid")" 2>/dev/null
+  rm -rf "$dir"
+  echo "cancelled any login in progress for '$provider'"
+}
+
 # --------------------------------------------------------------------- run --
 run_all_checks() {
   FINDINGS=""; STATUS=0
@@ -444,6 +557,10 @@ run_all_checks() {
 }
 
 case "$CMD" in
+  login)        login_start  "$LOGIN_PROVIDER"; exit $? ;;
+  login-wait)   login_wait   "$LOGIN_PROVIDER" "${LOGIN_ARG:-180}"; exit $? ;;
+  login-paste)  login_paste  "$LOGIN_PROVIDER" "$LOGIN_ARG"; exit $? ;;
+  login-cancel) login_cancel "$LOGIN_PROVIDER"; exit $? ;;
   remote)
     run_remote "$(resolve_remote_alias)"
     exit $?

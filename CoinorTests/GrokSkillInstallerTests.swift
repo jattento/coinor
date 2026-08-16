@@ -60,8 +60,11 @@ func installedProviderHealthScriptParsesAndReportsWithoutAnyProviderTooling()
     #expect(bare.output.contains("not installed"))
 }
 
-/// The report is the only place a credential could leak, so pin that it names
-/// providers and expiries and never the secret material next to them.
+/// The skill drives a real OAuth flow against a real account, so pin the three
+/// invariants that keep that safe: no secret is ever printed, no password is
+/// ever typed because the browser already holds the session, and the account is
+/// chosen by exact email — several Google accounts are signed in and picking
+/// the wrong one silently binds the wrong identity.
 @Test
 func providerHealthSkillDocumentsItsSecretHandling() throws {
     let home = try temporaryHome()
@@ -76,7 +79,9 @@ func providerHealthSkillDocumentsItsSecretHandling() throws {
     )
 
     #expect(skill.contains("never prints, copies, or transmits a secret value"))
-    #expect(skill.contains("does not run login flows"))
+    #expect(skill.contains("no password is ever typed"))
+    #expect(skill.contains("jose.attento@gmail.com"))
+    #expect(skill.contains("match the email exactly"))
 }
 
 @Test
