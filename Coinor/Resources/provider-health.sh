@@ -46,6 +46,14 @@ done
 # the proxy port and the SSH alias are all discovered, so the same script runs
 # unchanged on the personal and the work Mac.
 
+# How to invoke this script again, so the repairs it prints can be run verbatim.
+# Abbreviated to ~ so a repair line stays readable in the report.
+case "$0" in
+  /*) SELF_PATH="$0" ;;
+  *)  SELF_PATH="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/$(basename "$0")" ;;
+esac
+SELF="sh $(printf '%s' "$SELF_PATH" | sed "s|^$HOME|~|")"
+
 find_bin() { command -v "$1" 2>/dev/null; }
 
 # Explicit overrides win over discovery. They keep the script honest on a Mac
@@ -144,9 +152,41 @@ login_flag_for() {
     claude)         echo "-claude-login" ;;
     codex)          echo "-codex-login" ;;
     gemini|gemini-cli|geminicli) echo "-geminicli-login" ;;
-    github-copilot) echo "-copilot-login" ;;
+    github-copilot|copilot) echo "-copilot-login" ;;
     kimi)           echo "-kimi-login" ;;
     *)              echo "" ;;
+  esac
+}
+
+# codexbar, cliproxyapi and the credential filenames each use their own name
+# for the same provider. Everything downstream repairs by the cliproxyapi name,
+# so normalise here rather than in three places.
+canonical_provider() {
+  case "$1" in
+    gemini|gemini-cli|geminicli) echo "geminicli" ;;
+    github-copilot|copilot)      echo "copilot" ;;
+    opencodego)                  echo "opencode-go" ;;
+    *)                           echo "$1" ;;
+  esac
+}
+
+# The repair a caller should actually run. Emitting `cliproxyapi -x-login`
+# here would be wrong twice over: it hangs when run directly, and it
+# contradicts this skill's own instructions.
+repair_for() {
+  local provider canonical flag
+  provider="$1"
+  canonical=$(canonical_provider "$provider")
+  flag=$(login_flag_for "$canonical")
+  if [ -n "$flag" ]; then
+    echo "$SELF login $canonical   (drive the browser, then: $SELF login-wait $canonical)"
+    return
+  fi
+  case "$canonical" in
+    opencode|opencode-go)
+      echo "api key, not OAuth: check the openai-compatibility api-key in ${CLIPROXY_CONF:-the cliproxyapi config}" ;;
+    *)
+      echo "no automatic repair known for '$provider'" ;;
   esac
 }
 
@@ -215,11 +255,22 @@ PY
     subject="$provider"
     [ -n "$account" ] && subject="$provider/$account"
 
+    # A short-lived access token that expired minutes ago is not broken: its
+    # refresh token renews it on the next call. Only a credential that is
+    # stale by more than a day is worth waking someone for.
+    local age
+    age=$(echo "$detail" | sed -n 's/^expired-\([0-9]*\)d-ago.*/\1/p')
+
     case "$state" in
       ok)       note ok   credentials "$subject" "$detail" ;;
-      expiring) note warn credentials "$subject" "$detail" "${CLIPROXY_BIN:-cliproxyapi} $flag" ;;
-      expired)  note fail credentials "$subject" "$detail" \
-                  "${flag:+${CLIPROXY_BIN:-cliproxyapi} $flag}" ;;
+      expiring) note ok   credentials "$subject" "$detail (short-lived; the refresh token renews it)" ;;
+      expired)
+        if [ -n "$age" ] && [ "$age" -lt 1 ]; then
+          note ok credentials "$subject" "$detail (short-lived; the refresh token renews it)"
+        else
+          note fail credentials "$subject" "$detail" "$(repair_for "$provider")"
+        fi
+        ;;
       # A credential with no expiry field is a refresh-token or API-key style
       # secret: nothing local can prove it still works, so it is reported as
       # informational and the live proof is the codexbar and proxy checks.
@@ -280,7 +331,20 @@ for e in entries:
     if [ "$state" = ok ]; then
       note ok codexbar "$provider" "$detail"
     else
-      note warn codexbar "$provider" "$detail" "$CODEXBAR usage --provider $provider"
+      # codexbar talking to the provider is the only check that proves a token
+      # is really alive, so this is a failure rather than a warning.
+      #
+      # But codexbar keeps its own credentials, separate from the proxy's:
+      # re-authenticating cliproxyapi does not repair codexbar's view and vice
+      # versa. When its error names the fix, that instruction wins.
+      local hint
+      hint=$(printf '%s' "$detail" | sed -n 's/.*[Rr]un `\([^`]*\)`.*/\1/p')
+      if [ -n "$hint" ]; then
+        note fail codexbar "$provider" "$detail" \
+          "$hint   (codexbar's own credential store, separate from the proxy's)"
+      else
+        note fail codexbar "$provider" "$detail" "$(repair_for "$provider")"
+      fi
     fi
   done <<EOF
 $summary
@@ -548,12 +612,50 @@ login_cancel() {
 }
 
 # --------------------------------------------------------------------- run --
+# A credential file is a claim; codexbar talking to the provider is evidence.
+# When they disagree the file is the one that is wrong, and that combination is
+# the most misleading state possible: everything local looks fine while calls
+# fail. Name it explicitly so nobody trusts the expiry date.
+check_contradictions() {
+  local line level area subject detail canon dead
+  dead=""
+  while IFS='|' read -r level area subject detail _; do
+    [ "$area" = codexbar ] || continue
+    [ "$level" = fail ] || continue
+    dead="$dead $(canonical_provider "$subject")"
+  done <<EOF
+$FINDINGS
+EOF
+  [ -n "$dead" ] || return 0
+
+  # One provider can own several credential files, so report the provider once
+  # rather than once per file.
+  local seen=""
+  while IFS='|' read -r level area subject detail _; do
+    [ "$area" = credentials ] || continue
+    [ "$level" = ok ] || continue
+    canon=$(canonical_provider "$(echo "$subject" | cut -d/ -f1)")
+    case " $seen " in *" $canon "*) continue ;; esac
+    case " $dead " in
+      *" $canon "*)
+        seen="$seen $canon"
+        note fail contradictions "$canon" \
+          "the proxy credential reads healthy but codexbar's provider check rejects it — the two keep separate credential stores" \
+          "$(repair_for "$canon")"
+        ;;
+    esac
+  done <<EOF
+$FINDINGS
+EOF
+}
+
 run_all_checks() {
   FINDINGS=""; STATUS=0
   check_proxy
   check_credentials
   check_codexbar
   check_configured_models
+  check_contradictions
 }
 
 case "$CMD" in

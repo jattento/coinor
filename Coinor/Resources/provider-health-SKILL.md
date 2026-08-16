@@ -39,7 +39,19 @@ Exit code: `0` healthy, `1` degraded, `2` broken.
 
 ## Repairing
 
-Run `fix` first for the unattended repairs — currently restarting the proxy when it is down or not serving a catalog. Then re-check.
+**Every `->` line in the report is a command to run, not advice to relay.** The report already resolved which repair applies to which provider, so execute it rather than reasoning about it again. Only stop and ask the user when the repair touches an account that is not theirs (see the note on other Google identities below).
+
+Run `fix` first for the unattended repairs — currently restarting the proxy when it is down or not serving a catalog. Then re-check, and work the remaining `->` lines top down.
+
+## What each section proves
+
+The sections are not equally trustworthy, and the difference matters:
+
+- A **credential file** is a *claim*. Its expiry date says when the token was minted to last, not whether it still works. A token revoked server-side leaves the file looking perfectly healthy.
+- **codexbar** talking to the provider is *evidence*. It is the only check here that proves a token is really alive, which is why a codexbar error is a failure rather than a warning.
+- The **contradictions** section fires when the two disagree: the file reads healthy and the provider still rejects the token. That is the most misleading state possible, because everything local looks fine while calls fail. Trust the provider, not the file.
+
+A credential that expired less than a day ago is reported as healthy on purpose: these are short-lived access tokens and their refresh token renews them on the next call. Only staleness measured in days means something is actually broken.
 
 ## Renewing an expired credential
 
