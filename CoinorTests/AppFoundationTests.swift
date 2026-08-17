@@ -262,6 +262,10 @@ final class AppFoundationTests: XCTestCase {
         )
         XCTAssertEqual(AppShellIdentifier.terminalRegion, "AppShellTerminalRegion")
         XCTAssertEqual(
+            AppShellIdentifier.telegramLiveTurn,
+            "AppShellTelegramLiveTurn"
+        )
+        XCTAssertEqual(
             AppShellIdentifier.workflowsDestination,
             "AppShellWorkflowsDestination"
         )

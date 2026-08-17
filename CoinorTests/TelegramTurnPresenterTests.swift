@@ -20,9 +20,17 @@ private func observation(
 
 @Test
 func phoneTurnPublishesOneWorkingDraftThenOneFinalAnswer() {
-    var presenter = TelegramTurnPresenter()
+    var presenter = TelegramTurnPresenter(userText: "Manda ok")
+    #expect(presenter.live.userText == "Manda ok")
     #expect(presenter.consume(.started) == [.draft(TelegramCopy.working)])
+    #expect(presenter.live.phase == .working)
+    #expect(presenter.live.assistantText == TelegramCopy.working)
     #expect(presenter.consume(.finished("ok")) == [.message("ok", markup: nil)])
+    #expect(presenter.live == TelegramLiveTurn(
+        userText: "Manda ok",
+        assistantText: "ok",
+        phase: .finished
+    ))
 }
 
 @Test
@@ -56,17 +64,22 @@ func aFloodOfSubagentsStillProducesOneFinalMessage() {
     }
     #expect(chatMessages == ["ok"])
     #expect(messages.contains(.draft("\(TelegramCopy.working) review")))
+    #expect(presenter.live.phase == .finished)
+    #expect(presenter.live.assistantText == "ok")
 }
 
 @Test
 func streamedAnswerReplacesWorkingStatusAndIgnoresLaterSubagents() {
-    var presenter = TelegramTurnPresenter()
+    var presenter = TelegramTurnPresenter(userText: "Manda ok")
     _ = presenter.consume(.started)
     _ = presenter.consume(.status("Read"))
     #expect(presenter.consume(.draft("ok")) == [.draft("ok")])
+    #expect(presenter.live.phase == .streaming)
+    #expect(presenter.live.assistantText == "ok")
     #expect(presenter.consume(.subagent(observation(.started))).isEmpty)
     #expect(presenter.consume(.status("Bash")).isEmpty)
     #expect(presenter.consume(.finished("ok")) == [.message("ok", markup: nil)])
+    #expect(presenter.live.phase == .finished)
 }
 
 @Test
@@ -87,6 +100,27 @@ func permissionPromptIsAButtonMessage() {
                     markup: TelegramTurnPresenter.permissionMarkup(options)
                 ),
             ]
+    )
+}
+
+@Test
+func liveUserPreviewPrefersTypedTextThenMedia() {
+    #expect(
+        TelegramTurnBuilder.liveUserPreview(text: "Manda ok", attachments: [])
+            == "Manda ok"
+    )
+    #expect(
+        TelegramTurnBuilder.liveUserPreview(
+            text: "",
+            attachments: [
+                TelegramTurnAttachment(
+                    kind: .voice,
+                    fileID: "v",
+                    fileName: "voice.ogg",
+                    mimeType: "audio/ogg"
+                ),
+            ]
+        ) == "Voice note"
     )
 }
 

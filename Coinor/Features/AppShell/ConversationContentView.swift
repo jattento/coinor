@@ -37,6 +37,12 @@ struct ConversationContentView: View {
             case .ready:
                 if let runtimeManager = coordinator.runtimeManager {
                     RuntimeHostView(manager: runtimeManager)
+                        .overlay(alignment: .bottom) {
+                            TelegramLiveTurnOverlay(
+                                telegram: coordinator.telegram,
+                                sessionID: coordinator.selectedSessionID
+                            )
+                        }
                 }
             }
         }

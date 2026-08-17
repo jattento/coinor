@@ -163,6 +163,12 @@ extension AppCoordinator: TelegramWorking {
         session(sessionID)?.title
     }
 
+    func telegramRevealConversation(_ sessionID: String) {
+        selectConversation(sessionID)
+        runtimeManager?.runtime(sessionID: sessionID)?
+            .selectTab(tabID: ConversationTabMetadata.mainID)
+    }
+
     func shareConversationOnTelegram(_ sessionID: String) {
         guard canShareOnTelegram(sessionID) else { return }
         let title = session(sessionID)?.title ?? "Conversation"

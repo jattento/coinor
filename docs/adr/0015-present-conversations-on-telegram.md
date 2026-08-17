@@ -47,3 +47,6 @@ to always-approve.
   package without a later explicit approval.
 - Phone presentation is one working draft, permission buttons, and one
   final answer. Subagent lifecycle stays on the Mac panes.
+- A phone turn is also presented live on the Mac conversation view as a
+  Coinor overlay. The Ghostty TUI is not the renderer for ACP-driven
+  turns.

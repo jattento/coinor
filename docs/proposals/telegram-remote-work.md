@@ -54,6 +54,10 @@ network listener, and no second conversation identity.
     assistant answer as that same draft, then one final message.
     Permission prompts stay buttons. Never one Telegram message per
     tool or subagent event.
+16. **What the Mac sees.** A phone turn of the selected Conversation
+    appears live in the conversation view as a Coinor overlay (user
+    text, then the streamed answer). Coinor does not type into the
+    Ghostty PTY. The durable transcript stays in Grok.
 15. **Inspiration only.** Read OpenClaw, Hermes, CCGram for patterns
     (pairing codes, topic isolation, one-message streaming, approval
     buttons, draft fallback). Implement a Coinor-owned `URLSession`
@@ -72,6 +76,7 @@ network listener, and no second conversation identity.
 | Topic title | Grok session title |
 | General / pairing topic | Status, `/new`, `/find` — not a Conversation |
 | Subagent | Working draft of the parent topic, never a chat message |
+| Phone turn on the Mac | Live overlay on the conversation view |
 
 ## Why this transport
 
