@@ -16,6 +16,7 @@ func telegramMetadataSurvivesRelaunch() async throws {
             document.telegram.pairedUserID = TelegramUserID(9)
             document.telegram.pairedChatID = TelegramChatID(9)
             document.telegram.threadIDBySessionID["session-a"] = 44
+            document.telegram.pendingPairingCode = "AB23CD45"
         }
     }
 
@@ -25,4 +26,5 @@ func telegramMetadataSurvivesRelaunch() async throws {
     #expect(document.telegram.pairedUserID == TelegramUserID(9))
     #expect(document.telegram.pairedChatID == TelegramChatID(9))
     #expect(document.telegram.sessionIDByThreadID[44] == "session-a")
+    #expect(document.telegram.pendingPairingCode == "AB23CD45")
 }

@@ -263,11 +263,13 @@ struct TelegramMetadata: Equatable, Sendable {
     var pairedUserID: TelegramUserID?
     var pairedChatID: TelegramChatID?
     var threadIDBySessionID: [String: Int]
+    var pendingPairingCode: String?
 
     static let empty = TelegramMetadata(
         pairedUserID: nil,
         pairedChatID: nil,
-        threadIDBySessionID: [:]
+        threadIDBySessionID: [:],
+        pendingPairingCode: nil
     )
 
     var sessionIDByThreadID: [Int: String] {
@@ -277,7 +279,7 @@ struct TelegramMetadata: Equatable, Sendable {
 
 extension TelegramMetadata: Codable {
     private enum CodingKeys: String, CodingKey {
-        case pairedUserID, pairedChatID, threadIDBySessionID
+        case pairedUserID, pairedChatID, threadIDBySessionID, pendingPairingCode
     }
 
     init(from decoder: Decoder) throws {
@@ -296,6 +298,10 @@ extension TelegramMetadata: Codable {
             [String: Int].self,
             forKey: .threadIDBySessionID
         ) ?? [:]
+        pendingPairingCode = try container.decodeIfPresent(
+            String.self,
+            forKey: .pendingPairingCode
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -303,6 +309,7 @@ extension TelegramMetadata: Codable {
         try container.encodeIfPresent(pairedUserID?.rawValue, forKey: .pairedUserID)
         try container.encodeIfPresent(pairedChatID?.rawValue, forKey: .pairedChatID)
         try container.encode(threadIDBySessionID, forKey: .threadIDBySessionID)
+        try container.encodeIfPresent(pendingPairingCode, forKey: .pendingPairingCode)
     }
 }
 

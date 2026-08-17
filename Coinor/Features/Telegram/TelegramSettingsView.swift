@@ -19,7 +19,7 @@ struct TelegramSettingsView: View {
                     }
                     .disabled(!telegram.hasToken && !telegram.isPaired)
                 }
-                Text("Paste the token from BotFather. Conan Code stores it in the Keychain.")
+                Text("Paste the token from BotFather. Conan Code stores it in this Mac’s Keychain only. Each installation needs its own bot.")
                     .foregroundStyle(.secondary)
             }
 

@@ -68,11 +68,14 @@ final class TelegramBridge: ObservableObject {
             statusText = TelegramCopy.missingToken
             return
         }
+        if !isPaired, pairingCode == nil {
+            refreshPairingCode()
+        }
         statusText = isPaired
             ? TelegramCopy.alreadyPaired
             : "Waiting for /start with the pairing code."
         pollTask = Task { [weak self] in
-            await self?.pollLoop()
+            await self?.configureBotThenPoll()
         }
     }
 
@@ -108,6 +111,9 @@ final class TelegramBridge: ObservableObject {
         routing.pendingCode = code
         if !isPaired {
             statusText = "Send /start \(code) to the bot from your phone."
+        }
+        Task { [weak self] in
+            await self?.worker?.telegramPersist { $0.telegram.pendingPairingCode = code }
         }
     }
 
@@ -203,6 +209,13 @@ final class TelegramBridge: ObservableObject {
         await apply(inbound, replyWith: nil)
     }
 
+    private func configureBotThenPoll() async {
+        if let token = try? tokens.load() {
+            try? await makeClient(token).configureBotProfile()
+        }
+        await pollLoop()
+    }
+
     private func pollLoop() async {
         while !Task.isCancelled {
             guard let token = try? tokens.load() else {
@@ -256,10 +269,12 @@ final class TelegramBridge: ObservableObject {
         case let .pair(userID, chatID):
             isPaired = true
             pairingCode = nil
+            routing.pendingCode = nil
             statusText = TelegramCopy.paired
             await worker?.telegramPersist { document in
                 document.telegram.pairedUserID = userID
                 document.telegram.pairedChatID = chatID
+                document.telegram.pendingPairingCode = nil
             }
             await reply(TelegramCopy.paired, threadID: nil, client: client)
         case .rejectPairing:
@@ -652,6 +667,8 @@ final class TelegramBridge: ObservableObject {
         routing.pairedChatID = telegram.pairedChatID
         routing.sessionIDByThreadID = telegram.sessionIDByThreadID
         routing.archivedSessionIDs = archivedSessionIDs
+        routing.pendingCode = telegram.pendingPairingCode
+        pairingCode = telegram.pendingPairingCode
         isPaired = telegram.pairedUserID != nil && telegram.pairedChatID != nil
         if isPaired {
             statusText = TelegramCopy.paired

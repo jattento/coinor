@@ -44,6 +44,8 @@ protocol TelegramAPIClient: Sendable {
     func answerCallbackQuery(id: String) async throws
 
     func downloadFile(id: String) async throws -> Data
+
+    func configureBotProfile() async throws
 }
 
 struct TelegramReplyMarkup: Equatable, Sendable {
@@ -217,6 +219,59 @@ struct TelegramHTTPClient: TelegramAPIClient {
         _ = try await post(
             "answerCallbackQuery",
             parameters: ["callback_query_id": id]
+        )
+    }
+
+    func configureBotProfile() async throws {
+        _ = try await post(
+            "deleteWebhook",
+            parameters: ["drop_pending_updates": false]
+        )
+        _ = try await post(
+            "setMyName",
+            parameters: ["name": "Conan Code"]
+        )
+        _ = try await post(
+            "setMyShortDescription",
+            parameters: [
+                "short_description":
+                    "Remote Conan Code for this Mac. Pair with /start and a one-time code.",
+            ]
+        )
+        _ = try await post(
+            "setMyDescription",
+            parameters: [
+                "description":
+                    "This bot is the Telegram surface for one Conan Code installation on this Mac. Send /start with the pairing code from Conan Code Settings. /new starts a conversation. /find attaches an existing one. Messages in a conversation topic are turns of that Grok conversation.",
+            ]
+        )
+        _ = try await post(
+            "setMyCommands",
+            parameters: [
+                "commands": [
+                    [
+                        "command": "start",
+                        "description": "Pair this Mac with the one-time code",
+                    ],
+                    [
+                        "command": "new",
+                        "description": "Start a new conversation",
+                    ],
+                    [
+                        "command": "find",
+                        "description": "Search existing conversations",
+                    ],
+                    [
+                        "command": "help",
+                        "description": "What this bot can do",
+                    ],
+                ],
+                "scope": ["type": "all_private_chats"],
+            ]
+        )
+        _ = try await post(
+            "setChatMenuButton",
+            parameters: ["menu_button": ["type": "commands"]]
         )
     }
 
