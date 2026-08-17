@@ -126,7 +126,8 @@ considering the release installed.
   and UI metadata
 - `~/Library/Application Support/Coinor/grok-leader.sock`: private Grok leader
   socket while Conan Code is running
-- `~/.coinor/telegram.toml`: Telegram bot token for this Mac (mode 600)
+- `~/.coinor/telegram.toml`: Telegram bot token and optional allowed
+  username for this Mac (mode 600)
 
 Grok's own storage remains authoritative for conversation content. Removing
 Conan Code metadata does not delete Grok sessions.

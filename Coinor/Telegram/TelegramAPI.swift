@@ -235,14 +235,14 @@ struct TelegramHTTPClient: TelegramAPIClient {
             "setMyShortDescription",
             parameters: [
                 "short_description":
-                    "Remote Conan Code for this Mac. Pair with /start and a one-time code.",
+                    "Remote Conan Code for this Mac. Only the configured Telegram user can talk to it.",
             ]
         )
         _ = try await post(
             "setMyDescription",
             parameters: [
                 "description":
-                    "This bot is the Telegram surface for one Conan Code installation on this Mac. Send /start with the pairing code from Conan Code Settings. /new starts a conversation. /find attaches an existing one. Messages in a conversation topic are turns of that Grok conversation.",
+                    "This bot is the Telegram surface for one Conan Code installation on this Mac. If Settings list an allowed username, only that account can talk. Otherwise send /start with the pairing code. /new starts a conversation. /find attaches an existing one.",
             ]
         )
         _ = try await post(
@@ -251,7 +251,7 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 "commands": [
                     [
                         "command": "start",
-                        "description": "Pair this Mac with the one-time code",
+                        "description": "Pair this Mac",
                     ],
                     [
                         "command": "new",
@@ -533,7 +533,8 @@ struct TelegramHTTPClient: TelegramAPIClient {
         return TelegramUser(
             id: TelegramUserID(id),
             isBot: value["is_bot"]?.boolValue ?? false,
-            firstName: firstName
+            firstName: firstName,
+            username: value["username"]?.stringValue
         )
     }
 

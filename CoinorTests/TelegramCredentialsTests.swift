@@ -39,6 +39,31 @@ func fileTokenStoreParsesQuotedUnquotedAndBareTokens() {
 }
 
 @Test
+func fileTokenStoreReadsAllowedUsernameAndKeepsItWhenSavingAToken() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("coinor-telegram-\(UUID().uuidString)", isDirectory: true)
+    let file = directory.appendingPathComponent("telegram.toml")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let config = FileTelegramTokenStore.parseConfig(
+        """
+        bot_token = "123:ABC"
+        allowed_username = "@TTtaoj"
+        """
+    )
+    #expect(config.botToken == "123:ABC")
+    #expect(config.allowedUsername == "tttaoj")
+
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try config.serialized.write(to: file, atomically: true, encoding: .utf8)
+    let store = FileTelegramTokenStore(fileURL: file)
+    #expect(try store.allowedUsername() == "tttaoj")
+    try store.save("456:DEF")
+    #expect(try store.load() == "456:DEF")
+    #expect(try store.allowedUsername() == "tttaoj")
+}
+
+@Test
 func fileTokenStoreMigratesOnceFromAnotherStore() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("coinor-telegram-\(UUID().uuidString)", isDirectory: true)

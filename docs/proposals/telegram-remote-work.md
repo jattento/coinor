@@ -17,8 +17,10 @@ network listener, and no second conversation identity.
    Communities and informal “subgroups” are topics by another name, or
    a different Telegram product. Do not use them.
 4. **One bot token and pairing per Conan Code installation.** Paste the
-   token in Settings (`~/.coinor/telegram.toml`). A one-time `/start <code>` allowlists
-   that Telegram user and binds that chat. Everyone else is ignored.
+   token in Settings (`~/.coinor/telegram.toml`). Prefer `allowed_username`
+   in that file: only that Telegram account can talk, no pairing code.
+   Otherwise a one-time `/start <code>` allowlists one user. Everyone
+   else is ignored.
    A remote host in the sidebar is not a pairing.
 5. **Local Projects only for v1.** `/new`, `/find`, and share only see
    repos on the Mac that is polling. SSH remotes stay desktop-only;

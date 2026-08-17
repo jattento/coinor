@@ -53,6 +53,7 @@ private func userMessage(
             "id": 9,
             "is_bot": false,
             "first_name": "Jose",
+            "username": "tttaoj",
         ],
         "chat": [
             "id": 9,
@@ -85,6 +86,14 @@ private func decisions(
     state: TelegramRoutingState = pairedState()
 ) -> [TelegramDecision] {
     TelegramRouter().handle(inbound, state: state).1
+}
+
+@Test
+func inboundDecodesTheSenderUsername() throws {
+    let inbound = try inbound(from: userMessage(text: "hola"))
+    let update = try TelegramHTTPClient.decodeUpdate(userMessage(text: "hola"))
+    #expect(update.message?.from?.username == "tttaoj")
+    #expect(inbound.userID == TelegramUserID(9))
 }
 
 @Test

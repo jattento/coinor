@@ -44,6 +44,57 @@ func telegramStartWithMatchingCodePairsTheChat() {
 }
 
 @Test
+func telegramAllowedUsernamePairsWithoutACode() {
+    var state = TelegramRoutingState.empty
+    state.allowedUsername = "tttaoj"
+    let router = TelegramRouter()
+    let (next, decisions) = router.handle(
+        .text(
+            userID: TelegramUserID(9),
+            chatID: TelegramChatID(9),
+            threadID: nil,
+            text: "hola",
+            attachments: []
+        ),
+        state: state,
+        username: "TTtaoj"
+    )
+    #expect(next.pairedUserID == TelegramUserID(9))
+    #expect(next.pairedChatID == TelegramChatID(9))
+    #expect(decisions.first == .pair(userID: TelegramUserID(9), chatID: TelegramChatID(9)))
+    #expect(decisions.contains(.ignoreUnmappedTopic))
+}
+
+@Test
+func telegramAllowedUsernameRejectsAnyoneElse() {
+    var state = TelegramRoutingState.empty
+    state.allowedUsername = "tttaoj"
+    let router = TelegramRouter()
+    let (next, decisions) = router.handle(
+        .new(userID: TelegramUserID(2), chatID: TelegramChatID(2), threadID: nil),
+        state: state,
+        username: "intruder"
+    )
+    #expect(next.pairedUserID == nil)
+    #expect(decisions == [.rejectUnauthorized])
+}
+
+@Test
+func telegramStartFromAllowedUsernameNeedsNoCode() {
+    var state = TelegramRoutingState.empty
+    state.allowedUsername = "tttaoj"
+    let router = TelegramRouter()
+    let (next, decisions) = router.handle(
+        .start(userID: TelegramUserID(9), chatID: TelegramChatID(9), code: nil),
+        state: state,
+        username: "tttaoj"
+    )
+    #expect(next.pairedUserID == TelegramUserID(9))
+    #expect(decisions.contains(.pair(userID: TelegramUserID(9), chatID: TelegramChatID(9))))
+    #expect(!decisions.contains(.sendPairingHelp))
+}
+
+@Test
 func telegramIgnoresEveryoneExceptThePairedUser() {
     var state = TelegramRoutingState.empty
     state.pairedUserID = TelegramUserID(9)

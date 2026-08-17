@@ -51,6 +51,7 @@ final class TelegramBridge: ObservableObject {
     @Published private(set) var pairingCode: String?
     @Published private(set) var isPaired = false
     @Published private(set) var hasToken = false
+    @Published private(set) var allowedUsername: String?
 
     init(
         tokens: any TelegramTokenStoring = FileTelegramTokenStore.default,
@@ -75,12 +76,21 @@ final class TelegramBridge: ObservableObject {
             statusText = TelegramCopy.missingToken
             return
         }
-        if !isPaired, pairingCode == nil {
-            refreshPairingCode()
+        refreshAllowlist()
+        if !isPaired {
+            if let username = routing.allowedUsername, !username.isEmpty {
+                pairingCode = nil
+                routing.pendingCode = nil
+                statusText = TelegramCopy.listening(for: username)
+            } else if pairingCode == nil {
+                refreshPairingCode()
+            }
         }
-        statusText = isPaired
-            ? TelegramCopy.alreadyPaired
-            : "Waiting for /start with the pairing code."
+        if isPaired {
+            statusText = TelegramCopy.alreadyPaired
+        } else if routing.allowedUsername == nil, pairingCode != nil {
+            statusText = "Send /start \(pairingCode ?? "") to the bot from your phone."
+        }
         pollTask = Task { [weak self] in
             await self?.configureBotThenPoll()
         }
@@ -114,6 +124,15 @@ final class TelegramBridge: ObservableObject {
     }
 
     func refreshPairingCode() {
+        refreshAllowlist()
+        if routing.allowedUsername != nil {
+            pairingCode = nil
+            routing.pendingCode = nil
+            if !isPaired {
+                statusText = TelegramCopy.listening(for: routing.allowedUsername ?? "")
+            }
+            return
+        }
         let code = TelegramPairingCode.generate()
         pairingCode = code
         routing.pendingCode = code
@@ -222,8 +241,11 @@ final class TelegramBridge: ObservableObject {
         }
     }
 
-    func handleForTesting(_ inbound: TelegramInbound) async {
-        await apply(inbound, replyWith: nil)
+    func handleForTesting(
+        _ inbound: TelegramInbound,
+        username: String? = nil
+    ) async {
+        await apply(inbound, username: username, replyWith: nil)
     }
 
     private func configureBotThenPoll() async {
@@ -249,6 +271,8 @@ final class TelegramBridge: ObservableObject {
                     offset = TelegramUpdateID(update.id.rawValue + 1)
                     await apply(
                         TelegramHTTPClient.inbound(from: update),
+                        username: update.message?.from?.username
+                            ?? update.callbackQuery?.from.username,
                         replyWith: client
                     )
                 }
@@ -263,13 +287,18 @@ final class TelegramBridge: ObservableObject {
 
     private func apply(
         _ inbound: TelegramInbound,
+        username: String? = nil,
         replyWith client: (any TelegramAPIClient)?
     ) async {
         outboundChatID = inbound.chatID
         if case let .callback(_, _, _, queryID, _) = inbound {
             try? await client?.answerCallbackQuery(id: queryID)
         }
-        let (next, decisions) = router.handle(inbound, state: routing)
+        let (next, decisions) = router.handle(
+            inbound,
+            state: routing,
+            username: username
+        )
         routing = next
         for decision in decisions {
             await perform(decision, client: client)
@@ -754,9 +783,21 @@ final class TelegramBridge: ObservableObject {
         routing.pendingCode = telegram.pendingPairingCode
         pairingCode = telegram.pendingPairingCode
         isPaired = telegram.pairedUserID != nil && telegram.pairedChatID != nil
+        refreshAllowlist()
         if isPaired {
             statusText = TelegramCopy.paired
+        } else if let username = routing.allowedUsername, !username.isEmpty {
+            pairingCode = nil
+            routing.pendingCode = nil
+            statusText = TelegramCopy.listening(for: username)
         }
+    }
+
+    private func refreshAllowlist() {
+        let username = try? tokens.allowedUsername()
+        let normalized = username.map(TelegramUsername.normalize)
+        routing.allowedUsername = normalized?.isEmpty == false ? normalized : nil
+        allowedUsername = routing.allowedUsername
     }
 
     private func archivedIDs(in metadata: MetadataDocument) -> Set<String> {

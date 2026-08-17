@@ -4,8 +4,10 @@
 
 Conan Code can pair one private Telegram bot chat to this installation. Each
 conversation topic on that chat is the same Conversation as the sidebar, not a
-second identity. Pairing uses a bot token stored in `~/.coinor/telegram.toml` and a
-one-time `/start` code that allowlists one Telegram user. Only local projects are
+second identity. Pairing uses a bot token stored in `~/.coinor/telegram.toml`. An
+`allowed_username` in that file allowlists that Telegram account
+without a pairing code; otherwise a one-time `/start` code binds one
+user. Only local projects are
 offered from the phone. Conan Code must be running; it long-polls Telegram and
 does not listen on the network.
 

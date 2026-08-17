@@ -36,6 +36,7 @@ struct TelegramUser: Equatable, Sendable {
     var id: TelegramUserID
     var isBot: Bool
     var firstName: String
+    var username: String?
 }
 
 struct TelegramChat: Equatable, Sendable {
@@ -130,6 +131,22 @@ enum TelegramInbound: Equatable, Sendable {
             return nil
         }
     }
+
+    var userID: TelegramUserID? {
+        switch self {
+        case let .start(userID, _, _),
+             let .help(userID, _, _),
+             let .new(userID, _, _),
+             let .find(userID, _, _, _),
+             let .text(userID, _, _, _, _),
+             let .callback(userID, _, _, _, _),
+             let .topicCreated(userID, _, _, _),
+             let .topicClosed(userID, _, _):
+            return userID
+        case .ignored:
+            return nil
+        }
+    }
 }
 
 enum TelegramDecision: Equatable, Sendable {
@@ -182,6 +199,7 @@ struct TelegramRoutingState: Equatable, Sendable {
     var pendingPermissionSessionID: String?
     var pendingPermissionOptions: [TelegramPermissionOption]
     var archivedSessionIDs: Set<String>
+    var allowedUsername: String?
 
     var isPaired: Bool {
         pairedUserID != nil && pairedChatID != nil
@@ -199,8 +217,24 @@ struct TelegramRoutingState: Equatable, Sendable {
         pickerThreadID: nil,
         pendingPermissionSessionID: nil,
         pendingPermissionOptions: [],
-        archivedSessionIDs: []
+        archivedSessionIDs: [],
+        allowedUsername: nil
     )
+}
+
+enum TelegramUsername {
+    static func normalize(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+    }
+
+    static func matches(_ username: String?, allowed: String?) -> Bool {
+        guard let username, let allowed else { return false }
+        let lhs = normalize(username)
+        let rhs = normalize(allowed)
+        return !lhs.isEmpty && lhs == rhs
+    }
 }
 
 struct TelegramPermissionOption: Equatable, Sendable {
@@ -211,6 +245,9 @@ struct TelegramPermissionOption: Equatable, Sendable {
 enum TelegramCopy {
     static let pairingHelp =
         "Ask Conan Code on this Mac for a pairing code, then send /start followed by that code."
+    static func listening(for username: String) -> String {
+        "Listening for @\(TelegramUsername.normalize(username)). Messages from anyone else are ignored."
+    }
     static let invalidPairingCode = "That pairing code is not valid."
     static let alreadyPaired = "This Mac is already paired to this chat."
     static let paired =

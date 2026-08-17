@@ -19,23 +19,30 @@ struct TelegramSettingsView: View {
                     }
                     .disabled(!telegram.hasToken && !telegram.isPaired)
                 }
-                Text("Paste the token from BotFather. Conan Code stores it in ~/.coinor/telegram.toml on this Mac (mode 600). Each installation needs its own bot.")
+                Text("Paste the token from BotFather. Conan Code stores it in ~/.coinor/telegram.toml on this Mac (mode 600). Set allowed_username there to skip the pairing code.")
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                if let code = telegram.pairingCode {
+                if let username = telegram.allowedUsername {
+                    LabeledContent("Allowed user", value: "@\(username)")
+                        .textSelection(.enabled)
+                }
+                if let code = telegram.pairingCode, telegram.allowedUsername == nil {
                     LabeledContent("Pairing Code", value: code)
                         .textSelection(.enabled)
                 }
-                Button(telegram.pairingCode == nil ? "Create Pairing Code" : "New Pairing Code") {
-                    telegram.refreshPairingCode()
+                if telegram.allowedUsername == nil {
+                    Button(telegram.pairingCode == nil ? "Create Pairing Code" : "New Pairing Code") {
+                        telegram.refreshPairingCode()
+                    }
+                    .disabled(!telegram.hasToken)
                 }
-                .disabled(!telegram.hasToken)
                 Text(
                     telegram.isPaired
                         ? telegram.statusText
-                        : "Open the bot on your phone and send /start followed by the pairing code."
+                        : telegram.allowedUsername.map { TelegramCopy.listening(for: $0) }
+                            ?? "Open the bot on your phone and send /start followed by the pairing code."
                 )
                 .foregroundStyle(.secondary)
             }

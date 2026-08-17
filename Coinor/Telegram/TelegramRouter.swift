@@ -3,38 +3,64 @@ import Foundation
 struct TelegramRouter: Sendable {
     func handle(
         _ inbound: TelegramInbound,
-        state: TelegramRoutingState
+        state: TelegramRoutingState,
+        username: String? = nil
     ) -> (TelegramRoutingState, [TelegramDecision]) {
         var next = state
+        var claimed: [TelegramDecision] = []
+        if let decision = claimAllowedUser(
+            inbound,
+            username: username,
+            state: &next
+        ) {
+            claimed = [decision]
+        }
         switch inbound {
         case .ignored:
-            return (next, [.ignore])
+            return (next, claimed.isEmpty ? [.ignore] : claimed)
 
         case let .start(userID, chatID, code):
-            return handleStart(
+            let (stateAfterStart, decisions) = handleStart(
                 userID: userID,
                 chatID: chatID,
+                username: username,
                 code: code,
                 state: &next
             )
+            return (stateAfterStart, merge(claimed, decisions))
 
         case let .help(userID, chatID, _):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
-            return (next, [.sendHelp])
+            return (next, merge(claimed, [.sendHelp]))
 
         case let .new(userID, chatID, threadID):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
             next.awaitingWorktreeNameForProjectID = nil
             next.awaitingFindQuery = false
             next.pickerThreadID = threadID
-            return (next, [.sendProjectPicker])
+            return (next, merge(claimed, [.sendProjectPicker]))
 
         case let .find(userID, chatID, threadID, query):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
             next.awaitingWorktreeNameForProjectID = nil
@@ -42,74 +68,99 @@ struct TelegramRouter: Sendable {
             let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if trimmed.isEmpty {
                 next.awaitingFindQuery = true
-                return (next, [.askFindQuery])
+                return (next, merge(claimed, [.askFindQuery]))
             }
             next.awaitingFindQuery = false
-            return (next, [.search(query: trimmed)])
+            return (next, merge(claimed, [.search(query: trimmed)]))
 
         case let .topicCreated(userID, chatID, threadID, _):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
             next.awaitingWorktreeNameForProjectID = nil
             next.awaitingFindQuery = false
             next.pickerThreadID = threadID
-            return (next, [.sendProjectPicker])
+            return (next, merge(claimed, [.sendProjectPicker]))
 
         case let .topicClosed(userID, chatID, threadID):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
             if let sessionID = next.sessionIDByThreadID[threadID.rawValue],
                next.archivedSessionIDs.contains(sessionID) {
-                return (next, [.ignore])
+                return (next, merge(claimed, [.ignore]))
             }
             next.sessionIDByThreadID.removeValue(forKey: threadID.rawValue)
-            return (next, [.dropTopic(threadID)])
+            return (next, merge(claimed, [.dropTopic(threadID)]))
 
         case let .callback(userID, chatID, threadID, _, data):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
-            return handleCallback(data: data, threadID: threadID, state: &next)
+            let (stateAfterCallback, decisions) = handleCallback(
+                data: data,
+                threadID: threadID,
+                state: &next
+            )
+            return (stateAfterCallback, merge(claimed, decisions))
 
         case let .text(userID, chatID, threadID, text, attachments):
-            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+            guard isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: next
+            ) else {
                 return (next, [.rejectUnauthorized])
             }
             if let projectID = next.awaitingWorktreeNameForProjectID, attachments.isEmpty {
                 next.awaitingWorktreeNameForProjectID = nil
                 return (
                     next,
-                    [
+                    merge(claimed, [
                         .createConversation(
                             projectID: projectID,
                             worktreeName: text,
                             threadID: threadID ?? next.pickerThreadID
                         ),
-                    ]
+                    ])
                 )
             }
             if next.awaitingFindQuery, attachments.isEmpty {
                 next.awaitingFindQuery = false
-                return (next, [.search(query: text)])
+                return (next, merge(claimed, [.search(query: text)]))
             }
             guard let threadID,
                   let sessionID = next.sessionIDByThreadID[threadID.rawValue] else {
-                return (next, [.ignoreUnmappedTopic])
+                return (next, merge(claimed, [.ignoreUnmappedTopic]))
             }
             if next.archivedSessionIDs.contains(sessionID) {
-                return (next, [.ignoreArchivedTopic])
+                return (next, merge(claimed, [.ignoreArchivedTopic]))
             }
             return (
                 next,
-                [
+                merge(claimed, [
                     .prompt(
                         sessionID: sessionID,
                         text: text,
                         attachments: attachments
                     ),
-                ]
+                ])
             )
         }
     }
@@ -117,11 +168,23 @@ struct TelegramRouter: Sendable {
     private func handleStart(
         userID: TelegramUserID,
         chatID: TelegramChatID,
+        username: String?,
         code: String?,
         state: inout TelegramRoutingState
     ) -> (TelegramRoutingState, [TelegramDecision]) {
         if state.pairedUserID == userID, state.pairedChatID == chatID {
             return (state, [.sendAlreadyPaired])
+        }
+        if hasUsernameAllowlist(state) {
+            if isAuthorized(
+                userID: userID,
+                chatID: chatID,
+                username: username,
+                state: state
+            ) {
+                return (state, [.sendAlreadyPaired])
+            }
+            return (state, [.rejectUnauthorized])
         }
         if state.isPaired {
             return (state, [.rejectUnauthorized])
@@ -206,9 +269,52 @@ struct TelegramRouter: Sendable {
     private func isAuthorized(
         userID: TelegramUserID,
         chatID: TelegramChatID,
+        username: String?,
         state: TelegramRoutingState
     ) -> Bool {
-        state.pairedUserID == userID && state.pairedChatID == chatID
+        if state.pairedUserID == userID, state.pairedChatID == chatID {
+            return true
+        }
+        if state.isPaired {
+            return false
+        }
+        return TelegramUsername.matches(username, allowed: state.allowedUsername)
+    }
+
+    private func hasUsernameAllowlist(_ state: TelegramRoutingState) -> Bool {
+        guard let allowed = state.allowedUsername else { return false }
+        return !TelegramUsername.normalize(allowed).isEmpty
+    }
+
+    private func claimAllowedUser(
+        _ inbound: TelegramInbound,
+        username: String?,
+        state: inout TelegramRoutingState
+    ) -> TelegramDecision? {
+        guard hasUsernameAllowlist(state),
+              !state.isPaired,
+              let userID = inbound.userID,
+              let chatID = inbound.chatID,
+              TelegramUsername.matches(username, allowed: state.allowedUsername) else {
+            return nil
+        }
+        state.pairedUserID = userID
+        state.pairedChatID = chatID
+        state.pendingCode = nil
+        return .pair(userID: userID, chatID: chatID)
+    }
+
+    private func merge(
+        _ claimed: [TelegramDecision],
+        _ decisions: [TelegramDecision]
+    ) -> [TelegramDecision] {
+        if claimed.isEmpty {
+            return decisions
+        }
+        if decisions == [.rejectUnauthorized] {
+            return decisions
+        }
+        return claimed + decisions.filter { $0 != claimed[0] }
     }
 
     private func project(
