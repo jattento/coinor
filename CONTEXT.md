@@ -15,9 +15,11 @@ separate projects even when they share a remote URL.
 _Avoid_: Folder, workspace, worktree group
 
 **Conversation**:
-A top-level user-visible unit backed by one root Grok session. Conversations
-appear directly under their project regardless of their working directory.
-_Avoid_: Task, pane, Herdr session
+A top-level user-visible unit backed by one root Grok session. It has one
+identity in Conan Code and on any paired remote surface; those surfaces do
+not create another conversation. Conversations appear directly under their
+project regardless of their working directory.
+_Avoid_: Task, pane, Herdr session, Telegram session
 
 **Pinned Conversation**:
 A conversation promoted to Conan Code's top-level Pinned section for quick access.
@@ -38,6 +40,18 @@ _Avoid_: Subproject, conversation group
 A live, interactive terminal view of a Grok session. A pane can appear or
 disappear without changing the identity of the conversation it displays.
 _Avoid_: Conversation, session
+
+**Remote Topic**:
+A chat-thread presentation of one Conversation on a paired remote surface. It
+can appear or disappear without changing the identity of the conversation it
+displays. Its title is the Grok session title.
+_Avoid_: Subgroup, Telegram session, thread, child conversation
+
+**Paired Chat**:
+The private Telegram chat bound to one Conan Code installation. It holds that
+installation's remote topics and is not a conversation. Each installation has
+its own credentials; a remote host in the sidebar is not a pairing.
+_Avoid_: Group, Telegram server, bot inbox, installation channel
 
 **Conversation View**:
 The content area for the selected conversation. Its root pane uses the full
@@ -74,5 +88,7 @@ _Avoid_: Grok session, subagent pane
 A live, interactive pane backed by a child Grok session. It appears alongside
 its parent conversation while the subagent is available without becoming a
 conversation in the project list. Nested subagents appear at the same visual
-level as direct subagents, ordered by when they started.
+level as direct subagents, ordered by when they started. A subagent does not
+get its own remote topic; its status belongs to the parent conversation's
+topic.
 _Avoid_: Child conversation, task
