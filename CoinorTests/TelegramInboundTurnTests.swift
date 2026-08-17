@@ -230,6 +230,76 @@ func findThenChosenMatchAttachesThatConversation() throws {
 }
 
 @Test
+func findThatOpensAForumTopicStillSearches() throws {
+    let inbound = try inbound(
+        from: userMessage(
+            text: "/find",
+            extra: [
+                "forum_topic_created": [
+                    "name": "/find",
+                    "icon_color": 7_322_096,
+                ],
+            ]
+        )
+    )
+    #expect(
+        inbound == .find(
+            userID: pairedUser,
+            chatID: pairedChat,
+            threadID: mappedThread,
+            query: nil
+        )
+    )
+    #expect(decisions(inbound) == [.askFindQuery])
+}
+
+@Test
+func findTopicServiceMessageWithoutTextStillSearches() throws {
+    let inbound = try inbound(
+        from: userMessage(
+            extra: [
+                "forum_topic_created": [
+                    "name": "find",
+                    "icon_color": 7_322_096,
+                ],
+            ]
+        )
+    )
+    #expect(
+        inbound == .find(
+            userID: pairedUser,
+            chatID: pairedChat,
+            threadID: mappedThread,
+            query: nil
+        )
+    )
+    #expect(decisions(inbound) == [.askFindQuery])
+}
+
+@Test
+func namedUserTopicIsStillNew() throws {
+    let inbound = try inbound(
+        from: userMessage(
+            extra: [
+                "forum_topic_created": [
+                    "name": "Fix finder",
+                    "icon_color": 7_322_096,
+                ],
+            ]
+        )
+    )
+    #expect(
+        inbound == .topicCreated(
+            userID: pairedUser,
+            chatID: pairedChat,
+            threadID: mappedThread,
+            name: "Fix finder"
+        )
+    )
+    #expect(decisions(inbound) == [.sendProjectPicker])
+}
+
+@Test
 func permissionCallbackDuringAPromptAnswersACP() {
     var state = pairedState()
     state.pendingPermissionSessionID = "session-a"

@@ -358,6 +358,20 @@ struct TelegramHTTPClient: TelegramAPIClient {
               !from.isBot else {
             return .ignored
         }
+        let text = [
+            message.text,
+            message.caption,
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty } ?? ""
+        // Threaded private chats turn the first lobby message into a topic.
+        // A slash command in that message must stay a command, not /new.
+        if let command = botCommand(from: text)
+            ?? command(fromTopicTitle: message.forumTopicCreated?.name) {
+            if let inbound = inbound(for: command, from: from, message: message) {
+                return inbound
+            }
+        }
         if let topic = message.forumTopicCreated, let threadID = message.threadID {
             return .topicCreated(
                 userID: from.id,
@@ -373,20 +387,26 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 threadID: threadID
             )
         }
-        let text = [
-            message.text,
-            message.caption,
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .first { !$0.isEmpty } ?? ""
         guard !text.isEmpty || !message.attachments.isEmpty else {
             return .ignored
         }
-        let command = botCommand(from: text)
-        switch command?.name {
+        return .text(
+            userID: from.id,
+            chatID: message.chat.id,
+            threadID: message.threadID,
+            text: text,
+            attachments: message.attachments
+        )
+    }
+
+    private static func inbound(
+        for command: (name: String, argument: String?),
+        from: TelegramUser,
+        message: TelegramMessage
+    ) -> TelegramInbound? {
+        switch command.name {
         case "start":
-            let code = command?.argument
-            return .start(userID: from.id, chatID: message.chat.id, code: code)
+            return .start(userID: from.id, chatID: message.chat.id, code: command.argument)
         case "help":
             return .help(
                 userID: from.id,
@@ -404,16 +424,10 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 userID: from.id,
                 chatID: message.chat.id,
                 threadID: message.threadID,
-                query: command?.argument
+                query: command.argument
             )
         default:
-            return .text(
-                userID: from.id,
-                chatID: message.chat.id,
-                threadID: message.threadID,
-                text: text,
-                attachments: message.attachments
-            )
+            return nil
         }
     }
 
@@ -537,6 +551,27 @@ struct TelegramHTTPClient: TelegramAPIClient {
             ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
             : nil
         return (name, argument?.isEmpty == true ? nil : argument)
+    }
+
+    /// Telegram names a newly opened private-chat topic after the first
+    /// message, so `/find` becomes a topic titled `/find` or `find`.
+    private static func command(
+        fromTopicTitle name: String?
+    ) -> (name: String, argument: String?)? {
+        guard let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        if let command = botCommand(from: trimmed) {
+            return command
+        }
+        let head = trimmed.split(separator: " ", maxSplits: 1).first
+            .flatMap { $0.split(separator: "@", maxSplits: 1).first }
+            .map { String($0).lowercased() }
+        guard let head, ["start", "help", "new", "find"].contains(head) else {
+            return nil
+        }
+        return botCommand(from: "/\(trimmed)")
     }
 }
 
