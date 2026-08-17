@@ -461,3 +461,28 @@ func telegramForumErrorAsksToEnableTopics() {
     #expect(text.contains("Threaded Mode"))
     #expect(text.contains("Topics"))
 }
+
+@Test
+func unknownSessionLoadErrorIsNotIgnored() {
+    let error = GrokControlError.requestFailed(
+        method: "session/load",
+        code: -32602,
+        message: "Invalid params",
+        data: "unknown session id"
+    )
+    #expect(TelegramSessionLoad.shouldIgnoreLoadFailure(error) == false)
+    #expect(
+        TelegramCopy.reply(for: error) == TelegramCopy.unknownSession
+    )
+}
+
+@Test
+func alreadyLoadedSessionCanSkipReload() {
+    let error = GrokControlError.requestFailed(
+        method: "session/load",
+        code: -32602,
+        message: "session already loaded",
+        data: nil
+    )
+    #expect(TelegramSessionLoad.shouldIgnoreLoadFailure(error))
+}

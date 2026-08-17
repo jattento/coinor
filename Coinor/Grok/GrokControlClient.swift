@@ -451,10 +451,14 @@ actor GrokControlClient {
     }
 
     /// Makes an existing session current on this control connection.
-    func loadSession(_ id: GrokSessionID) async throws {
+    func loadSession(_ id: GrokSessionID, cwd: String) async throws {
         _ = try await call(
             GrokMethod.sessionLoad,
-            params: ["sessionId": .string(id.rawValue)]
+            params: [
+                "sessionId": .string(id.rawValue),
+                "cwd": .string(cwd),
+                "mcpServers": .array([]),
+            ]
         )
     }
 

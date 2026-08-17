@@ -238,10 +238,17 @@ This chat is not a forum yet, so Conan Code cannot open a topic.
 Then send /new again.
 """
 
+    static let unknownSession = """
+Conan Code found that conversation but Grok does not have it loaded on this connection. Open it once on the Mac, then send the message again.
+"""
+
     static func reply(for error: Error) -> String {
         let description = error.localizedDescription
         if description.localizedCaseInsensitiveContains("not a forum") {
             return chatIsNotAForum
+        }
+        if description.localizedCaseInsensitiveContains("unknown session") {
+            return unknownSession
         }
         return description
     }

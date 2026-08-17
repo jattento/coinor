@@ -46,16 +46,46 @@ extension AppCoordinator: TelegramWorking {
             throw TelegramBridgeError.remoteProjectsAreDesktopOnly
         }
         let id = GrokSessionID(sessionID)
+        guard let cwd = telegramWorkingDirectory(for: sessionID) else {
+            throw TelegramBridgeError.sessionWorkingDirectoryMissing
+        }
         do {
-            try await controlClient.loadSession(id)
+            try await controlClient.loadSession(id, cwd: cwd)
         } catch {
-            // A session we just created is already loaded.
+            // session/new already placed a just-created session on this
+            // connection. Any other load failure must surface; swallowing
+            // "unknown session id" and prompting anyway is how /find broke.
+            if !TelegramSessionLoad.shouldIgnoreLoadFailure(error) {
+                throw error
+            }
         }
         return try await controlClient.prompt(
             sessionID: id,
             blocks: blocks,
             onUpdate: onUpdate
         )
+    }
+
+    private func telegramWorkingDirectory(for sessionID: String) -> String? {
+        if let cwd = session(sessionID)?.cwd, !cwd.isEmpty {
+            return cwd
+        }
+        if let directory = session(sessionID)?.projectDirectory, !directory.isEmpty {
+            return directory
+        }
+        if let manager = runtimeManager {
+            let rootID = manager.rootSessionID(containing: sessionID) ?? sessionID
+            if let cwd = manager.workingDirectory(
+                sessionID: sessionID,
+                rootSessionID: rootID
+            ), !cwd.isEmpty {
+                return cwd
+            }
+        }
+        if let projectID = summaries.first(where: { $0.id == sessionID })?.projectID {
+            return mainCheckout(for: projectID)
+        }
+        return nil
     }
 
     func telegramAnswerPermission(sessionID: String, optionID: String?) {
@@ -199,10 +229,23 @@ extension AppCoordinator: TelegramWorking {
     }
 }
 
+enum TelegramSessionLoad {
+    static func shouldIgnoreLoadFailure(_ error: Error) -> Bool {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("unknown session") {
+            return false
+        }
+        return text.contains("already loaded")
+            || text.contains("already current")
+            || text.contains("already exists")
+    }
+}
+
 enum TelegramBridgeError: Error, Equatable, LocalizedError, Sendable {
     case remoteProjectsAreDesktopOnly
     case finderUnavailable
     case conversationMissing
+    case sessionWorkingDirectoryMissing
 
     var errorDescription: String? {
         switch self {
@@ -212,6 +255,8 @@ enum TelegramBridgeError: Error, Equatable, LocalizedError, Sendable {
             return "Conan Code could not start a conversation search."
         case .conversationMissing:
             return "That conversation is no longer in the catalog."
+        case .sessionWorkingDirectoryMissing:
+            return "Conan Code could not find the working directory for that conversation."
         }
     }
 }

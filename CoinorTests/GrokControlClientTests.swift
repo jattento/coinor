@@ -1408,6 +1408,25 @@ func createsASessionThroughACP() async throws {
 }
 
 @Test
+func loadsAnExistingSessionThroughACPWithCwd() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, [:]))
+    }
+
+    try await client.loadSession(
+        GrokSessionID("00000000-0000-7000-8000-000000000099"),
+        cwd: "/tmp/coinor"
+    )
+
+    let request = try #require(transport.request("session/load"))
+    #expect(request["params"]?["sessionId"]?.stringValue
+        == "00000000-0000-7000-8000-000000000099")
+    #expect(request["params"]?["cwd"]?.stringValue == "/tmp/coinor")
+    #expect(request["params"]?["mcpServers"]?.arrayValue?.isEmpty == true)
+    await client.shutdown()
+}
+
+@Test
 func collectsPromptChunksUntilTheTurnCompletes() async throws {
     let (client, transport, _) = try await connectedClient { request, transport in
         guard request["method"]?.stringValue == "session/prompt" else {
