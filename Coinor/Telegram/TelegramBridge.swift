@@ -419,7 +419,7 @@ final class TelegramBridge: ObservableObject {
                 client: client
             )
         } catch {
-            await reply(error.localizedDescription, threadID: threadID, client: client)
+            await reply(TelegramCopy.reply(for: error), threadID: threadID, client: client)
         }
     }
 
@@ -492,7 +492,11 @@ final class TelegramBridge: ObservableObject {
                 client: client
             )
         } catch {
-            await reply(error.localizedDescription, threadID: routing.pickerThreadID, client: client)
+            await reply(
+                TelegramCopy.reply(for: error),
+                threadID: routing.pickerThreadID,
+                client: client
+            )
         }
     }
 

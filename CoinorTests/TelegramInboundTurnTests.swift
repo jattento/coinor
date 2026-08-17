@@ -379,3 +379,15 @@ func subagentStatusCopyNamesTheParentWorkNotANewConversation() {
     #expect(TelegramCopy.subagentLine(started) == "Subagent started: explore")
     #expect(!TelegramCopy.subagentLine(started).localizedCaseInsensitiveContains("conversation"))
 }
+
+@Test
+func telegramForumErrorAsksToEnableTopics() {
+    let error = TelegramAPIError.requestFailed(
+        status: 400,
+        description: "Bad Request: the chat is not a forum"
+    )
+    let text = TelegramCopy.reply(for: error)
+    #expect(text == TelegramCopy.chatIsNotAForum)
+    #expect(text.contains("Threaded Mode"))
+    #expect(text.contains("Topics"))
+}

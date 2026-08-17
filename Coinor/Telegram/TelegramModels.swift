@@ -229,6 +229,22 @@ enum TelegramCopy {
         "This topic is not a Conan Code conversation. Send /new or create a topic to start one."
     static let working = "Working…"
     static let missingToken = "Paste a Telegram bot token in Conan Code Settings to enable remote work."
+    static let chatIsNotAForum = """
+This chat is not a forum yet, so Conan Code cannot open a topic.
+
+1. Open @BotFather and tap Open (the Mini App, not the text commands). Pick this bot → Bot Settings → turn on Threaded Mode.
+2. Come back to this chat, tap the bot name at the top, and enable Topics.
+
+Then send /new again.
+"""
+
+    static func reply(for error: Error) -> String {
+        let description = error.localizedDescription
+        if description.localizedCaseInsensitiveContains("not a forum") {
+            return chatIsNotAForum
+        }
+        return description
+    }
 
     static func subagentLine(
         _ observation: GrokSubagentLifecycleObservation
