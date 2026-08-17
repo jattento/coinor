@@ -53,7 +53,7 @@ final class TelegramBridge: ObservableObject {
     @Published private(set) var hasToken = false
 
     init(
-        tokens: any TelegramTokenStoring = KeychainTelegramTokenStore.default,
+        tokens: any TelegramTokenStoring = FileTelegramTokenStore.default,
         client: (@MainActor (String) -> any TelegramAPIClient)? = nil,
         transcriber: any TelegramTranscribing = SpeechTelegramTranscriber()
     ) {

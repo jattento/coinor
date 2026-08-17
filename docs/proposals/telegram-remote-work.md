@@ -17,7 +17,7 @@ network listener, and no second conversation identity.
    Communities and informal “subgroups” are topics by another name, or
    a different Telegram product. Do not use them.
 4. **One bot token and pairing per Conan Code installation.** Paste the
-   token in Settings (Keychain). A one-time `/start <code>` allowlists
+   token in Settings (`~/.coinor/telegram.toml`). A one-time `/start <code>` allowlists
    that Telegram user and binds that chat. Everyone else is ignored.
    A remote host in the sidebar is not a pairing.
 5. **Local Projects only for v1.** `/new`, `/find`, and share only see
@@ -87,7 +87,7 @@ exist in 9.5–10.2. Unclaimed updates last at most 24 hours.
 No third-party Swift package unless explicitly approved.
 
 - `Coinor/Telegram/` — Bot API client and long poller
-- pairing + allowlist in Keychain; mapping in `MetadataStore`
+- pairing allowlist in `MetadataStore`; bot token in `~/.coinor/telegram.toml`
 - `TelegramBridge` started by `AppCoordinator` after the Grok leader
 - ACP `session/new`, `session/load`, `session/prompt` on
   `GrokControlClient`

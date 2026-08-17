@@ -39,7 +39,8 @@ to always-approve.
 - `GrokControlClient` must grow `session/new`, `session/load`, and
   `session/prompt`. The TUI is no longer the only driver.
 - Mapping (session id ↔ topic) is Coinor organization metadata, same class as
-  pin and archive.
+  pin and archive. The bot token lives in `~/.coinor/telegram.toml`, not
+  Keychain, so reads do not prompt.
 - Open-source Claude↔Telegram bots are inspiration only (pairing codes,
   topic isolation, draft streaming, approval buttons, quiet verbosity).
   RichardAtCT/claude-code-telegram is the reference for “final answer,
