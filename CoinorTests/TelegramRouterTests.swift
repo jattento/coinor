@@ -142,6 +142,91 @@ func telegramMainCheckoutCallbackCreatesAConversation() {
 }
 
 @Test
+func telegramFindWithoutQueryAsksWhatToSearch() {
+    var state = TelegramRoutingState.empty
+    state.pairedUserID = TelegramUserID(9)
+    state.pairedChatID = TelegramChatID(9)
+    let router = TelegramRouter()
+    let (next, decisions) = router.handle(
+        .find(
+            userID: TelegramUserID(9),
+            chatID: TelegramChatID(9),
+            threadID: nil,
+            query: nil
+        ),
+        state: state
+    )
+    #expect(next.awaitingFindQuery)
+    #expect(decisions == [.askFindQuery])
+}
+
+@Test
+func telegramFindWithQuerySearchesImmediately() {
+    var state = TelegramRoutingState.empty
+    state.pairedUserID = TelegramUserID(9)
+    state.pairedChatID = TelegramChatID(9)
+    let router = TelegramRouter()
+    let (_, decisions) = router.handle(
+        .find(
+            userID: TelegramUserID(9),
+            chatID: TelegramChatID(9),
+            threadID: nil,
+            query: "refactor of foo"
+        ),
+        state: state
+    )
+    #expect(decisions == [.search(query: "refactor of foo")])
+}
+
+@Test
+func telegramFindResultCallbackAttachesTheConversation() {
+    var state = TelegramRoutingState.empty
+    state.pairedUserID = TelegramUserID(9)
+    state.pairedChatID = TelegramChatID(9)
+    state.findChoices = [
+        TelegramFindMatch(sessionID: "session-a", title: "Fix finder", reason: "mentions tabs"),
+    ]
+    let router = TelegramRouter()
+    let (_, decisions) = router.handle(
+        .callback(
+            userID: TelegramUserID(9),
+            chatID: TelegramChatID(9),
+            threadID: nil,
+            queryID: "q",
+            data: TelegramCallbackData.find(0)
+        ),
+        state: state
+    )
+    #expect(decisions == [.attach(sessionID: "session-a")])
+}
+
+@Test
+func telegramPermissionCallbackAnswersThePrompt() {
+    var state = TelegramRoutingState.empty
+    state.pairedUserID = TelegramUserID(9)
+    state.pairedChatID = TelegramChatID(9)
+    state.pendingPermissionSessionID = "session-a"
+    state.pendingPermissionOptions = [
+        TelegramPermissionOption(id: "allow-once", title: "Allow once"),
+    ]
+    let router = TelegramRouter()
+    let (next, decisions) = router.handle(
+        .callback(
+            userID: TelegramUserID(9),
+            chatID: TelegramChatID(9),
+            threadID: TelegramThreadID(44),
+            queryID: "q",
+            data: TelegramCallbackData.permission(0)
+        ),
+        state: state
+    )
+    #expect(next.pendingPermissionSessionID == nil)
+    #expect(
+        decisions == [.answerPermission(sessionID: "session-a", optionID: "allow-once")]
+    )
+}
+
+@Test
 func telegramMappedTopicTextIsAPrompt() {
     var state = TelegramRoutingState.empty
     state.pairedUserID = TelegramUserID(9)

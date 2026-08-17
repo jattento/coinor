@@ -1456,6 +1456,58 @@ func collectsPromptChunksUntilTheTurnCompletes() async throws {
 }
 
 @Test
+func answersPermissionRequestsWhileATelegramPromptIsInFlight() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        guard request["method"]?.stringValue == "session/prompt" else {
+            transport.emit(result(for: request, [:]))
+            return
+        }
+        transport.emit([
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "session/request_permission",
+            "params": [
+                "sessionId": "session-a",
+                "toolCall": ["title": "Run git push"],
+                "options": [
+                    [
+                        "optionId": "allow-once",
+                        "name": "Allow once",
+                    ],
+                ],
+            ],
+        ])
+    }
+
+    let expectedCount = transport.requests.count + 2
+    let prompt = Task {
+        try await client.prompt(
+            sessionID: GrokSessionID("session-a"),
+            text: "push"
+        ) { update in
+            guard case let .permission(value) = update else { return }
+            Task {
+                await client.answerPermission(
+                    sessionID: value.sessionID,
+                    optionID: "allow-once"
+                )
+            }
+        }
+    }
+
+    #expect(await transport.waitForRequests(expectedCount))
+    let answer = try #require(
+        transport.requests.last { $0["id"]?.intValue == 42 }
+    )
+    #expect(answer["result"]?["outcome"]?["optionId"]?.stringValue == "allow-once")
+
+    let promptRequest = try #require(transport.request("session/prompt"))
+    transport.emit(result(for: promptRequest, ["stopReason": "end_turn"]))
+    _ = try await prompt.value
+    await client.shutdown()
+}
+
+@Test
 func refusesToRunTwiceAndRefusesWorkAfterShutdown() async throws {
     let (client, _, _) = try await connectedClient()
 

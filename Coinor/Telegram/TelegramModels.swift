@@ -79,6 +79,12 @@ enum TelegramInbound: Equatable, Sendable {
     case start(userID: TelegramUserID, chatID: TelegramChatID, code: String?)
     case help(userID: TelegramUserID, chatID: TelegramChatID, threadID: TelegramThreadID?)
     case new(userID: TelegramUserID, chatID: TelegramChatID, threadID: TelegramThreadID?)
+    case find(
+        userID: TelegramUserID,
+        chatID: TelegramChatID,
+        threadID: TelegramThreadID?,
+        query: String?
+    )
     case text(
         userID: TelegramUserID,
         chatID: TelegramChatID,
@@ -105,6 +111,7 @@ enum TelegramInbound: Equatable, Sendable {
         case let .start(_, chatID, _),
              let .help(_, chatID, _),
              let .new(_, chatID, _),
+             let .find(_, chatID, _, _),
              let .text(_, chatID, _, _),
              let .callback(_, chatID, _, _, _),
              let .topicCreated(_, chatID, _, _):
@@ -132,7 +139,18 @@ enum TelegramDecision: Equatable, Sendable {
         threadID: TelegramThreadID?
     )
     case prompt(sessionID: String, text: String)
+    case askFindQuery
+    case search(query: String)
+    case attach(sessionID: String)
+    case answerPermission(sessionID: String, optionID: String?)
     case ignoreUnmappedTopic
+}
+
+struct TelegramFindMatch: Equatable, Sendable, Identifiable {
+    var id: String { sessionID }
+    var sessionID: String
+    var title: String
+    var reason: String
 }
 
 struct TelegramRoutingState: Equatable, Sendable {
@@ -141,8 +159,12 @@ struct TelegramRoutingState: Equatable, Sendable {
     var pairedChatID: TelegramChatID?
     var sessionIDByThreadID: [Int: String]
     var projectChoices: [TelegramProjectChoice]
+    var findChoices: [TelegramFindMatch]
     var awaitingWorktreeNameForProjectID: String?
+    var awaitingFindQuery: Bool
     var pickerThreadID: TelegramThreadID?
+    var pendingPermissionSessionID: String?
+    var pendingPermissionOptions: [TelegramPermissionOption]
 
     var isPaired: Bool {
         pairedUserID != nil && pairedChatID != nil
@@ -154,9 +176,18 @@ struct TelegramRoutingState: Equatable, Sendable {
         pairedChatID: nil,
         sessionIDByThreadID: [:],
         projectChoices: [],
+        findChoices: [],
         awaitingWorktreeNameForProjectID: nil,
-        pickerThreadID: nil
+        awaitingFindQuery: false,
+        pickerThreadID: nil,
+        pendingPermissionSessionID: nil,
+        pendingPermissionOptions: []
     )
+}
+
+struct TelegramPermissionOption: Equatable, Sendable {
+    var id: String
+    var title: String
 }
 
 enum TelegramCopy {
@@ -165,9 +196,12 @@ enum TelegramCopy {
     static let invalidPairingCode = "That pairing code is not valid."
     static let alreadyPaired = "This Mac is already paired to this chat."
     static let paired =
-        "Conan Code is paired to this chat. Send /new to start a conversation, or create a topic."
+        "Conan Code is paired to this chat. Send /new to start a conversation, /find to attach one, or create a topic."
     static let help =
-        "Commands:\n/new — start a conversation\n/help — this message\n\nMessages in a conversation topic are turns of that conversation."
+        "Commands:\n/new — start a conversation\n/find — search existing conversations\n/help — this message\n\nMessages in a conversation topic are turns of that conversation."
+    static let askFindQuery = "What should Conan Code search for?"
+    static let noFindMatches = "Conan Code found no local conversations for that."
+    static let pickFindMatch = "Choose a conversation to open on Telegram."
     static let pickProject = "Choose a project for the new conversation."
     static let noProjects =
         "Conan Code has no local projects yet. Add one on the Mac, then send /new again."
@@ -183,10 +217,15 @@ enum TelegramCallbackData {
     static let projectPrefix = "p:"
     static let worktreeMainPrefix = "wm:"
     static let worktreeNewPrefix = "wn:"
+    static let findPrefix = "f:"
+    static let permissionPrefix = "a:"
+    static let permissionDeny = "ax"
 
     static func project(_ index: Int) -> String { "\(projectPrefix)\(index)" }
     static func worktreeMain(_ index: Int) -> String { "\(worktreeMainPrefix)\(index)" }
     static func worktreeNew(_ index: Int) -> String { "\(worktreeNewPrefix)\(index)" }
+    static func find(_ index: Int) -> String { "\(findPrefix)\(index)" }
+    static func permission(_ index: Int) -> String { "\(permissionPrefix)\(index)" }
 
     static func projectIndex(_ data: String) -> Int? {
         index(data, prefix: projectPrefix)
@@ -198,6 +237,14 @@ enum TelegramCallbackData {
 
     static func worktreeNewIndex(_ data: String) -> Int? {
         index(data, prefix: worktreeNewPrefix)
+    }
+
+    static func findIndex(_ data: String) -> Int? {
+        index(data, prefix: findPrefix)
+    }
+
+    static func permissionIndex(_ data: String) -> Int? {
+        index(data, prefix: permissionPrefix)
     }
 
     private static func index(_ data: String, prefix: String) -> Int? {

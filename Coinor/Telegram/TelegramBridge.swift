@@ -13,7 +13,14 @@ protocol TelegramWorking: AnyObject {
         projectID: String,
         worktreeName: String?
     ) async throws -> TelegramCreatedConversation
-    func telegramPrompt(sessionID: String, text: String) async throws -> String
+    func telegramPrompt(
+        sessionID: String,
+        text: String,
+        onUpdate: @escaping @Sendable (GrokPromptUpdate) -> Void
+    ) async throws -> String
+    func telegramAnswerPermission(sessionID: String, optionID: String?)
+    func telegramFind(query: String) async throws -> (message: String, matches: [TelegramFindMatch])
+    func telegramPrepareAttachment(sessionID: String) async throws -> TelegramCreatedConversation
     func telegramPersist(
         _ transform: @escaping @Sendable (inout MetadataDocument) -> Void
     ) async
@@ -262,6 +269,18 @@ final class TelegramBridge: ObservableObject {
             )
         case let .prompt(sessionID, text):
             await prompt(sessionID: sessionID, text: text, client: client)
+        case .askFindQuery:
+            await reply(
+                TelegramCopy.askFindQuery,
+                threadID: routing.pickerThreadID,
+                client: client
+            )
+        case let .search(query):
+            await search(query: query, client: client)
+        case let .attach(sessionID):
+            await attach(sessionID: sessionID, client: client)
+        case let .answerPermission(sessionID, optionID):
+            worker?.telegramAnswerPermission(sessionID: sessionID, optionID: optionID)
         case .ignoreUnmappedTopic:
             await reply(
                 TelegramCopy.unmappedTopic,
@@ -359,6 +378,79 @@ final class TelegramBridge: ObservableObject {
         }
     }
 
+    private func search(query: String, client: (any TelegramAPIClient)?) async {
+        do {
+            let result = try await worker?.telegramFind(query: query)
+            let matches = result?.matches ?? []
+            routing.findChoices = matches
+            guard !matches.isEmpty else {
+                await reply(
+                    result?.message.isEmpty == false
+                        ? result!.message
+                        : TelegramCopy.noFindMatches,
+                    threadID: routing.pickerThreadID,
+                    client: client
+                )
+                return
+            }
+            let listing = matches.enumerated().map { index, match in
+                "\(index + 1). \(match.title)\n\(match.reason)"
+            }.joined(separator: "\n\n")
+            let header = result?.message.isEmpty == false
+                ? result!.message
+                : TelegramCopy.pickFindMatch
+            let buttons = matches.enumerated().map { index, match in
+                [
+                    TelegramInlineButton(
+                        title: String(match.title.prefix(40)),
+                        data: TelegramCallbackData.find(index)
+                    ),
+                ]
+            }
+            await reply(
+                header + "\n\n" + listing,
+                threadID: routing.pickerThreadID,
+                markup: TelegramReplyMarkup(rows: buttons),
+                client: client
+            )
+        } catch {
+            await reply(error.localizedDescription, threadID: routing.pickerThreadID, client: client)
+        }
+    }
+
+    private func attach(sessionID: String, client: (any TelegramAPIClient)?) async {
+        do {
+            let created = try await worker?.telegramPrepareAttachment(sessionID: sessionID)
+            guard let created, let chatID = routing.pairedChatID else { return }
+            if let existing = threadID(for: created.sessionID) {
+                await reply(
+                    "This conversation is already “\(created.title)” in its topic.",
+                    threadID: existing,
+                    client: client
+                )
+                return
+            }
+            let threadID: TelegramThreadID
+            if let client {
+                threadID = try await client.createForumTopic(
+                    chatID: chatID,
+                    name: created.title
+                )
+            } else {
+                return
+            }
+            bind(sessionID: created.sessionID, threadID: threadID)
+            await persistMapping()
+            await reply(
+                "Opened “\(created.title)”. Messages in this topic are turns of that conversation.",
+                threadID: threadID,
+                client: client
+            )
+        } catch {
+            await reply(error.localizedDescription, threadID: routing.pickerThreadID, client: client)
+        }
+    }
+
     private func prompt(
         sessionID: String,
         text: String,
@@ -366,10 +458,12 @@ final class TelegramBridge: ObservableObject {
     ) async {
         promptTasks[sessionID]?.cancel()
         let threadID = threadID(for: sessionID)
+        let draftID = Int.random(in: 1...Int.max)
         promptTasks[sessionID] = Task { [weak self] in
             guard let self else { return }
-            await self.reply(
+            await self.draft(
                 TelegramCopy.working,
+                draftID: draftID,
                 threadID: threadID,
                 client: client
             )
@@ -377,7 +471,17 @@ final class TelegramBridge: ObservableObject {
                 let answer = try await self.worker?.telegramPrompt(
                     sessionID: sessionID,
                     text: text
-                ) ?? ""
+                ) { [weak self] update in
+                    Task { @MainActor in
+                        await self?.handlePromptUpdate(
+                            update,
+                            sessionID: sessionID,
+                            draftID: draftID,
+                            threadID: threadID,
+                            client: client
+                        )
+                    }
+                } ?? ""
                 let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                 await self.reply(
                     trimmed.isEmpty ? "Done." : trimmed,
@@ -393,6 +497,66 @@ final class TelegramBridge: ObservableObject {
                     client: client
                 )
             }
+        }
+    }
+
+    private func handlePromptUpdate(
+        _ update: GrokPromptUpdate,
+        sessionID: String,
+        draftID: Int,
+        threadID: TelegramThreadID?,
+        client: (any TelegramAPIClient)?
+    ) async {
+        switch update {
+        case let .draft(text):
+            let preview = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !preview.isEmpty else { return }
+            await draft(preview, draftID: draftID, threadID: threadID, client: client)
+        case let .status(title):
+            await draft("Working… \(title)", draftID: draftID, threadID: threadID, client: client)
+        case let .permission(prompt):
+            routing.pendingPermissionSessionID = sessionID
+            routing.pendingPermissionOptions = prompt.options.map {
+                TelegramPermissionOption(id: $0.id, title: $0.title)
+            }
+            var rows = prompt.options.enumerated().map { index, option in
+                [
+                    TelegramInlineButton(
+                        title: option.title,
+                        data: TelegramCallbackData.permission(index)
+                    ),
+                ]
+            }
+            rows.append([
+                TelegramInlineButton(title: "Deny", data: TelegramCallbackData.permissionDeny),
+            ])
+            await reply(
+                prompt.title,
+                threadID: threadID,
+                markup: TelegramReplyMarkup(rows: rows),
+                client: client
+            )
+        }
+    }
+
+    private func draft(
+        _ text: String,
+        draftID: Int,
+        threadID: TelegramThreadID?,
+        client: (any TelegramAPIClient)?
+    ) async {
+        guard let client, let chatID = routing.pairedChatID ?? fallbackChatID else {
+            return
+        }
+        do {
+            try await client.sendMessageDraft(
+                chatID: chatID,
+                threadID: threadID,
+                draftID: draftID,
+                text: text
+            )
+        } catch {
+            statusText = error.localizedDescription
         }
     }
 

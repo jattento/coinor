@@ -116,7 +116,7 @@ final class AppCoordinator: ObservableObject {
     private var started = false
     private let notifications = AttentionNotificationService()
     private var remoteDisconnectEpisodes = RemoteDisconnectNotificationEpisodes()
-    private var agenticFinder: GrokAgenticConversationFinder?
+    var agenticFinder: GrokAgenticConversationFinder?
     private let sessionTranscriptLocator = GrokSessionTranscriptLocator(
         root: GrokSessionTranscriptLocator.defaultRoot()
     )
@@ -2165,7 +2165,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    private var summaries: [SessionSummary] {
+    var summaries: [SessionSummary] {
         let persisted = persistedSessions.map { session in
             let dates = [
                 session.lastActiveAt,

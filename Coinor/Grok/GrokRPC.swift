@@ -102,6 +102,17 @@ enum GrokRPC {
         ]
     }
 
+    static func resultResponse(
+        id: GrokJSONValue,
+        result: GrokJSONValue
+    ) -> GrokJSONValue {
+        [
+            "jsonrpc": .string(jsonrpcVersion),
+            "id": id,
+            "result": result,
+        ]
+    }
+
     static func errorResponse(
         id: GrokJSONValue,
         code: Int,

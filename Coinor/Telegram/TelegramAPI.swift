@@ -13,6 +13,13 @@ protocol TelegramAPIClient: Sendable {
         replyMarkup: TelegramReplyMarkup?
     ) async throws
 
+    func sendMessageDraft(
+        chatID: TelegramChatID,
+        threadID: TelegramThreadID?,
+        draftID: Int,
+        text: String
+    ) async throws
+
     func createForumTopic(
         chatID: TelegramChatID,
         name: String
@@ -125,6 +132,23 @@ struct TelegramHTTPClient: TelegramAPIClient {
             ]
         }
         _ = try await post("sendMessage", parameters: parameters)
+    }
+
+    func sendMessageDraft(
+        chatID: TelegramChatID,
+        threadID: TelegramThreadID?,
+        draftID: Int,
+        text: String
+    ) async throws {
+        var parameters: [String: Any] = [
+            "chat_id": chatID.rawValue,
+            "draft_id": draftID,
+            "text": String(text.prefix(4096)),
+        ]
+        if let threadID {
+            parameters["message_thread_id"] = threadID.rawValue
+        }
+        _ = try await post("sendMessageDraft", parameters: parameters)
     }
 
     func createForumTopic(
@@ -282,6 +306,13 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 userID: from.id,
                 chatID: message.chat.id,
                 threadID: message.threadID
+            )
+        case "find":
+            return .find(
+                userID: from.id,
+                chatID: message.chat.id,
+                threadID: message.threadID,
+                query: command?.argument
             )
         default:
             return .text(

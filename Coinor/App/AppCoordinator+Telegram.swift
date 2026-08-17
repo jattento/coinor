@@ -37,7 +37,11 @@ extension AppCoordinator: TelegramWorking {
         )
     }
 
-    func telegramPrompt(sessionID: String, text: String) async throws -> String {
+    func telegramPrompt(
+        sessionID: String,
+        text: String,
+        onUpdate: @escaping @Sendable (GrokPromptUpdate) -> Void
+    ) async throws -> String {
         guard let controlClient, hostAliasBySessionID[sessionID] == nil else {
             throw TelegramBridgeError.remoteProjectsAreDesktopOnly
         }
@@ -47,7 +51,76 @@ extension AppCoordinator: TelegramWorking {
         } catch {
             // A session we just created is already loaded.
         }
-        return try await controlClient.prompt(sessionID: id, text: text)
+        return try await controlClient.prompt(
+            sessionID: id,
+            text: text,
+            onUpdate: onUpdate
+        )
+    }
+
+    func telegramAnswerPermission(sessionID: String, optionID: String?) {
+        Task {
+            await controlClient?.answerPermission(
+                sessionID: sessionID,
+                optionID: optionID
+            )
+        }
+    }
+
+    func telegramFind(
+        query: String
+    ) async throws -> (message: String, matches: [TelegramFindMatch]) {
+        guard let agenticFinder else {
+            throw TelegramBridgeError.finderUnavailable
+        }
+        let candidates = await agenticFinderCandidates().filter {
+            $0.remoteHost == nil
+        }
+        let response = try await agenticFinder.find(
+            AgenticFinderRequest(query: query, candidates: candidates)
+        )
+        let matches = response.matches.prefix(5).map { match in
+            let title = summaries.first { $0.id == match.sessionID }?.title
+                ?? match.sessionID
+            return TelegramFindMatch(
+                sessionID: match.sessionID,
+                title: title,
+                reason: match.reason
+            )
+        }
+        return (response.message, Array(matches))
+    }
+
+    func telegramPrepareAttachment(
+        sessionID: String
+    ) async throws -> TelegramCreatedConversation {
+        guard hostAliasBySessionID[sessionID] == nil else {
+            throw TelegramBridgeError.remoteProjectsAreDesktopOnly
+        }
+        guard let summary = summaries.first(where: { $0.id == sessionID }) else {
+            throw TelegramBridgeError.conversationMissing
+        }
+        let plan = AgenticFinderActionPlan.resolve(
+            match: AgenticFinderMatch(
+                sessionID: sessionID,
+                reason: "",
+                confidence: 1,
+                open: true,
+                pin: false
+            ),
+            summary: summary,
+            metadata: metadata
+        )
+        _ = await persist { document in
+            plan.apply(to: &document)
+        }
+        if plan.shouldUnarchiveConversation {
+            await telegram.reopenTopic(for: sessionID)
+        }
+        return TelegramCreatedConversation(
+            sessionID: sessionID,
+            title: summary.title
+        )
     }
 
     func telegramPersist(
@@ -128,11 +201,17 @@ extension AppCoordinator: TelegramWorking {
 
 enum TelegramBridgeError: Error, Equatable, LocalizedError, Sendable {
     case remoteProjectsAreDesktopOnly
+    case finderUnavailable
+    case conversationMissing
 
     var errorDescription: String? {
         switch self {
         case .remoteProjectsAreDesktopOnly:
             return "Remote projects stay on the Mac. Pair Telegram on that computer instead."
+        case .finderUnavailable:
+            return "Conan Code could not start a conversation search."
+        case .conversationMissing:
+            return "That conversation is no longer in the catalog."
         }
     }
 }

@@ -1,6 +1,23 @@
 import Foundation
 
 /// Something the control connection reported on its own initiative.
+enum GrokPromptUpdate: Sendable {
+    case draft(String)
+    case status(String)
+    case permission(GrokPermissionPrompt)
+}
+
+struct GrokPermissionPrompt: Sendable, Equatable {
+    var sessionID: String
+    var title: String
+    var options: [GrokPermissionOption]
+}
+
+struct GrokPermissionOption: Sendable, Equatable {
+    var id: String
+    var title: String
+}
+
 enum GrokControlEvent: Sendable {
     case rosterChanged(GrokRosterChange)
     case subagentLifecycle(GrokSubagentLifecycleObservation)
@@ -89,6 +106,7 @@ actor GrokControlClient {
     private(set) var handshake: GrokAgentHandshake?
     private(set) var executableVersion: String?
     private var promptAccumulators: [String: PromptAccumulation] = [:]
+    private var pendingPermissions: [String: PendingPermission] = [:]
 
     var inFlightRequestCount: Int {
         pending.count
@@ -441,11 +459,15 @@ actor GrokControlClient {
     /// Sends one user turn and returns the concatenated assistant text.
     func prompt(
         sessionID: GrokSessionID,
-        text: String
+        text: String,
+        onUpdate: (@Sendable (GrokPromptUpdate) -> Void)? = nil
     ) async throws -> String {
-        let accumulation = PromptAccumulation()
+        let accumulation = PromptAccumulation(onUpdate: onUpdate)
         promptAccumulators[sessionID.rawValue] = accumulation
-        defer { promptAccumulators.removeValue(forKey: sessionID.rawValue) }
+        defer {
+            promptAccumulators.removeValue(forKey: sessionID.rawValue)
+            pendingPermissions.removeValue(forKey: sessionID.rawValue)
+        }
         _ = try await send(
             wireMethod: GrokMethod.sessionPrompt,
             method: GrokMethod.sessionPrompt,
@@ -461,6 +483,24 @@ actor GrokControlClient {
             timeout: .seconds(1_800)
         )
         return accumulation.text
+    }
+
+    func answerPermission(sessionID: String, optionID: String?) {
+        guard let pending = pendingPermissions.removeValue(forKey: sessionID) else {
+            return
+        }
+        let result: GrokJSONValue
+        if let optionID {
+            result = [
+                "outcome": [
+                    "outcome": "selected",
+                    "optionId": .string(optionID),
+                ],
+            ]
+        } else {
+            result = ["outcome": ["outcome": "cancelled"]]
+        }
+        respond(to: pending.requestID, result: result)
     }
 
     /// Replays the persisted lifecycle of a root session in storage order.
@@ -823,19 +863,69 @@ actor GrokControlClient {
         case let .notification(method, params):
             publish(method: method, params: params)
         case let .request(id, wireMethod, params):
-            // Coinor never drives a session, so it serves no reverse requests.
-            // Shared interactions are deliberately ignored: the interactive
-            // Ghostty client is the one that must answer, and a method-not-found
-            // response from this observer could win the leader's race.
+            // Shared interactions stay ignored unless this client is driving
+            // the session with session/prompt, so the Ghostty TUI can still
+            // answer when it is the driver.
             let normalized = GrokMethod.normalize(
                 wireMethod: wireMethod,
                 params: params
             )
-            guard !GrokMethod.isSharedInteraction(normalized.method) else {
+            if GrokMethod.isSharedInteraction(normalized.method) {
+                handleSharedInteraction(
+                    id: id,
+                    method: normalized.method,
+                    params: normalized.params
+                )
                 return
             }
             reject(id: id, method: normalized.method)
         }
+    }
+
+    private func handleSharedInteraction(
+        id: GrokJSONValue,
+        method: String,
+        params: GrokJSONValue
+    ) {
+        guard method == GrokMethod.requestPermission else {
+            return
+        }
+        let sessionID = params["sessionId"]?.stringValue ?? ""
+        guard promptAccumulators[sessionID] != nil else {
+            return
+        }
+        let options = (params["options"]?.arrayValue ?? []).compactMap {
+            option -> GrokPermissionOption? in
+            guard let optionID = option["optionId"]?.stringValue
+                    ?? option["option_id"]?.stringValue else {
+                return nil
+            }
+            return GrokPermissionOption(
+                id: optionID,
+                title: option["name"]?.stringValue ?? optionID
+            )
+        }
+        let title = params["toolCall"]?["title"]?.stringValue
+            ?? params["tool_call"]?["title"]?.stringValue
+            ?? "Grok needs permission."
+        pendingPermissions[sessionID] = PendingPermission(requestID: id)
+        promptAccumulators[sessionID]?.permission(
+            GrokPermissionPrompt(
+                sessionID: sessionID,
+                title: title,
+                options: options
+            )
+        )
+    }
+
+    private func respond(to id: GrokJSONValue, result: GrokJSONValue) {
+        guard let transport,
+              let payload = try? GrokRPC.resultResponse(id: id, result: result)
+                .encoded()
+        else {
+            return
+        }
+        try? transport.send(GrokFraming.encode(payload))
     }
 
     private func complete(id: String, result: GrokJSONValue?, error: GrokRPCError?) {
@@ -892,9 +982,28 @@ actor GrokControlClient {
         if let chunk = Self.agentMessageChunk(in: params) {
             promptAccumulators[chunk.sessionID]?.append(chunk.text)
         }
+        if let status = Self.toolStatus(in: params) {
+            promptAccumulators[status.sessionID]?.status(status.title)
+        }
         for continuation in subscribers.values {
             continuation.yield(event)
         }
+    }
+
+    private static func toolStatus(
+        in params: GrokJSONValue
+    ) -> (sessionID: String, title: String)? {
+        let sessionID = params["sessionId"]?.stringValue
+        let update = params["update"] ?? params
+        let kind = update["sessionUpdate"]?.stringValue
+        guard kind == "tool_call" || kind == "tool_call_update",
+              let sessionID else {
+            return nil
+        }
+        let title = update["title"]?.stringValue
+            ?? update["kind"]?.stringValue
+            ?? "Working"
+        return (sessionID, title)
     }
 
     private static func agentMessageChunk(
@@ -948,12 +1057,33 @@ actor GrokControlClient {
     }
 }
 
+private struct PendingPermission {
+    let requestID: GrokJSONValue
+}
+
 private final class PromptAccumulation: @unchecked Sendable {
     private let lock = NSLock()
     private var chunks: [String] = []
+    private let onUpdate: (@Sendable (GrokPromptUpdate) -> Void)?
+
+    init(onUpdate: (@Sendable (GrokPromptUpdate) -> Void)?) {
+        self.onUpdate = onUpdate
+    }
 
     func append(_ text: String) {
-        lock.withLock { chunks.append(text) }
+        let draft: String = lock.withLock {
+            chunks.append(text)
+            return chunks.joined()
+        }
+        onUpdate?(.draft(draft))
+    }
+
+    func status(_ title: String) {
+        onUpdate?(.status(title))
+    }
+
+    func permission(_ prompt: GrokPermissionPrompt) {
+        onUpdate?(.permission(prompt))
     }
 
     var text: String {

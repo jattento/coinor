@@ -29,14 +29,30 @@ struct TelegramRouter: Sendable {
                 return (next, [.rejectUnauthorized])
             }
             next.awaitingWorktreeNameForProjectID = nil
+            next.awaitingFindQuery = false
             next.pickerThreadID = threadID
             return (next, [.sendProjectPicker])
+
+        case let .find(userID, chatID, threadID, query):
+            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+                return (next, [.rejectUnauthorized])
+            }
+            next.awaitingWorktreeNameForProjectID = nil
+            next.pickerThreadID = threadID
+            let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if trimmed.isEmpty {
+                next.awaitingFindQuery = true
+                return (next, [.askFindQuery])
+            }
+            next.awaitingFindQuery = false
+            return (next, [.search(query: trimmed)])
 
         case let .topicCreated(userID, chatID, threadID, _):
             guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
                 return (next, [.rejectUnauthorized])
             }
             next.awaitingWorktreeNameForProjectID = nil
+            next.awaitingFindQuery = false
             next.pickerThreadID = threadID
             return (next, [.sendProjectPicker])
 
@@ -62,6 +78,10 @@ struct TelegramRouter: Sendable {
                         ),
                     ]
                 )
+            }
+            if next.awaitingFindQuery {
+                next.awaitingFindQuery = false
+                return (next, [.search(query: text)])
             }
             guard let threadID,
                   let sessionID = next.sessionIDByThreadID[threadID.rawValue] else {
@@ -132,6 +152,30 @@ struct TelegramRouter: Sendable {
             state.awaitingWorktreeNameForProjectID = project.id
             state.pickerThreadID = threadID ?? state.pickerThreadID
             return (state, [.askWorktreeName(projectID: project.id)])
+        }
+        if let index = TelegramCallbackData.findIndex(data) {
+            guard state.findChoices.indices.contains(index) else {
+                return (state, [.askFindQuery])
+            }
+            return (state, [.attach(sessionID: state.findChoices[index].sessionID)])
+        }
+        if data == TelegramCallbackData.permissionDeny {
+            guard let sessionID = state.pendingPermissionSessionID else {
+                return (state, [.ignore])
+            }
+            state.pendingPermissionSessionID = nil
+            state.pendingPermissionOptions = []
+            return (state, [.answerPermission(sessionID: sessionID, optionID: nil)])
+        }
+        if let index = TelegramCallbackData.permissionIndex(data) {
+            guard let sessionID = state.pendingPermissionSessionID,
+                  state.pendingPermissionOptions.indices.contains(index) else {
+                return (state, [.ignore])
+            }
+            let optionID = state.pendingPermissionOptions[index].id
+            state.pendingPermissionSessionID = nil
+            state.pendingPermissionOptions = []
+            return (state, [.answerPermission(sessionID: sessionID, optionID: optionID)])
         }
         return (state, [.ignore])
     }
