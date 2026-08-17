@@ -41,5 +41,9 @@ to always-approve.
 - Mapping (session id ↔ topic) is Coinor organization metadata, same class as
   pin and archive.
 - Open-source Claude↔Telegram bots are inspiration only (pairing codes,
-  topic isolation, draft streaming, approval buttons). No vendored sidecar,
-  no third-party Swift package without a later explicit approval.
+  topic isolation, draft streaming, approval buttons, quiet verbosity).
+  RichardAtCT/claude-code-telegram is the reference for “final answer,
+  not a transcript of tools.” No vendored sidecar, no third-party Swift
+  package without a later explicit approval.
+- Phone presentation is one working draft, permission buttons, and one
+  final answer. Subagent lifecycle stays on the Mac panes.

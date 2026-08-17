@@ -1,0 +1,83 @@
+import Foundation
+
+/// What a phone turn is allowed to show. RichardAtCT's quiet/verbose-0
+/// pattern: one working draft, permission buttons, one final answer.
+/// Subagent lifecycle is desktop pane state, never a chat message.
+struct TelegramTurnPresenter: Equatable, Sendable {
+    private var lastDraft: String?
+    private var answerStarted = false
+
+    mutating func consume(_ input: TelegramTurnInput) -> [TelegramTurnOutput] {
+        switch input {
+        case .started:
+            return draft(TelegramCopy.working)
+        case let .draft(text):
+            let preview = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !preview.isEmpty else { return [] }
+            answerStarted = true
+            return draft(preview)
+        case let .status(title):
+            guard !answerStarted else { return [] }
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return [] }
+            return draft("\(TelegramCopy.working) \(trimmed)")
+        case let .subagent(observation):
+            guard !answerStarted, observation.kind == .started else { return [] }
+            return draft("\(TelegramCopy.working) \(Self.label(observation))")
+        case let .permission(title, options):
+            return [.message(title, markup: Self.permissionMarkup(options))]
+        case let .finished(answer):
+            let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            return [.message(trimmed.isEmpty ? "Done." : trimmed, markup: nil)]
+        case let .failed(text):
+            return [.message(text, markup: nil)]
+        }
+    }
+
+    private mutating func draft(_ text: String) -> [TelegramTurnOutput] {
+        guard text != lastDraft else { return [] }
+        lastDraft = text
+        return [.draft(text)]
+    }
+
+    static func label(_ observation: GrokSubagentLifecycleObservation) -> String {
+        observation.description
+            ?? observation.subagentType
+            ?? "subagent"
+    }
+
+    static func permissionMarkup(
+        _ options: [TelegramPermissionOption]
+    ) -> TelegramReplyMarkup {
+        var rows = options.enumerated().map { index, option in
+            [
+                TelegramInlineButton(
+                    title: option.title,
+                    data: TelegramCallbackData.permission(index)
+                ),
+            ]
+        }
+        rows.append([
+            TelegramInlineButton(
+                title: "Deny",
+                data: TelegramCallbackData.permissionDeny
+            ),
+        ])
+        return TelegramReplyMarkup(rows: rows)
+    }
+}
+
+enum TelegramTurnInput: Equatable, Sendable {
+    case started
+    case draft(String)
+    case status(String)
+    case subagent(GrokSubagentLifecycleObservation)
+    case permission(title: String, options: [TelegramPermissionOption])
+    case finished(String)
+    case failed(String)
+}
+
+enum TelegramTurnOutput: Equatable, Sendable {
+    case draft(String)
+    case message(String, markup: TelegramReplyMarkup?)
+}

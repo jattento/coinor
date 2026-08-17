@@ -38,7 +38,9 @@ network listener, and no second conversation identity.
    answer; the first wins. Remote work does not imply always-approve.
 9. **Conan Code must be running.** Long-poll `getUpdates`. No daemon
    after quit. Telegram drops unclaimed updates after 24 hours.
-10. **Subagents stay in the parent topic** as short status lines. They
+10. **Subagents stay in the parent topic.** They never become chat
+    messages. At most a started subagent updates the one working draft
+    (`Working… explore`). Progress and finish events are silent. They
     are not Conversations and do not get topics.
 11. **Archive closes the topic** and further messages are ignored until
     unarchive. Deleting the topic only drops the surface; it does not
@@ -48,9 +50,10 @@ network listener, and no second conversation identity.
 13. **Media is the next turn.** Photo, file, or voice note join the
     prompt. Voice is transcribed on the Mac (same idea as Voice) and
     may also be attached.
-14. **What the phone sees.** A short working / tool-status line, then
-    the streamed assistant answer as a draft or rich message. Not the
-    TUI, not raw tool payloads.
+14. **What the phone sees.** One working draft, then the streamed
+    assistant answer as that same draft, then one final message.
+    Permission prompts stay buttons. Never one Telegram message per
+    tool or subagent event.
 15. **Inspiration only.** Read OpenClaw, Hermes, CCGram for patterns
     (pairing codes, topic isolation, one-message streaming, approval
     buttons, draft fallback). Implement a Coinor-owned `URLSession`
@@ -68,7 +71,7 @@ network listener, and no second conversation identity.
 | Inline buttons | Permission prompt / ask-user-question |
 | Topic title | Grok session title |
 | General / pairing topic | Status, `/new`, `/find` — not a Conversation |
-| Subagent | Status in the parent topic |
+| Subagent | Working draft of the parent topic, never a chat message |
 
 ## Why this transport
 
@@ -104,13 +107,20 @@ Tests mock Telegram HTTP and assert mapping, allowlist, and ACP calls.
 
 ## Inspiration (not dependencies)
 
+- **RichardAtCT/claude-code-telegram** (2.8k stars, SDK not PTY):
+  `/verbose 0` quiet mode is the phone UX we want — typing stays
+  active, only the final answer is a message. Do not copy the
+  Python sidecar, webhook server, or classic 13-command terminal.
+- **terranc/claude-telegram-bot-bridge**: streaming drafts, tool-call
+  messages off by default. Same lesson: do not dump tools into chat.
 - **OpenClaw** (MIT): pairing code, `chat_id`+`thread_id` isolation,
   button approvals, edit-one-message streaming. Default group ingest
   is something we do not want; we are not using a group.
 - **Hermes**: native `sendMessageDraft` with edit fallback; local STT
   for voice. Tool approval is weaker than we want.
-- **CCGram / CoderBOT:** topic ≈ session, but they type into tmux/PTY.
-  Do not copy that. Coinor already has a control plane.
+- **CCGram / CoderBOT / hanxiao / philmcneely:** topic ≈ session, but
+  they type into tmux/PTY. Do not copy that. Coinor already has a
+  control plane.
 
 ## Sources
 

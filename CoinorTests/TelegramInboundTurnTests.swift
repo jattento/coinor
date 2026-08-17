@@ -446,8 +446,8 @@ func subagentStatusCopyNamesTheParentWorkNotANewConversation() {
         status: nil,
         timestamp: nil
     )
-    #expect(TelegramCopy.subagentLine(started) == "Subagent started: explore")
-    #expect(!TelegramCopy.subagentLine(started).localizedCaseInsensitiveContains("conversation"))
+    #expect(TelegramTurnPresenter.label(started) == "explore")
+    #expect(!TelegramTurnPresenter.label(started).localizedCaseInsensitiveContains("conversation"))
 }
 
 @Test

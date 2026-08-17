@@ -6,6 +6,12 @@ struct TelegramCreatedConversation: Equatable, Sendable {
     var title: String
 }
 
+private struct ActiveTelegramTurn {
+    var presenter: TelegramTurnPresenter
+    let draftID: Int
+    let threadID: TelegramThreadID?
+}
+
 @MainActor
 protocol TelegramWorking: AnyObject {
     func telegramLocalProjects() -> [TelegramProjectChoice]
@@ -36,6 +42,7 @@ final class TelegramBridge: ObservableObject {
     private weak var worker: TelegramWorking?
     private var pollTask: Task<Void, Never>?
     private var promptTasks: [String: Task<Void, Never>] = [:]
+    private var activeTurns: [String: ActiveTelegramTurn] = [:]
     private var offset: TelegramUpdateID?
     private var outboundChatID: TelegramChatID?
     private(set) var routing = TelegramRoutingState.empty
@@ -84,6 +91,7 @@ final class TelegramBridge: ObservableObject {
         pollTask = nil
         promptTasks.values.forEach { $0.cancel() }
         promptTasks.removeAll()
+        activeTurns.removeAll()
     }
 
     func saveToken(_ token: String) throws {
@@ -194,14 +202,23 @@ final class TelegramBridge: ObservableObject {
         rootSessionID: String,
         observation: GrokSubagentLifecycleObservation
     ) {
-        guard let threadID = threadID(for: rootSessionID),
+        guard var turn = activeTurns[rootSessionID],
               let token = try? tokens.load() else {
             return
         }
-        let text = TelegramCopy.subagentLine(observation)
+        let outputs = turn.presenter.consume(.subagent(observation))
+        activeTurns[rootSessionID] = turn
+        guard !outputs.isEmpty else { return }
         let client = makeClient(token)
+        let draftID = turn.draftID
+        let threadID = turn.threadID
         Task {
-            await reply(text, threadID: threadID, client: client)
+            await self.publish(
+                outputs,
+                draftID: draftID,
+                threadID: threadID,
+                client: client
+            )
         }
     }
 
@@ -509,10 +526,16 @@ final class TelegramBridge: ObservableObject {
         promptTasks[sessionID]?.cancel()
         let threadID = threadID(for: sessionID)
         let draftID = Int.random(in: 1...Int.max)
+        activeTurns[sessionID] = ActiveTelegramTurn(
+            presenter: TelegramTurnPresenter(),
+            draftID: draftID,
+            threadID: threadID
+        )
         promptTasks[sessionID] = Task { [weak self] in
             guard let self else { return }
-            await self.draft(
-                TelegramCopy.working,
+            await self.consume(
+                .started,
+                sessionID: sessionID,
                 draftID: draftID,
                 threadID: threadID,
                 client: client
@@ -537,21 +560,26 @@ final class TelegramBridge: ObservableObject {
                         )
                     }
                 } ?? ""
-                let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-                await self.reply(
-                    trimmed.isEmpty ? "Done." : trimmed,
+                await self.consume(
+                    .finished(answer),
+                    sessionID: sessionID,
+                    draftID: draftID,
                     threadID: threadID,
                     client: client
                 )
             } catch is CancellationError {
+                self.finishTurn(sessionID, draftID: draftID)
                 return
             } catch {
-                await self.reply(
-                    error.localizedDescription,
+                await self.consume(
+                    .failed(TelegramCopy.reply(for: error)),
+                    sessionID: sessionID,
+                    draftID: draftID,
                     threadID: threadID,
                     client: client
                 )
             }
+            self.finishTurn(sessionID, draftID: draftID)
         }
     }
 
@@ -564,33 +592,85 @@ final class TelegramBridge: ObservableObject {
     ) async {
         switch update {
         case let .draft(text):
-            let preview = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !preview.isEmpty else { return }
-            await draft(preview, draftID: draftID, threadID: threadID, client: client)
-        case let .status(title):
-            await draft("Working… \(title)", draftID: draftID, threadID: threadID, client: client)
-        case let .permission(prompt):
-            routing.pendingPermissionSessionID = sessionID
-            routing.pendingPermissionOptions = prompt.options.map {
-                TelegramPermissionOption(id: $0.id, title: $0.title)
-            }
-            var rows = prompt.options.enumerated().map { index, option in
-                [
-                    TelegramInlineButton(
-                        title: option.title,
-                        data: TelegramCallbackData.permission(index)
-                    ),
-                ]
-            }
-            rows.append([
-                TelegramInlineButton(title: "Deny", data: TelegramCallbackData.permissionDeny),
-            ])
-            await reply(
-                prompt.title,
+            await consume(
+                .draft(text),
+                sessionID: sessionID,
+                draftID: draftID,
                 threadID: threadID,
-                markup: TelegramReplyMarkup(rows: rows),
                 client: client
             )
+        case let .status(title):
+            await consume(
+                .status(title),
+                sessionID: sessionID,
+                draftID: draftID,
+                threadID: threadID,
+                client: client
+            )
+        case let .permission(prompt):
+            let options = prompt.options.map {
+                TelegramPermissionOption(id: $0.id, title: $0.title)
+            }
+            routing.pendingPermissionSessionID = sessionID
+            routing.pendingPermissionOptions = options
+            await consume(
+                .permission(title: prompt.title, options: options),
+                sessionID: sessionID,
+                draftID: draftID,
+                threadID: threadID,
+                client: client
+            )
+        }
+    }
+
+    private func consume(
+        _ input: TelegramTurnInput,
+        sessionID: String,
+        draftID: Int,
+        threadID: TelegramThreadID?,
+        client: (any TelegramAPIClient)?
+    ) async {
+        guard var turn = activeTurns[sessionID], turn.draftID == draftID else {
+            return
+        }
+        let outputs = turn.presenter.consume(input)
+        activeTurns[sessionID] = turn
+        await publish(
+            outputs,
+            draftID: draftID,
+            threadID: threadID,
+            client: client
+        )
+    }
+
+    private func finishTurn(_ sessionID: String, draftID: Int) {
+        guard activeTurns[sessionID]?.draftID == draftID else { return }
+        activeTurns[sessionID] = nil
+    }
+
+    private func publish(
+        _ outputs: [TelegramTurnOutput],
+        draftID: Int,
+        threadID: TelegramThreadID?,
+        client: (any TelegramAPIClient)?
+    ) async {
+        for output in outputs {
+            switch output {
+            case let .draft(text):
+                await draft(
+                    text,
+                    draftID: draftID,
+                    threadID: threadID,
+                    client: client
+                )
+            case let .message(text, markup):
+                await reply(
+                    text,
+                    threadID: threadID,
+                    markup: markup,
+                    client: client
+                )
+            }
         }
     }
 

@@ -253,21 +253,6 @@ Conan Code found that conversation but Grok does not have it loaded on this conn
         return description
     }
 
-    static func subagentLine(
-        _ observation: GrokSubagentLifecycleObservation
-    ) -> String {
-        let label = observation.description
-            ?? observation.subagentType
-            ?? "subagent"
-        switch observation.kind {
-        case .started:
-            return "Subagent started: \(label)"
-        case .progressed:
-            return "Subagent working: \(label)"
-        case .finished:
-            return "Subagent finished: \(label)"
-        }
-    }
 }
 
 enum TelegramCallbackData {
