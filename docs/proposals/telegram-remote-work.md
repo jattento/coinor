@@ -39,9 +39,8 @@ network listener, and no second conversation identity.
 9. **Conan Code must be running.** Long-poll `getUpdates`. No daemon
    after quit. Telegram drops unclaimed updates after 24 hours.
 10. **Subagents stay in the parent topic.** They never become chat
-    messages. At most a started subagent updates the one working draft
-    (`Working… explore`). Progress and finish events are silent. They
-    are not Conversations and do not get topics.
+    messages or working-draft titles. They are not Conversations and
+    do not get topics. The Mac TUI is the conversation view.
 11. **Archive closes the topic** and further messages are ignored until
     unarchive. Deleting the topic only drops the surface; it does not
     archive or delete the Grok Session.
@@ -54,10 +53,6 @@ network listener, and no second conversation identity.
     assistant answer as that same draft, then one final message.
     Permission prompts stay buttons. Never one Telegram message per
     tool or subagent event.
-16. **What the Mac sees.** A phone turn of the selected Conversation
-    appears live in the conversation view as a Coinor overlay (user
-    text, then the streamed answer). Coinor does not type into the
-    Ghostty PTY. The durable transcript stays in Grok.
 15. **Inspiration only.** Read OpenClaw, Hermes, CCGram for patterns
     (pairing codes, topic isolation, one-message streaming, approval
     buttons, draft fallback). Implement a Coinor-owned `URLSession`
@@ -75,8 +70,7 @@ network listener, and no second conversation identity.
 | Inline buttons | Permission prompt / ask-user-question |
 | Topic title | Grok session title |
 | General / pairing topic | Status, `/new`, `/find` — not a Conversation |
-| Subagent | Working draft of the parent topic, never a chat message |
-| Phone turn on the Mac | Live overlay on the conversation view |
+| Subagent | Silent on Telegram. The Mac TUI is the conversation view |
 
 ## Why this transport
 

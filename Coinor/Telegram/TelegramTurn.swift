@@ -24,26 +24,6 @@ struct TelegramResolvedAttachment: Equatable, Sendable {
 /// Assembles the ACP `session/prompt` content the poller sends. Tests drive
 /// this function with the same attachments the live bridge resolves.
 enum TelegramTurnBuilder {
-    static func liveUserPreview(
-        text: String,
-        attachments: [TelegramTurnAttachment]
-    ) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            return trimmed
-        }
-        if attachments.contains(where: { $0.kind == .voice }) {
-            return "Voice note"
-        }
-        if attachments.contains(where: { $0.kind == .photo }) {
-            return "Photo"
-        }
-        if !attachments.isEmpty {
-            return "Attachment"
-        }
-        return ""
-    }
-
     static func blocks(
         text: String,
         attachments: [TelegramResolvedAttachment]

@@ -31,7 +31,6 @@ protocol TelegramWorking: AnyObject {
         _ transform: @escaping @Sendable (inout MetadataDocument) -> Void
     ) async
     func telegramConversationTitle(_ sessionID: String) -> String?
-    func telegramRevealConversation(_ sessionID: String)
 }
 
 @MainActor
@@ -52,7 +51,6 @@ final class TelegramBridge: ObservableObject {
     @Published private(set) var pairingCode: String?
     @Published private(set) var isPaired = false
     @Published private(set) var hasToken = false
-    @Published private(set) var liveTurns: [String: TelegramLiveTurn] = [:]
 
     init(
         tokens: any TelegramTokenStoring = KeychainTelegramTokenStore.default,
@@ -94,7 +92,6 @@ final class TelegramBridge: ObservableObject {
         promptTasks.values.forEach { $0.cancel() }
         promptTasks.removeAll()
         activeTurns.removeAll()
-        liveTurns.removeAll()
     }
 
     func saveToken(_ token: String) throws {
@@ -110,7 +107,6 @@ final class TelegramBridge: ObservableObject {
         isPaired = false
         hasToken = false
         statusText = TelegramCopy.missingToken
-        liveTurns.removeAll()
         stopPolling()
         Task { [weak self] in
             await self?.worker?.telegramPersist { $0.telegram = .empty }
@@ -212,9 +208,6 @@ final class TelegramBridge: ObservableObject {
         }
         let outputs = turn.presenter.consume(.subagent(observation))
         activeTurns[rootSessionID] = turn
-        if !outputs.isEmpty {
-            liveTurns[rootSessionID] = turn.presenter.live
-        }
         guard !outputs.isEmpty else { return }
         let client = makeClient(token)
         let draftID = turn.draftID
@@ -227,14 +220,6 @@ final class TelegramBridge: ObservableObject {
                 client: client
             )
         }
-    }
-
-    func liveTurn(for sessionID: String) -> TelegramLiveTurn? {
-        liveTurns[sessionID]
-    }
-
-    func dismissLiveTurn(_ sessionID: String) {
-        liveTurns[sessionID] = nil
     }
 
     func handleForTesting(_ inbound: TelegramInbound) async {
@@ -542,17 +527,10 @@ final class TelegramBridge: ObservableObject {
         let threadID = threadID(for: sessionID)
         let draftID = Int.random(in: 1...Int.max)
         activeTurns[sessionID] = ActiveTelegramTurn(
-            presenter: TelegramTurnPresenter(
-                userText: TelegramTurnBuilder.liveUserPreview(
-                    text: text,
-                    attachments: attachments
-                )
-            ),
+            presenter: TelegramTurnPresenter(),
             draftID: draftID,
             threadID: threadID
         )
-        publishLive(sessionID, draftID: draftID)
-        worker?.telegramRevealConversation(sessionID)
         promptTasks[sessionID] = Task { [weak self] in
             guard let self else { return }
             await self.consume(
@@ -564,12 +542,6 @@ final class TelegramBridge: ObservableObject {
             )
             do {
                 let resolved = await self.resolve(attachments, client: client)
-                self.updateLiveUserText(
-                    sessionID,
-                    draftID: draftID,
-                    text: text,
-                    attachments: resolved
-                )
                 let blocks = TelegramTurnBuilder.blocks(
                     text: text,
                     attachments: resolved
@@ -596,7 +568,7 @@ final class TelegramBridge: ObservableObject {
                     client: client
                 )
             } catch is CancellationError {
-                self.finishTurn(sessionID, draftID: draftID, keepLive: false)
+                self.finishTurn(sessionID, draftID: draftID)
                 return
             } catch {
                 await self.consume(
@@ -607,7 +579,7 @@ final class TelegramBridge: ObservableObject {
                     client: client
                 )
             }
-            self.finishTurn(sessionID, draftID: draftID, keepLive: true)
+            self.finishTurn(sessionID, draftID: draftID)
         }
     }
 
@@ -663,7 +635,6 @@ final class TelegramBridge: ObservableObject {
         }
         let outputs = turn.presenter.consume(input)
         activeTurns[sessionID] = turn
-        publishLive(sessionID, draftID: draftID)
         await publish(
             outputs,
             draftID: draftID,
@@ -672,47 +643,9 @@ final class TelegramBridge: ObservableObject {
         )
     }
 
-    private func finishTurn(
-        _ sessionID: String,
-        draftID: Int,
-        keepLive: Bool
-    ) {
+    private func finishTurn(_ sessionID: String, draftID: Int) {
         guard activeTurns[sessionID]?.draftID == draftID else { return }
         activeTurns[sessionID] = nil
-        if !keepLive, liveTurns[sessionID] != nil {
-            liveTurns[sessionID] = nil
-        }
-    }
-
-    private func publishLive(_ sessionID: String, draftID: Int) {
-        guard let turn = activeTurns[sessionID], turn.draftID == draftID else {
-            return
-        }
-        liveTurns[sessionID] = turn.presenter.live
-    }
-
-    private func updateLiveUserText(
-        _ sessionID: String,
-        draftID: Int,
-        text: String,
-        attachments: [TelegramResolvedAttachment]
-    ) {
-        guard var turn = activeTurns[sessionID], turn.draftID == draftID else {
-            return
-        }
-        if let transcript = attachments.first(where: { $0.kind == .voice })?
-            .transcript?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !transcript.isEmpty {
-            turn.presenter.setUserText(transcript)
-        } else {
-            let preview = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !preview.isEmpty {
-                turn.presenter.setUserText(preview)
-            }
-        }
-        activeTurns[sessionID] = turn
-        publishLive(sessionID, draftID: draftID)
     }
 
     private func publish(

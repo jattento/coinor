@@ -16,7 +16,6 @@ enum AppShellIdentifier {
     static let searchEmptyState = "AppShellSearchEmptyState"
     static let grokUpdateButton = "AppShellGrokUpdate"
     static let terminalRegion = "AppShellTerminalRegion"
-    static let telegramLiveTurn = "AppShellTelegramLiveTurn"
     static let workflowsDestination = "AppShellWorkflowsDestination"
     static let workflowCenter = "WorkflowCenter"
     static let workflowCatalogSearch = "WorkflowCatalogSearch"
