@@ -39,7 +39,7 @@ extension AppCoordinator: TelegramWorking {
 
     func telegramPrompt(
         sessionID: String,
-        text: String,
+        blocks: [GrokJSONValue],
         onUpdate: @escaping @Sendable (GrokPromptUpdate) -> Void
     ) async throws -> String {
         guard let controlClient, hostAliasBySessionID[sessionID] == nil else {
@@ -53,7 +53,7 @@ extension AppCoordinator: TelegramWorking {
         }
         return try await controlClient.prompt(
             sessionID: id,
-            text: text,
+            blocks: blocks,
             onUpdate: onUpdate
         )
     }

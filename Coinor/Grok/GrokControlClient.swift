@@ -462,6 +462,23 @@ actor GrokControlClient {
         text: String,
         onUpdate: (@Sendable (GrokPromptUpdate) -> Void)? = nil
     ) async throws -> String {
+        try await prompt(
+            sessionID: sessionID,
+            blocks: [
+                [
+                    "type": "text",
+                    "text": .string(text),
+                ],
+            ],
+            onUpdate: onUpdate
+        )
+    }
+
+    func prompt(
+        sessionID: GrokSessionID,
+        blocks: [GrokJSONValue],
+        onUpdate: (@Sendable (GrokPromptUpdate) -> Void)? = nil
+    ) async throws -> String {
         let accumulation = PromptAccumulation(onUpdate: onUpdate)
         promptAccumulators[sessionID.rawValue] = accumulation
         defer {
@@ -473,12 +490,7 @@ actor GrokControlClient {
             method: GrokMethod.sessionPrompt,
             params: [
                 "sessionId": .string(sessionID.rawValue),
-                "prompt": .array([
-                    [
-                        "type": "text",
-                        "text": .string(text),
-                    ],
-                ]),
+                "prompt": .array(blocks),
             ],
             timeout: .seconds(1_800)
         )

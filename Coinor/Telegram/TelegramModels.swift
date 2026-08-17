@@ -48,9 +48,12 @@ struct TelegramMessage: Equatable, Sendable {
     var from: TelegramUser?
     var chat: TelegramChat
     var text: String?
+    var caption: String?
     var threadID: TelegramThreadID?
     var isTopicMessage: Bool
     var forumTopicCreated: TelegramForumTopicCreated?
+    var forumTopicClosed: Bool
+    var attachments: [TelegramTurnAttachment]
 }
 
 struct TelegramForumTopicCreated: Equatable, Sendable {
@@ -89,7 +92,13 @@ enum TelegramInbound: Equatable, Sendable {
         userID: TelegramUserID,
         chatID: TelegramChatID,
         threadID: TelegramThreadID?,
-        text: String
+        text: String,
+        attachments: [TelegramTurnAttachment]
+    )
+    case topicClosed(
+        userID: TelegramUserID,
+        chatID: TelegramChatID,
+        threadID: TelegramThreadID
     )
     case callback(
         userID: TelegramUserID,
@@ -112,9 +121,10 @@ enum TelegramInbound: Equatable, Sendable {
              let .help(_, chatID, _),
              let .new(_, chatID, _),
              let .find(_, chatID, _, _),
-             let .text(_, chatID, _, _),
+             let .text(_, chatID, _, _, _),
              let .callback(_, chatID, _, _, _),
-             let .topicCreated(_, chatID, _, _):
+             let .topicCreated(_, chatID, _, _),
+             let .topicClosed(_, chatID, _):
             return chatID
         case .ignored:
             return nil
@@ -138,7 +148,13 @@ enum TelegramDecision: Equatable, Sendable {
         worktreeName: String?,
         threadID: TelegramThreadID?
     )
-    case prompt(sessionID: String, text: String)
+    case prompt(
+        sessionID: String,
+        text: String,
+        attachments: [TelegramTurnAttachment]
+    )
+    case ignoreArchivedTopic
+    case dropTopic(TelegramThreadID)
     case askFindQuery
     case search(query: String)
     case attach(sessionID: String)
@@ -165,6 +181,7 @@ struct TelegramRoutingState: Equatable, Sendable {
     var pickerThreadID: TelegramThreadID?
     var pendingPermissionSessionID: String?
     var pendingPermissionOptions: [TelegramPermissionOption]
+    var archivedSessionIDs: Set<String>
 
     var isPaired: Bool {
         pairedUserID != nil && pairedChatID != nil
@@ -181,7 +198,8 @@ struct TelegramRoutingState: Equatable, Sendable {
         awaitingFindQuery: false,
         pickerThreadID: nil,
         pendingPermissionSessionID: nil,
-        pendingPermissionOptions: []
+        pendingPermissionOptions: [],
+        archivedSessionIDs: []
     )
 }
 
@@ -211,6 +229,22 @@ enum TelegramCopy {
         "This topic is not a Conan Code conversation. Send /new or create a topic to start one."
     static let working = "Working…"
     static let missingToken = "Paste a Telegram bot token in Conan Code Settings to enable remote work."
+
+    static func subagentLine(
+        _ observation: GrokSubagentLifecycleObservation
+    ) -> String {
+        let label = observation.description
+            ?? observation.subagentType
+            ?? "subagent"
+        switch observation.kind {
+        case .started:
+            return "Subagent started: \(label)"
+        case .progressed:
+            return "Subagent working: \(label)"
+        case .finished:
+            return "Subagent finished: \(label)"
+        }
+    }
 }
 
 enum TelegramCallbackData {

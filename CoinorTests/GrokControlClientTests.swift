@@ -1456,6 +1456,37 @@ func collectsPromptChunksUntilTheTurnCompletes() async throws {
 }
 
 @Test
+func promptSendsTurnBuilderBlocksOnTheACPWire() async throws {
+    let pixels = Data([0xFF, 0xD8, 0x00])
+    let blocks = TelegramTurnBuilder.blocks(
+        text: "see this",
+        attachments: [
+            TelegramResolvedAttachment(
+                kind: .photo,
+                fileName: "photo.jpg",
+                mimeType: "image/jpeg",
+                data: pixels,
+                transcript: nil
+            ),
+        ]
+    )
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, ["stopReason": "end_turn"]))
+    }
+
+    _ = try await client.prompt(
+        sessionID: GrokSessionID("session-a"),
+        blocks: blocks
+    )
+
+    let request = try #require(transport.request("session/prompt"))
+    let sent = request["params"]?["prompt"]?.arrayValue ?? []
+    #expect(sent == blocks)
+    #expect(sent[1]["data"]?.stringValue == pixels.base64EncodedString())
+    await client.shutdown()
+}
+
+@Test
 func answersPermissionRequestsWhileATelegramPromptIsInFlight() async throws {
     let (client, transport, _) = try await connectedClient { request, transport in
         guard request["method"]?.stringValue == "session/prompt" else {

@@ -1219,6 +1219,7 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
+                    self.forwardSubagentToTelegram(observation)
                 case .workflowUpdated(let run):
                     self.workflowCenter.ingest(run)
                 case .notification:
@@ -2418,6 +2419,7 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
+                    self.forwardSubagentToTelegram(observation)
                 case .workflowUpdated(let run):
                     self.workflowCenter.ingest(run)
                 case .terminated(let error):
@@ -2867,6 +2869,22 @@ final class AppCoordinator: ObservableObject {
         for runtime in runtimeManager?.runtimes ?? [] {
             requestLifecycleCatchup(for: runtime.id)
         }
+    }
+
+    private func forwardSubagentToTelegram(
+        _ observation: GrokSubagentLifecycleObservation
+    ) {
+        let rootSessionID = hookCoordinator?.rootSessionID(
+            for: observation.childSessionID
+        )
+            ?? hookCoordinator?.rootSessionID(
+                for: observation.parentSessionID
+            )
+            ?? observation.parentSessionID
+        telegram.reportSubagent(
+            rootSessionID: rootSessionID,
+            observation: observation
+        )
     }
 
     private func reconcileSubagentLifecycle(

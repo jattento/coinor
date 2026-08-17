@@ -15,7 +15,7 @@ protocol TelegramWorking: AnyObject {
     ) async throws -> TelegramCreatedConversation
     func telegramPrompt(
         sessionID: String,
-        text: String,
+        blocks: [GrokJSONValue],
         onUpdate: @escaping @Sendable (GrokPromptUpdate) -> Void
     ) async throws -> String
     func telegramAnswerPermission(sessionID: String, optionID: String?)
@@ -31,6 +31,7 @@ protocol TelegramWorking: AnyObject {
 final class TelegramBridge: ObservableObject {
     private let tokens: any TelegramTokenStoring
     private let makeClient: @MainActor (String) -> any TelegramAPIClient
+    private let transcriber: any TelegramTranscribing
     private let router = TelegramRouter()
     private weak var worker: TelegramWorking?
     private var pollTask: Task<Void, Never>?
@@ -46,15 +47,17 @@ final class TelegramBridge: ObservableObject {
 
     init(
         tokens: any TelegramTokenStoring = KeychainTelegramTokenStore.default,
-        client: (@MainActor (String) -> any TelegramAPIClient)? = nil
+        client: (@MainActor (String) -> any TelegramAPIClient)? = nil,
+        transcriber: any TelegramTranscribing = SpeechTelegramTranscriber()
     ) {
         self.tokens = tokens
         makeClient = client ?? { TelegramHTTPClient(token: $0) }
+        self.transcriber = transcriber
     }
 
     func attach(worker: TelegramWorking, metadata: MetadataDocument) {
         self.worker = worker
-        apply(metadata.telegram)
+        apply(metadata.telegram, archivedSessionIDs: archivedIDs(in: metadata))
         refreshTokenPresence()
     }
 
@@ -135,6 +138,7 @@ final class TelegramBridge: ObservableObject {
     }
 
     func closeTopic(for sessionID: String) async {
+        routing.archivedSessionIDs.insert(sessionID)
         guard let threadID = threadID(for: sessionID),
               let chatID = routing.pairedChatID,
               let token = try? tokens.load() else {
@@ -151,6 +155,7 @@ final class TelegramBridge: ObservableObject {
     }
 
     func reopenTopic(for sessionID: String) async {
+        routing.archivedSessionIDs.remove(sessionID)
         guard let threadID = threadID(for: sessionID),
               let chatID = routing.pairedChatID,
               let token = try? tokens.load() else {
@@ -177,6 +182,21 @@ final class TelegramBridge: ObservableObject {
             threadID: threadID,
             name: title
         )
+    }
+
+    func reportSubagent(
+        rootSessionID: String,
+        observation: GrokSubagentLifecycleObservation
+    ) {
+        guard let threadID = threadID(for: rootSessionID),
+              let token = try? tokens.load() else {
+            return
+        }
+        let text = TelegramCopy.subagentLine(observation)
+        let client = makeClient(token)
+        Task {
+            await reply(text, threadID: threadID, client: client)
+        }
     }
 
     func handleForTesting(_ inbound: TelegramInbound) async {
@@ -267,8 +287,18 @@ final class TelegramBridge: ObservableObject {
                 threadID: threadID,
                 client: client
             )
-        case let .prompt(sessionID, text):
-            await prompt(sessionID: sessionID, text: text, client: client)
+        case let .prompt(sessionID, text, attachments):
+            await prompt(
+                sessionID: sessionID,
+                text: text,
+                attachments: attachments,
+                client: client
+            )
+        case .ignoreArchivedTopic:
+            return
+        case let .dropTopic(threadID):
+            routing.sessionIDByThreadID.removeValue(forKey: threadID.rawValue)
+            await persistMapping()
         case .askFindQuery:
             await reply(
                 TelegramCopy.askFindQuery,
@@ -454,6 +484,7 @@ final class TelegramBridge: ObservableObject {
     private func prompt(
         sessionID: String,
         text: String,
+        attachments: [TelegramTurnAttachment],
         client: (any TelegramAPIClient)?
     ) async {
         promptTasks[sessionID]?.cancel()
@@ -468,9 +499,14 @@ final class TelegramBridge: ObservableObject {
                 client: client
             )
             do {
+                let resolved = await self.resolve(attachments, client: client)
+                let blocks = TelegramTurnBuilder.blocks(
+                    text: text,
+                    attachments: resolved
+                )
                 let answer = try await self.worker?.telegramPrompt(
                     sessionID: sessionID,
-                    text: text
+                    blocks: blocks
                 ) { [weak self] update in
                     Task { @MainActor in
                         await self?.handlePromptUpdate(
@@ -608,14 +644,58 @@ final class TelegramBridge: ObservableObject {
         }
     }
 
-    private func apply(_ telegram: TelegramMetadata) {
+    private func apply(
+        _ telegram: TelegramMetadata,
+        archivedSessionIDs: Set<String>
+    ) {
         routing.pairedUserID = telegram.pairedUserID
         routing.pairedChatID = telegram.pairedChatID
         routing.sessionIDByThreadID = telegram.sessionIDByThreadID
+        routing.archivedSessionIDs = archivedSessionIDs
         isPaired = telegram.pairedUserID != nil && telegram.pairedChatID != nil
         if isPaired {
             statusText = TelegramCopy.paired
         }
+    }
+
+    private func archivedIDs(in metadata: MetadataDocument) -> Set<String> {
+        Set(metadata.sessions.compactMap { id, value in
+            value.archived ? id : nil
+        })
+    }
+
+    private func resolve(
+        _ attachments: [TelegramTurnAttachment],
+        client: (any TelegramAPIClient)?
+    ) async -> [TelegramResolvedAttachment] {
+        guard let client else { return [] }
+        var resolved: [TelegramResolvedAttachment] = []
+        for attachment in attachments {
+            do {
+                let data = try await client.downloadFile(id: attachment.fileID)
+                let mime = attachment.mimeType
+                    ?? (attachment.kind == .photo ? "image/jpeg" : "application/octet-stream")
+                var transcript: String?
+                if attachment.kind == .voice {
+                    transcript = await transcriber.transcribe(
+                        data: data,
+                        mimeType: mime
+                    )
+                }
+                resolved.append(
+                    TelegramResolvedAttachment(
+                        kind: attachment.kind,
+                        fileName: attachment.fileName,
+                        mimeType: mime,
+                        data: data,
+                        transcript: transcript
+                    )
+                )
+            } catch {
+                statusText = error.localizedDescription
+            }
+        }
+        return resolved
     }
 
     private func refreshTokenPresence() {

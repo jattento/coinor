@@ -238,11 +238,20 @@ func telegramMappedTopicTextIsAPrompt() {
             userID: TelegramUserID(9),
             chatID: TelegramChatID(9),
             threadID: TelegramThreadID(44),
-            text: "fix the finder"
+            text: "fix the finder",
+            attachments: []
         ),
         state: state
     )
-    #expect(decisions == [.prompt(sessionID: "session-a", text: "fix the finder")])
+    #expect(
+        decisions == [
+            .prompt(
+                sessionID: "session-a",
+                text: "fix the finder",
+                attachments: []
+            ),
+        ]
+    )
 }
 
 @Test

@@ -42,6 +42,8 @@ protocol TelegramAPIClient: Sendable {
     ) async throws
 
     func answerCallbackQuery(id: String) async throws
+
+    func downloadFile(id: String) async throws -> Data
 }
 
 struct TelegramReplyMarkup: Equatable, Sendable {
@@ -218,6 +220,29 @@ struct TelegramHTTPClient: TelegramAPIClient {
         )
     }
 
+    func downloadFile(id: String) async throws -> Data {
+        let payload = try await post("getFile", parameters: ["file_id": id])
+        guard let path = payload["file_path"]?.stringValue, !path.isEmpty else {
+            throw TelegramAPIError.malformedResponse("getFile did not return file_path")
+        }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let urlString = endpoint.absoluteString.trimmingCharacters(
+            in: CharacterSet(charactersIn: "/")
+        ) + "/file/bot\(trimmed)/\(path)"
+        guard let url = URL(string: urlString) else {
+            throw TelegramAPIError.invalidToken
+        }
+        let (data, response) = try await session.data(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw TelegramAPIError.requestFailed(
+                status: status,
+                description: "file download HTTP \(status)"
+            )
+        }
+        return data
+    }
+
     private func post(
         _ method: String,
         parameters: [String: Any]
@@ -286,8 +311,20 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 name: topic.name
             )
         }
-        let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !text.isEmpty else {
+        if message.forumTopicClosed, let threadID = message.threadID {
+            return .topicClosed(
+                userID: from.id,
+                chatID: message.chat.id,
+                threadID: threadID
+            )
+        }
+        let text = [
+            message.text,
+            message.caption,
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty } ?? ""
+        guard !text.isEmpty || !message.attachments.isEmpty else {
             return .ignored
         }
         let command = botCommand(from: text)
@@ -319,7 +356,8 @@ struct TelegramHTTPClient: TelegramAPIClient {
                 userID: from.id,
                 chatID: message.chat.id,
                 threadID: message.threadID,
-                text: text
+                text: text,
+                attachments: message.attachments
             )
         }
     }
@@ -337,12 +375,15 @@ struct TelegramHTTPClient: TelegramAPIClient {
             from: value["from"].flatMap(decodeUser),
             chat: TelegramChat(id: TelegramChatID(chatID), type: chatType),
             text: value["text"]?.stringValue,
+            caption: value["caption"]?.stringValue,
             threadID: value["message_thread_id"]?.intValue.map(TelegramThreadID.init),
             isTopicMessage: value["is_topic_message"]?.boolValue ?? false,
             forumTopicCreated: topic.flatMap {
                 guard let name = $0["name"]?.stringValue else { return nil }
                 return TelegramForumTopicCreated(name: name)
-            }
+            },
+            forumTopicClosed: value["forum_topic_closed"] != nil,
+            attachments: decodeAttachments(value)
         )
     }
 
@@ -357,6 +398,62 @@ struct TelegramHTTPClient: TelegramAPIClient {
             message: value["message"].flatMap(decodeMessage),
             data: value["data"]?.stringValue
         )
+    }
+
+    private static func decodeAttachments(
+        _ value: GrokJSONValue
+    ) -> [TelegramTurnAttachment] {
+        var attachments: [TelegramTurnAttachment] = []
+        if let photos = value["photo"]?.arrayValue {
+            let largest = photos.max { lhs, rhs in
+                (lhs["file_size"]?.intValue ?? lhs["width"]?.intValue ?? 0)
+                    < (rhs["file_size"]?.intValue ?? rhs["width"]?.intValue ?? 0)
+            }
+            if let fileID = largest?["file_id"]?.stringValue {
+                attachments.append(
+                    TelegramTurnAttachment(
+                        kind: .photo,
+                        fileID: fileID,
+                        fileName: "photo.jpg",
+                        mimeType: "image/jpeg"
+                    )
+                )
+            }
+        }
+        if let document = value["document"],
+           let fileID = document["file_id"]?.stringValue {
+            attachments.append(
+                TelegramTurnAttachment(
+                    kind: .document,
+                    fileID: fileID,
+                    fileName: document["file_name"]?.stringValue,
+                    mimeType: document["mime_type"]?.stringValue
+                )
+            )
+        }
+        if let voice = value["voice"],
+           let fileID = voice["file_id"]?.stringValue {
+            attachments.append(
+                TelegramTurnAttachment(
+                    kind: .voice,
+                    fileID: fileID,
+                    fileName: "voice.ogg",
+                    mimeType: voice["mime_type"]?.stringValue ?? "audio/ogg"
+                )
+            )
+        }
+        if let audio = value["audio"],
+           let fileID = audio["file_id"]?.stringValue {
+            attachments.append(
+                TelegramTurnAttachment(
+                    kind: .voice,
+                    fileID: fileID,
+                    fileName: audio["file_name"]?.stringValue ?? "audio",
+                    mimeType: audio["mime_type"]?.stringValue ?? "audio/mpeg"
+                )
+            )
+        }
+        return attachments
     }
 
     private static func decodeUser(_ value: GrokJSONValue) -> TelegramUser? {

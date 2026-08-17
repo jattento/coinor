@@ -56,17 +56,28 @@ struct TelegramRouter: Sendable {
             next.pickerThreadID = threadID
             return (next, [.sendProjectPicker])
 
+        case let .topicClosed(userID, chatID, threadID):
+            guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
+                return (next, [.rejectUnauthorized])
+            }
+            if let sessionID = next.sessionIDByThreadID[threadID.rawValue],
+               next.archivedSessionIDs.contains(sessionID) {
+                return (next, [.ignore])
+            }
+            next.sessionIDByThreadID.removeValue(forKey: threadID.rawValue)
+            return (next, [.dropTopic(threadID)])
+
         case let .callback(userID, chatID, threadID, _, data):
             guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
                 return (next, [.rejectUnauthorized])
             }
             return handleCallback(data: data, threadID: threadID, state: &next)
 
-        case let .text(userID, chatID, threadID, text):
+        case let .text(userID, chatID, threadID, text, attachments):
             guard isAuthorized(userID: userID, chatID: chatID, state: next) else {
                 return (next, [.rejectUnauthorized])
             }
-            if let projectID = next.awaitingWorktreeNameForProjectID {
+            if let projectID = next.awaitingWorktreeNameForProjectID, attachments.isEmpty {
                 next.awaitingWorktreeNameForProjectID = nil
                 return (
                     next,
@@ -79,7 +90,7 @@ struct TelegramRouter: Sendable {
                     ]
                 )
             }
-            if next.awaitingFindQuery {
+            if next.awaitingFindQuery, attachments.isEmpty {
                 next.awaitingFindQuery = false
                 return (next, [.search(query: text)])
             }
@@ -87,7 +98,19 @@ struct TelegramRouter: Sendable {
                   let sessionID = next.sessionIDByThreadID[threadID.rawValue] else {
                 return (next, [.ignoreUnmappedTopic])
             }
-            return (next, [.prompt(sessionID: sessionID, text: text)])
+            if next.archivedSessionIDs.contains(sessionID) {
+                return (next, [.ignoreArchivedTopic])
+            }
+            return (
+                next,
+                [
+                    .prompt(
+                        sessionID: sessionID,
+                        text: text,
+                        attachments: attachments
+                    ),
+                ]
+            )
         }
     }
 
