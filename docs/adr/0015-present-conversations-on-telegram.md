@@ -41,6 +41,8 @@ to always-approve.
 - Mapping (session id ↔ topic) is Coinor organization metadata, same class as
   pin and archive. The bot token lives in `~/.coinor/telegram.toml`, not
   Keychain, so reads do not prompt.
+- After pairing, Coinor populates topics for local conversations in Grok
+  last-activity order. Telegram cannot be told an explicit topic order.
 - Open-source Claude↔Telegram bots are inspiration only (pairing codes,
   topic isolation, draft streaming, approval buttons, quiet verbosity).
   RichardAtCT/claude-code-telegram is the reference for “final answer,

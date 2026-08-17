@@ -31,6 +31,7 @@ protocol TelegramWorking: AnyObject {
         _ transform: @escaping @Sendable (inout MetadataDocument) -> Void
     ) async
     func telegramConversationTitle(_ sessionID: String) -> String?
+    func telegramLocalConversations() -> [TelegramCatalogConversation]
 }
 
 @MainActor
@@ -43,6 +44,7 @@ final class TelegramBridge: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var promptTasks: [String: Task<Void, Never>] = [:]
     private var activeTurns: [String: ActiveTelegramTurn] = [:]
+    private var catalogSyncTask: Task<Void, Never>?
     private var offset: TelegramUpdateID?
     private var outboundChatID: TelegramChatID?
     private(set) var routing = TelegramRoutingState.empty
@@ -88,6 +90,7 @@ final class TelegramBridge: ObservableObject {
         }
         if isPaired {
             statusText = TelegramCopy.alreadyPaired
+            scheduleCatalogSync()
         } else if routing.allowedUsername == nil, pairingCode != nil {
             statusText = "Send /start \(pairingCode ?? "") to the bot from your phone."
         }
@@ -102,6 +105,8 @@ final class TelegramBridge: ObservableObject {
         promptTasks.values.forEach { $0.cancel() }
         promptTasks.removeAll()
         activeTurns.removeAll()
+        catalogSyncTask?.cancel()
+        catalogSyncTask = nil
     }
 
     func saveToken(_ token: String) throws {
@@ -170,6 +175,39 @@ final class TelegramBridge: ObservableObject {
         }
     }
 
+    func syncCatalog(_ conversations: [TelegramCatalogConversation]) async {
+        guard isPaired,
+              let chatID = routing.pairedChatID,
+              let token = try? tokens.load(),
+              !token.isEmpty else {
+            return
+        }
+        let wanted = TelegramTopicCatalog.publish(conversations)
+        let client = makeClient(token)
+        for item in conversations where item.isArchived {
+            await closeTopic(for: item.sessionID)
+        }
+        for item in wanted {
+            if Task.isCancelled { return }
+            if threadID(for: item.sessionID) == nil {
+                do {
+                    let threadID = try await client.createForumTopic(
+                        chatID: chatID,
+                        name: item.title
+                    )
+                    bind(sessionID: item.sessionID, threadID: threadID)
+                    await persistMapping()
+                    try await Task.sleep(for: .milliseconds(350))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    statusText = error.localizedDescription
+                    return
+                }
+            }
+        }
+    }
+
     func closeTopic(for sessionID: String) async {
         routing.archivedSessionIDs.insert(sessionID)
         guard let threadID = threadID(for: sessionID),
@@ -201,6 +239,16 @@ final class TelegramBridge: ObservableObject {
             )
         } catch {
             statusText = error.localizedDescription
+        }
+    }
+
+    func scheduleCatalogSync() {
+        guard isPaired else { return }
+        catalogSyncTask?.cancel()
+        catalogSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled, let self else { return }
+            await self.syncCatalog(self.worker?.telegramLocalConversations() ?? [])
         }
     }
 
@@ -323,6 +371,7 @@ final class TelegramBridge: ObservableObject {
                 document.telegram.pendingPairingCode = nil
             }
             await reply(TelegramCopy.paired, threadID: nil, client: client)
+            scheduleCatalogSync()
         case .rejectPairing:
             await reply(TelegramCopy.invalidPairingCode, threadID: nil, client: client)
         case .sendPairingHelp:

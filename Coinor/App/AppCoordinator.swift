@@ -2263,6 +2263,7 @@ final class AppCoordinator: ObservableObject {
                 sessions: summaries,
                 metadata: metadata
             )
+            telegram.scheduleCatalogSync()
             return
         }
         // Hiding is presentation only: the computers stay registered, their
@@ -2277,6 +2278,7 @@ final class AppCoordinator: ObservableObject {
             },
             metadata: visibleMetadata
         )
+        telegram.scheduleCatalogSync()
     }
 
     private var allKnownProjectIDs: [String] {

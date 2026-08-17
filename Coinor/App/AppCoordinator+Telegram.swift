@@ -163,6 +163,22 @@ extension AppCoordinator: TelegramWorking {
         session(sessionID)?.title
     }
 
+    func telegramLocalConversations() -> [TelegramCatalogConversation] {
+        summaries.compactMap { summary in
+            guard ProjectIdentity(rawValue: summary.projectID).target == .local,
+                  hostAliasBySessionID[summary.id] == nil else {
+                return nil
+            }
+            return TelegramCatalogConversation(
+                sessionID: summary.id,
+                title: summary.title,
+                lastActivityAt: summary.lastActivityAt,
+                isArchived: metadata.isSessionArchived(summary.id)
+                    || metadata.isProjectArchived(summary.projectID)
+            )
+        }
+    }
+
     func shareConversationOnTelegram(_ sessionID: String) {
         guard canShareOnTelegram(sessionID) else { return }
         let title = session(sessionID)?.title ?? "Conversation"

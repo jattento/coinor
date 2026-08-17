@@ -33,6 +33,11 @@ network listener, and no second conversation identity.
    - Share from the Mac attaches an existing Conversation.
    - `/find` is the existing agentic search: describe it, pick a
      result, that Conversation gets a topic.
+   - After pairing, Coinor also creates topics for local conversations
+     ordered by Grok last activity (newest first, capped). Archive
+     still closes a topic. Telegram has no bot API to reorder the
+     list; the client surfaces last-message order, so new topics are
+     opened newest first.
 7. **The phone can always send and it interrupts.** An in-flight turn
    is preempted. Do not type into Ghostty; use ACP `session/prompt`.
 8. **Permission prompts are buttons on that Remote Topic.** Allow once
