@@ -28,7 +28,8 @@ Coinor deliberately does not provide:
 
 - cross-platform support
 - its own transcript or task persistence
-- a terminal or PTY server of its own, or any network listener; a remote
+- a terminal or PTY server of its own, or any network listener; outbound
+  HTTPS long polling to Telegram (ADR-0015) is not a listener. A remote
   computer's Grok leader does survive application exit (ADR-0014), but Coinor
   neither implements nor hosts it
 - compatibility with arbitrary Grok versions

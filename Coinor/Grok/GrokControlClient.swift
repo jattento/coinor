@@ -88,6 +88,7 @@ actor GrokControlClient {
 
     private(set) var handshake: GrokAgentHandshake?
     private(set) var executableVersion: String?
+    private var promptAccumulators: [String: PromptAccumulation] = [:]
 
     var inFlightRequestCount: Int {
         pending.count
@@ -417,6 +418,51 @@ actor GrokControlClient {
         _ = try await callExtension(GrokMethod.sessionRename, params: .object(params))
     }
 
+    /// Creates a durable Grok session that this control client can drive.
+    func createSession(id: GrokSessionID, cwd: String) async throws {
+        _ = try await call(
+            GrokMethod.sessionNew,
+            params: [
+                "cwd": .string(cwd),
+                "mcpServers": .array([]),
+                "_meta": ["sessionId": .string(id.rawValue)],
+            ]
+        )
+    }
+
+    /// Makes an existing session current on this control connection.
+    func loadSession(_ id: GrokSessionID) async throws {
+        _ = try await call(
+            GrokMethod.sessionLoad,
+            params: ["sessionId": .string(id.rawValue)]
+        )
+    }
+
+    /// Sends one user turn and returns the concatenated assistant text.
+    func prompt(
+        sessionID: GrokSessionID,
+        text: String
+    ) async throws -> String {
+        let accumulation = PromptAccumulation()
+        promptAccumulators[sessionID.rawValue] = accumulation
+        defer { promptAccumulators.removeValue(forKey: sessionID.rawValue) }
+        _ = try await send(
+            wireMethod: GrokMethod.sessionPrompt,
+            method: GrokMethod.sessionPrompt,
+            params: [
+                "sessionId": .string(sessionID.rawValue),
+                "prompt": .array([
+                    [
+                        "type": "text",
+                        "text": .string(text),
+                    ],
+                ]),
+            ],
+            timeout: .seconds(1_800)
+        )
+        return accumulation.text
+    }
+
     /// Replays the persisted lifecycle of a root session in storage order.
     ///
     /// The caller waits until the interactive TUI is resident before invoking
@@ -661,7 +707,8 @@ actor GrokControlClient {
     private func send(
         wireMethod: String,
         method: String,
-        params: GrokJSONValue
+        params: GrokJSONValue,
+        timeout: Duration? = nil
     ) async throws -> GrokJSONValue {
         switch state {
         case .idle:
@@ -686,7 +733,11 @@ actor GrokControlClient {
                     method: method,
                     continuation: continuation
                 )
-                startTimeout(for: id, method: method)
+                startTimeout(
+                    for: id,
+                    method: method,
+                    timeout: timeout ?? configuration.requestTimeout
+                )
                 do {
                     try transport.send(GrokFraming.encode(payload))
                 } catch {
@@ -702,8 +753,7 @@ actor GrokControlClient {
         }
     }
 
-    private func startTimeout(for id: String, method: String) {
-        let timeout = configuration.requestTimeout
+    private func startTimeout(for id: String, method: String, timeout: Duration) {
         timeouts[id] = Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
@@ -839,9 +889,26 @@ actor GrokControlClient {
         } else {
             event = .notification(method: method, params: params)
         }
+        if let chunk = Self.agentMessageChunk(in: params) {
+            promptAccumulators[chunk.sessionID]?.append(chunk.text)
+        }
         for continuation in subscribers.values {
             continuation.yield(event)
         }
+    }
+
+    private static func agentMessageChunk(
+        in params: GrokJSONValue
+    ) -> (sessionID: String, text: String)? {
+        let sessionID = params["sessionId"]?.stringValue
+        let update = params["update"] ?? params
+        guard update["sessionUpdate"]?.stringValue == "agent_message_chunk",
+              let sessionID,
+              let text = update["content"]?["text"]?.stringValue,
+              !text.isEmpty else {
+            return nil
+        }
+        return (sessionID, text)
     }
 
     private func reject(id: GrokJSONValue, method: String) {
@@ -878,6 +945,19 @@ actor GrokControlClient {
     private func diagnosticsText() -> String {
         String(decoding: diagnostics, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private final class PromptAccumulation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var chunks: [String] = []
+
+    func append(_ text: String) {
+        lock.withLock { chunks.append(text) }
+    }
+
+    var text: String {
+        lock.withLock { chunks.joined() }
     }
 }
 

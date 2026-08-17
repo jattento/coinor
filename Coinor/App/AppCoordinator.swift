@@ -54,9 +54,14 @@ final class AppCoordinator: ObservableObject {
     /// presented, so a disconnect can interrupt only where it is relevant.
     @Published var isRemoteHostsInterfacePresented = false
 
+    func presentTelegramWarning(_ message: String) {
+        warningMessage = message
+    }
+
     private(set) var runtimeManager: ConversationRuntimeManager?
 
-    private var controlClient: GrokControlClient?
+    let telegram = TelegramBridge()
+    var controlClient: GrokControlClient?
     private var terminalControlServer: TerminalControlServer?
     private var terminalControlConfiguration:
         TerminalControlConfiguration?
@@ -70,7 +75,7 @@ final class AppCoordinator: ObservableObject {
     private var pendingMaterializationTasks: [String: Task<Void, Never>] = [:]
     private var pendingLifecycleCatchup: Set<String> = []
     private var completedLifecycleCatchup: Set<String> = []
-    private var pendingSessions: [String: SessionSummary] = [:]
+    var pendingSessions: [String: SessionSummary] = [:]
     private var projectIDBySessionID: [String: String] = [:]
     private var mainCheckoutByProjectID: [String: String] = [:]
     private var localPersistedSessions: [GrokPersistedSession] = []
@@ -92,7 +97,7 @@ final class AppCoordinator: ObservableObject {
         [RemoteHostAlias: String] = [:]
     /// Which computer owns each conversation, so control-plane work is routed
     /// to the leader that actually holds the session.
-    private var hostAliasBySessionID: [String: RemoteHostAlias] = [:]
+    var hostAliasBySessionID: [String: RemoteHostAlias] = [:]
     private var localGrokVersion: GrokForkVersion?
     private var supportDirectory: URL?
     @Published private var pendingAttention:
@@ -292,6 +297,9 @@ final class AppCoordinator: ObservableObject {
             if let lastVisible, isConversationVisible(lastVisible) {
                 selectConversation(lastVisible)
             }
+
+            telegram.attach(worker: self, metadata: metadata)
+            telegram.startPolling()
 
             await connectRegisteredRemoteHosts()
 
@@ -1047,7 +1055,7 @@ final class AppCoordinator: ObservableObject {
         cachedSSHConfigAliases = SSHConfigHosts().aliases()
     }
 
-    private func applyMainCheckout(_ projectID: String, path: String) {
+    func applyMainCheckout(_ projectID: String, path: String) {
         if let alias = hostAlias(forProject: projectID),
            let host = remoteHosts[alias] {
             host.mainCheckoutByProjectID[projectID] = path
@@ -1403,13 +1411,14 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
-    private func createConversation(
+    @discardableResult
+    func createConversation(
         in projectID: String,
         workingDirectory: String,
         additionalArguments: [String]
-    ) {
-        guard let runtimeManager else { return }
+    ) -> String {
         let sessionID = UUID().uuidString.lowercased()
+        guard let runtimeManager else { return sessionID }
         let summary = SessionSummary(
             id: sessionID,
             projectID: projectID,
@@ -1439,6 +1448,7 @@ final class AppCoordinator: ObservableObject {
                 $0.setLastVisibleSession(sessionID)
             }
         }
+        return sessionID
     }
 
     func addProject(url: URL) {
@@ -1702,6 +1712,9 @@ final class AppCoordinator: ObservableObject {
                 coordinator.runtimeManager?.archiveImmediately(
                     sessionID: sessionID
                 )
+                Task {
+                    await coordinator.telegram.closeTopic(for: sessionID)
+                }
             }
         }
     }
@@ -1711,6 +1724,7 @@ final class AppCoordinator: ObservableObject {
             _ = await coordinator.persist {
                 $0.setSessionArchived(sessionID, archived: false)
             }
+            await coordinator.telegram.reopenTopic(for: sessionID)
         }
     }
 
@@ -1771,6 +1785,7 @@ final class AppCoordinator: ObservableObject {
                     return
                 }
                 try await self.refresh()
+                await self.telegram.syncTitle(trimmed, for: sessionID)
             } catch {
                 guard let self,
                       CoordinatorMutationGate.allowsMutation(
@@ -1875,6 +1890,7 @@ final class AppCoordinator: ObservableObject {
         controlClient = nil
         let leaderSocket = activeLeaderSocket
         activeLeaderSocket = nil
+        telegram.stopPolling()
         metadataStore = nil
         roster.removeAll()
         pendingAttention.removeAll()
@@ -2171,7 +2187,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
-    private func session(_ sessionID: String) -> GrokPersistedSession? {
+    func session(_ sessionID: String) -> GrokPersistedSession? {
         persistedSessions.first { $0.id.rawValue == sessionID }
     }
 
@@ -2195,7 +2211,7 @@ final class AppCoordinator: ObservableObject {
         ).rawValue
     }
 
-    private func mainCheckout(for projectID: String) -> String {
+    func mainCheckout(for projectID: String) -> String {
         mainCheckoutByProjectID[projectID]
             ?? metadata.projectCheckoutPath(projectID)
             ?? {
@@ -2240,7 +2256,7 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
-    private func rebuildCatalog() {
+    func rebuildCatalog() {
         guard metadata.remoteProjectsHidden else {
             catalog = SessionCatalog.build(
                 sessions: summaries,
@@ -2304,7 +2320,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     @discardableResult
-    private func persist(
+    func persist(
         _ transform: @Sendable @escaping (inout MetadataDocument) -> Void,
         rebuildCatalog shouldRebuildCatalog: Bool = true
     ) async -> Bool {

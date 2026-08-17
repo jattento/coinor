@@ -9,6 +9,9 @@ import Foundation
 enum GrokMethod {
     static let initialize = "initialize"
     static let authenticate = "authenticate"
+    static let sessionNew = "session/new"
+    static let sessionLoad = "session/load"
+    static let sessionPrompt = "session/prompt"
 
     static let sessionList = "x.ai/session/list"
     static let sessionsList = "x.ai/sessions/list"

@@ -1,5 +1,14 @@
 # Product requirements
 
+## Telegram remote work
+
+Conan Code can pair one private Telegram bot chat to this installation. Each
+conversation topic on that chat is the same Conversation as the sidebar, not a
+second identity. Pairing uses a bot token stored in the Keychain and a one-time
+`/start` code that allowlists one Telegram user. Only local projects are
+offered from the phone. Conan Code must be running; it long-polls Telegram and
+does not listen on the network.
+
 ## Interface language
 
 The user-visible product name is Conan Code. Coinor remains the internal

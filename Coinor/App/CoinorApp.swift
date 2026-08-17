@@ -43,5 +43,12 @@ struct CoinorApp: App {
             ConversationCommands(coordinator: coordinator)
             TerminalTabCommands(coordinator: coordinator)
         }
+
+        Settings {
+            TelegramSettingsView(
+                coordinator: coordinator,
+                telegram: coordinator.telegram
+            )
+        }
     }
 }

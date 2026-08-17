@@ -1383,6 +1383,78 @@ func cancellingARequestClearsItsContinuationAndTimeout() async throws {
     await client.shutdown()
 }
 
+// MARK: - Session drive
+
+@Test
+func createsASessionThroughACP() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(
+            result(for: request, ["sessionId": "00000000-0000-7000-8000-000000000099"])
+        )
+    }
+
+    try await client.createSession(
+        id: GrokSessionID("00000000-0000-7000-8000-000000000099"),
+        cwd: "/tmp/coinor"
+    )
+
+    let request = try #require(transport.request("session/new"))
+    #expect(request["params"]?["cwd"]?.stringValue == "/tmp/coinor")
+    #expect(
+        request["params"]?["_meta"]?["sessionId"]?.stringValue
+            == "00000000-0000-7000-8000-000000000099"
+    )
+    await client.shutdown()
+}
+
+@Test
+func collectsPromptChunksUntilTheTurnCompletes() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        guard request["method"]?.stringValue == "session/prompt" else {
+            transport.emit(result(for: request, [:]))
+            return
+        }
+        transport.emit([
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": [
+                "sessionId": "session-a",
+                "update": [
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": [
+                        "type": "text",
+                        "text": "Hello ",
+                    ],
+                ],
+            ],
+        ])
+        transport.emit([
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": [
+                "sessionId": "session-a",
+                "update": [
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": [
+                        "type": "text",
+                        "text": "from Grok.",
+                    ],
+                ],
+            ],
+        ])
+        transport.emit(result(for: request, ["stopReason": "end_turn"]))
+    }
+
+    let text = try await client.prompt(
+        sessionID: GrokSessionID("session-a"),
+        text: "hi"
+    )
+    #expect(text == "Hello from Grok.")
+    let request = try #require(transport.request("session/prompt"))
+    #expect(request["params"]?["sessionId"]?.stringValue == "session-a")
+    await client.shutdown()
+}
+
 @Test
 func refusesToRunTwiceAndRefusesWorkAfterShutdown() async throws {
     let (client, _, _) = try await connectedClient()
