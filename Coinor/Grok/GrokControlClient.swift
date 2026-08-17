@@ -107,6 +107,8 @@ actor GrokControlClient {
     private(set) var executableVersion: String?
     private var promptAccumulators: [String: PromptAccumulation] = [:]
     private var pendingPermissions: [String: PendingPermission] = [:]
+    private var inFlightPromptRequestIDs: [String: String] = [:]
+    private var promptFinishWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     var inFlightRequestCount: Int {
         pending.count
@@ -479,12 +481,11 @@ actor GrokControlClient {
         blocks: [GrokJSONValue],
         onUpdate: (@Sendable (GrokPromptUpdate) -> Void)? = nil
     ) async throws -> String {
+        let key = sessionID.rawValue
+        await interruptExistingPrompt(key)
         let accumulation = PromptAccumulation(onUpdate: onUpdate)
-        promptAccumulators[sessionID.rawValue] = accumulation
-        defer {
-            promptAccumulators.removeValue(forKey: sessionID.rawValue)
-            pendingPermissions.removeValue(forKey: sessionID.rawValue)
-        }
+        promptAccumulators[key] = accumulation
+        defer { finishPrompt(sessionID: key, accumulation: accumulation) }
         _ = try await send(
             wireMethod: GrokMethod.sessionPrompt,
             method: GrokMethod.sessionPrompt,
@@ -492,7 +493,8 @@ actor GrokControlClient {
                 "sessionId": .string(sessionID.rawValue),
                 "prompt": .array(blocks),
             ],
-            timeout: .seconds(1_800)
+            timeout: .seconds(1_800),
+            promptSessionID: key
         )
         return accumulation.text
     }
@@ -756,11 +758,38 @@ actor GrokControlClient {
         return response["result"] ?? response
     }
 
+    private func interruptExistingPrompt(_ sessionID: String) async {
+        if let requestID = inFlightPromptRequestIDs[sessionID] {
+            cancel(id: requestID)
+        }
+        while promptAccumulators[sessionID] != nil {
+            await withCheckedContinuation { continuation in
+                promptFinishWaiters[sessionID, default: []].append(continuation)
+            }
+        }
+    }
+
+    private func finishPrompt(
+        sessionID: String,
+        accumulation: PromptAccumulation
+    ) {
+        if promptAccumulators[sessionID] === accumulation {
+            promptAccumulators.removeValue(forKey: sessionID)
+            pendingPermissions.removeValue(forKey: sessionID)
+            inFlightPromptRequestIDs.removeValue(forKey: sessionID)
+        }
+        let waiters = promptFinishWaiters.removeValue(forKey: sessionID) ?? []
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
     private func send(
         wireMethod: String,
         method: String,
         params: GrokJSONValue,
-        timeout: Duration? = nil
+        timeout: Duration? = nil,
+        promptSessionID: String? = nil
     ) async throws -> GrokJSONValue {
         switch state {
         case .idle:
@@ -776,6 +805,9 @@ actor GrokControlClient {
 
         requestCounter += 1
         let id = "\(configuration.clientType)-\(requestCounter)"
+        if let promptSessionID {
+            inFlightPromptRequestIDs[promptSessionID] = id
+        }
         let payload = try GrokRPC.request(id: id, method: wireMethod, params: params).encoded()
         try Task.checkCancellation()
 

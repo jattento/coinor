@@ -3,6 +3,32 @@ import Testing
 
 @testable import Coinor
 
+private final class FakeTelegramSpeechEngine: TelegramSpeechEngine, @unchecked Sendable {
+    private let transcript: String
+    private let lock = NSLock()
+    private(set) var authorized = false
+    private(set) var retained = false
+
+    init(transcript: String) {
+        self.transcript = transcript
+    }
+
+    func requestAuthorization() async -> Bool {
+        lock.withLock { authorized = true }
+        return true
+    }
+
+    func recognizeFile(
+        at url: URL,
+        retainTask: @escaping @Sendable (AnyObject) -> Void
+    ) async -> String? {
+        retainTask(NSObject())
+        lock.withLock { retained = true }
+        _ = url
+        return transcript
+    }
+}
+
 private let pairedUser = TelegramUserID(9)
 private let pairedChat = TelegramChatID(9)
 private let mappedThread = TelegramThreadID(44)
@@ -270,6 +296,30 @@ func turnBuilderPutsPhotoBytesOnTheACPPrompt() {
     #expect(blocks[0]["text"]?.stringValue == "see this error")
     #expect(blocks[1]["type"]?.stringValue == "image")
     #expect(blocks[1]["data"]?.stringValue == pixels.base64EncodedString())
+}
+
+@Test
+func speechTranscriberAuthorizesRetainsTheTaskAndReturnsText() async {
+    let engine = FakeTelegramSpeechEngine(transcript: "fix the sidebar")
+    let transcriber = SpeechTelegramTranscriber(engine: engine)
+    let audio = Data("not-a-real-ogg".utf8)
+    let text = await transcriber.transcribe(data: audio, mimeType: "audio/ogg")
+    #expect(engine.authorized)
+    #expect(engine.retained)
+    #expect(text == "fix the sidebar")
+    let blocks = TelegramTurnBuilder.blocks(
+        text: "",
+        attachments: [
+            TelegramResolvedAttachment(
+                kind: .voice,
+                fileName: "voice.ogg",
+                mimeType: "audio/ogg",
+                data: audio,
+                transcript: text
+            ),
+        ]
+    )
+    #expect(blocks[0]["text"]?.stringValue?.contains("fix the sidebar") == true)
 }
 
 @Test

@@ -1456,6 +1456,71 @@ func collectsPromptChunksUntilTheTurnCompletes() async throws {
 }
 
 @Test
+func interruptingAPromptDoesNotWipeTheReplacementTurn() async throws {
+    final class PromptCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int {
+            lock.withLock {
+                value += 1
+                return value
+            }
+        }
+    }
+    let counter = PromptCounter()
+    let (client, transport, _) = try await connectedClient { request, transport in
+        guard request["method"]?.stringValue == "session/prompt" else {
+            transport.emit(result(for: request, [:]))
+            return
+        }
+        if counter.next() == 2 {
+            transport.emit([
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": [
+                    "sessionId": "session-a",
+                    "update": [
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": [
+                            "type": "text",
+                            "text": "replacement-turn",
+                        ],
+                    ],
+                ],
+            ])
+            transport.emit(result(for: request, ["stopReason": "end_turn"]))
+        }
+    }
+
+    let afterHandshake = transport.requests.count
+    let first = Task {
+        try await client.prompt(
+            sessionID: GrokSessionID("session-a"),
+            text: "first"
+        )
+    }
+    #expect(await transport.waitForRequests(afterHandshake + 1))
+    #expect(
+        transport.requests.filter { $0["method"]?.stringValue == "session/prompt" }.count
+            == 1
+    )
+
+    let second = Task {
+        try await client.prompt(
+            sessionID: GrokSessionID("session-a"),
+            text: "second"
+        )
+    }
+
+    await #expect(throws: CancellationError.self) {
+        _ = try await first.value
+    }
+    let text = try await second.value
+    #expect(text == "replacement-turn")
+    await client.shutdown()
+}
+
+@Test
 func promptSendsTurnBuilderBlocksOnTheACPWire() async throws {
     let pixels = Data([0xFF, 0xD8, 0x00])
     let blocks = TelegramTurnBuilder.blocks(
