@@ -25,6 +25,11 @@ The custom Grok binary under test reports:
 grok 0.2.117 (29189e7)
 ```
 
+The Phase 0 spike trees (`Spikes/GhosttySpike`, `Spikes/GrokSharedSession`,
+`Spikes/HookSpike`) were removed from the working tree after the gate passed.
+They remain recoverable from git history at the commit that introduced this
+note. Paths below record what was run, not files that still ship.
+
 Boundary verification, run with tooling that no longer ships in this
 repository:
 

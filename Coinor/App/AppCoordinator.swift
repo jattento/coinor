@@ -9,6 +9,7 @@ private struct ProjectLocationSnapshot: Sendable {
 private struct DetachedRuntimeState {
     let controlClient: GrokControlClient?
     let leaderSocket: GrokLeaderSocket?
+    let remoteHosts: [RemoteHostRuntime]
 }
 
 private struct TerminalControlConfiguration {
@@ -78,6 +79,13 @@ final class AppCoordinator: ObservableObject {
     private var localMainCheckoutByProjectID: [String: String] = [:]
     private var remoteHosts: [RemoteHostAlias: RemoteHostRuntime] = [:]
     private var remoteEventTasks: [RemoteHostAlias: Task<Void, Never>] = [:]
+    private var remoteHostConnectionStates:
+        [RemoteHostAlias: RemoteHostConnectionState] = [:]
+    private var cachedSSHConfigAliases: [RemoteHostAlias] = []
+    private var worktreeConversationTask: Task<Void, Never>?
+    private var addProjectTask: Task<Void, Never>?
+    private var renameConversationTask: Task<Void, Never>?
+    private var workflowCenterTasks: [Task<Void, Never>] = []
     /// Why a registered host has no runtime, so the interface can explain a
     /// computer that is away instead of showing nothing.
     @Published private(set) var unreachableRemoteHostReasons:
@@ -117,9 +125,9 @@ final class AppCoordinator: ObservableObject {
         guard !started else { return }
         started = true
         InheritedTerminalEnvironment.removeColorSuppression()
-        observeApplicationActivation()
         lifecycleGeneration += 1
         let generation = lifecycleGeneration
+        observeApplicationActivation()
         status = .starting
 
         do {
@@ -147,9 +155,10 @@ final class AppCoordinator: ObservableObject {
             let store = try MetadataStore(directoryURL: supportDirectory)
             metadataStore = store
             metadata = await store.currentDocument
-            mainCheckoutByProjectID = metadata.projects.compactMapValues {
+            localMainCheckoutByProjectID = metadata.projects.compactMapValues {
                 $0.checkoutPath
             }
+            reloadSSHConfigAliases()
 
             try GrokSkillInstaller().install()
             guard let clientURL = Bundle.main.url(
@@ -197,12 +206,18 @@ final class AppCoordinator: ObservableObject {
                 leaderSocket: leaderSocket
             )
             var leaderEnvironment = ProcessInfo.processInfo.environment
-            leaderEnvironment["CONAN_CODE_CONTROL_SOCKET"] =
-                terminalControlSocket.path
-            leaderEnvironment["CONAN_CODE_CONTROL_TOKEN"] =
-                terminalControlToken
-            leaderEnvironment["CONAN_CODE_CONTROL_CLIENT"] =
-                clientURL.path
+            leaderEnvironment[
+                TerminalControlContract.EnvironmentVariable
+                    .controlSocket
+            ] = terminalControlSocket.path
+            leaderEnvironment[
+                TerminalControlContract.EnvironmentVariable
+                    .controlToken
+            ] = terminalControlToken
+            leaderEnvironment[
+                TerminalControlContract.EnvironmentVariable
+                    .controlClient
+            ] = clientURL.path
             let launch = GrokControlLaunch(
                 executable: executable,
                 leaderSocket: leaderSocket,
@@ -273,21 +288,27 @@ final class AppCoordinator: ObservableObject {
                 generation: generation
             )
 
+            let lastVisible = metadata.lastVisibleSessionID
+            if let lastVisible, isConversationVisible(lastVisible) {
+                selectConversation(lastVisible)
+            }
+
             await connectRegisteredRemoteHosts()
 
-            if let lastVisible = metadata.lastVisibleSessionID,
+            if let lastVisible,
+               selectedSessionID != lastVisible,
                isConversationVisible(lastVisible) {
                 selectConversation(lastVisible)
             }
         } catch is CancellationError {
             guard generation == lifecycleGeneration else { return }
-            let detached = detachRuntimeState()
+            let detached = detachRuntimeState(remoteHostEvent: .shutdown)
             await stop(detached)
             status = .failed("Conan Code startup was cancelled.")
         } catch {
             guard generation == lifecycleGeneration else { return }
             let message = error.localizedDescription
-            let detached = detachRuntimeState()
+            let detached = detachRuntimeState(remoteHostEvent: .shutdown)
             await stop(detached)
             status = .failed(message)
         }
@@ -330,7 +351,7 @@ final class AppCoordinator: ObservableObject {
         let refreshedPendingSessions = pendingSessions.filter {
             !persistedIDs.contains($0.key)
         }
-        var refreshedMainCheckouts = mainCheckoutByProjectID
+        var refreshedMainCheckouts = localMainCheckoutByProjectID
         refreshedMainCheckouts.merge(
             locations.mainCheckoutByProjectID,
             uniquingKeysWith: { _, refreshed in refreshed }
@@ -360,6 +381,7 @@ final class AppCoordinator: ObservableObject {
         localProjectIDBySessionID = locations.projectIDBySessionID
         localMainCheckoutByProjectID = refreshedMainCheckouts
         localRoster = refreshedRoster
+        reloadSSHConfigAliases()
         mergeCatalogState()
         rebuildCatalog()
         reconcileRuntimeActivity()
@@ -468,22 +490,40 @@ final class AppCoordinator: ObservableObject {
         control: GrokControlClient
     ) {
         workflowCenter.beginCatalogLoad(generation: generation, sessionID: sessionID)
-        Task { [weak self] in
+        let lifecycle = lifecycleGeneration
+        let task = Task { [weak self] in
             do {
                 let definitions = try await control.listWorkflows(sessionID: sessionID)
-                self?.workflowCenter.completeCatalogLoad(
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: lifecycle,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.workflowCenter.completeCatalogLoad(
                     generation: generation,
                     sessionID: sessionID,
                     definitions: definitions
                 )
             } catch {
-                self?.workflowCenter.failCatalogLoad(
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: lifecycle,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.workflowCenter.failCatalogLoad(
                     generation: generation,
                     sessionID: sessionID,
                     error: error.localizedDescription
                 )
             }
         }
+        workflowCenterTasks.append(task)
     }
 
     private func loadWorkflowRuns(
@@ -492,22 +532,40 @@ final class AppCoordinator: ObservableObject {
         control: GrokControlClient
     ) {
         workflowCenter.beginRunsLoad(generation: generation, sessionID: sessionID)
-        Task { [weak self] in
+        let lifecycle = lifecycleGeneration
+        let task = Task { [weak self] in
             do {
                 let runs = try await control.snapshotWorkflows(sessionID: sessionID)
-                self?.workflowCenter.completeRunsLoad(
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: lifecycle,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.workflowCenter.completeRunsLoad(
                     generation: generation,
                     sessionID: sessionID,
                     runs: runs
                 )
             } catch {
-                self?.workflowCenter.failRunsLoad(
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: lifecycle,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.workflowCenter.failRunsLoad(
                     generation: generation,
                     sessionID: sessionID,
                     error: error.localizedDescription
                 )
             }
         }
+        workflowCenterTasks.append(task)
     }
 
     /// Launches a workflow in the current context's conversation. The launch
@@ -538,7 +596,8 @@ final class AppCoordinator: ObservableObject {
             generation: generation,
             sessionID: sessionID
         )
-        Task { [weak self] in
+        let lifecycle = lifecycleGeneration
+        let task = Task { [weak self] in
             guard let self else { return }
             do {
                 _ = try await control.launchWorkflow(
@@ -547,7 +606,12 @@ final class AppCoordinator: ObservableObject {
                     args: args,
                     agentBudget: agentBudget
                 )
-                guard self.workflowCenter.generation == generation,
+                guard CoordinatorMutationGate.allowsMutation(
+                    capturedGeneration: lifecycle,
+                    currentGeneration: self.lifecycleGeneration,
+                    isCancelled: Task.isCancelled
+                ),
+                      self.workflowCenter.generation == generation,
                       self.workflowCenter.context?.sessionID == sessionID else { return }
                 self.workflowCenter.endAction(
                     actionID,
@@ -560,6 +624,11 @@ final class AppCoordinator: ObservableObject {
                     control: control
                 )
             } catch {
+                guard CoordinatorMutationGate.allowsMutation(
+                    capturedGeneration: lifecycle,
+                    currentGeneration: self.lifecycleGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
                 self.workflowCenter.failAction(
                     actionID,
                     generation: generation,
@@ -568,6 +637,7 @@ final class AppCoordinator: ObservableObject {
                 )
             }
         }
+        workflowCenterTasks.append(task)
     }
 
     /// Pauses, resumes, or stops a run in the current context's conversation.
@@ -601,7 +671,8 @@ final class AppCoordinator: ObservableObject {
             generation: generation,
             sessionID: sessionID
         )
-        Task { [weak self] in
+        let lifecycle = lifecycleGeneration
+        let task = Task { [weak self] in
             guard let self else { return }
             do {
                 let run = try await control.controlWorkflow(
@@ -610,7 +681,12 @@ final class AppCoordinator: ObservableObject {
                     operation: operation,
                     agentBudget: agentBudget
                 )
-                guard self.workflowCenter.generation == generation,
+                guard CoordinatorMutationGate.allowsMutation(
+                    capturedGeneration: lifecycle,
+                    currentGeneration: self.lifecycleGeneration,
+                    isCancelled: Task.isCancelled
+                ),
+                      self.workflowCenter.generation == generation,
                       self.workflowCenter.context?.sessionID == sessionID else { return }
                 self.workflowCenter.ingest(run)
                 self.workflowCenter.endAction(
@@ -619,6 +695,11 @@ final class AppCoordinator: ObservableObject {
                     sessionID: sessionID
                 )
             } catch {
+                guard CoordinatorMutationGate.allowsMutation(
+                    capturedGeneration: lifecycle,
+                    currentGeneration: self.lifecycleGeneration,
+                    isCancelled: Task.isCancelled
+                ) else { return }
                 self.workflowCenter.failAction(
                     actionID,
                     generation: generation,
@@ -627,6 +708,7 @@ final class AppCoordinator: ObservableObject {
                 )
             }
         }
+        workflowCenterTasks.append(task)
     }
 
     // MARK: - Remote hosts
@@ -635,10 +717,10 @@ final class AppCoordinator: ObservableObject {
     /// offers these instead of asking for connection details, so it never
     /// stores a credential of its own.
     var availableRemoteHostAliases: [RemoteHostAlias] {
-        let registered = Set(metadata.remoteHostAliases.map(\.rawValue))
-        return SSHConfigHosts().aliases().filter {
-            !registered.contains($0.rawValue)
-        }
+        AvailableRemoteHostAliases.fromCache(
+            cachedSSHConfigAliases,
+            registered: metadata.remoteHostAliases
+        )
     }
 
     var registeredRemoteHosts: [RemoteHostAlias] {
@@ -675,6 +757,8 @@ final class AppCoordinator: ObservableObject {
         if let failure = await connectRemoteHost(alias) {
             return failure
         }
+        metadata.registerRemoteHost(alias)
+        reloadSSHConfigAliases()
         schedulePersistence { coordinator in
             await coordinator.persist {
                 $0.registerRemoteHost(alias)
@@ -684,10 +768,11 @@ final class AppCoordinator: ObservableObject {
     }
 
     func removeRemoteHost(_ alias: RemoteHostAlias) {
-        remoteEventTasks.removeValue(forKey: alias)?.cancel()
         remoteDisconnectEpisodes.remove(alias)
-        let host = remoteHosts.removeValue(forKey: alias)
-        hostAliasBySessionID = hostAliasBySessionID.filter { $0.value != alias }
+        applyRemoteHostEvent(alias, .remove)
+        let host = uninstallRemoteHostArtifacts(alias)
+        metadata.unregisterRemoteHost(alias)
+        reloadSSHConfigAliases()
         mergeCatalogState()
         rebuildCatalog()
         schedulePersistence { coordinator in
@@ -701,13 +786,15 @@ final class AppCoordinator: ObservableObject {
     /// Ends the Grok runtime on a remote computer. Every agent still working
     /// there stops, so callers confirm first.
     func stopRemoteRuntime(_ alias: RemoteHostAlias) async -> String? {
-        guard let host = remoteHosts[alias] else { return nil }
-        do {
-            try await host.stopRemoteRuntime()
-        } catch {
-            return error.localizedDescription
+        if let host = remoteHosts[alias] {
+            do {
+                try await host.stopRemoteRuntime()
+            } catch {
+                return error.localizedDescription
+            }
         }
-        remoteHosts.removeValue(forKey: alias)
+        applyRemoteHostEvent(alias, .stop)
+        _ = uninstallRemoteHostArtifacts(alias)
         mergeCatalogState()
         rebuildCatalog()
         return nil
@@ -715,29 +802,66 @@ final class AppCoordinator: ObservableObject {
 
     private func connectRemoteHost(
         _ alias: RemoteHostAlias,
-        reportsFailure: Bool = true
+        reportsFailure: Bool = true,
+        isExplicitRetry: Bool = false
     ) async -> String? {
+        if remoteHostConnectionStates[alias] == .connecting {
+            return nil
+        }
+        if let host = remoteHosts[alias],
+           host.unreachableReason == nil,
+           remoteHostConnectionStates[alias] == .connected {
+            return nil
+        }
+        if remoteHosts[alias] != nil {
+            await shutdownUninstalledRemoteHost(
+                uninstallRemoteHostArtifacts(alias)
+            )
+        }
+        applyRemoteHostEvent(
+            alias,
+            isExplicitRetry ? .retry : .connect
+        )
+        guard remoteHostConnectionStates[alias] == .connecting else {
+            return nil
+        }
         guard let supportDirectory else {
+            applyRemoteHostEvent(alias, .fail)
             return "Conan Code has not finished starting."
         }
+        let generation = lifecycleGeneration
         guard let localVersion = await resolvedLocalGrokVersion() else {
+            if generation == lifecycleGeneration,
+               remoteHostConnectionStates[alias] == .connecting {
+                applyRemoteHostEvent(alias, .fail)
+            }
             return "Conan Code could not determine this computer's Grok version."
         }
+        var connected: RemoteHostRuntime?
         do {
             let host = try await RemoteHostRuntime.connect(
                 alias: alias,
                 supportDirectory: supportDirectory,
                 localVersion: localVersion
             )
-            remoteHosts[alias] = host
-            unreachableRemoteHostReasons.removeValue(forKey: alias)
-            if let versionWarning = host.host.versionWarning {
-                warningMessage = versionWarning
+            connected = host
+            try await loadRemoteHostCatalog(host)
+            guard generation == lifecycleGeneration,
+                  remoteHostConnectionStates[alias] == .connecting
+            else {
+                await host.shutdown()
+                return nil
             }
-            listenForRemoteControlEvents(host, generation: lifecycleGeneration)
-            try await refreshRemoteHost(host)
+            publishRemoteHost(host, generation: generation)
             return nil
         } catch {
+            await connected?.shutdown()
+            if generation == lifecycleGeneration,
+               remoteHostConnectionStates[alias] == .connecting {
+                applyRemoteHostEvent(alias, .fail)
+                _ = uninstallRemoteHostArtifacts(alias)
+                mergeCatalogState()
+            }
             let message = error.localizedDescription
             if !reportsFailure {
                 // Keep the sidebar badge red and the management view honest
@@ -760,17 +884,44 @@ final class AppCoordinator: ObservableObject {
         return version
     }
 
-    /// Reconnects every registered host in parallel. A host that fails stays
-    /// registered and unreachable rather than disappearing from the sidebar.
+    /// Reconnects every registered host that is not explicitly stopped.
+    /// Connections run in a task group bounded to 4 so a dead host's SSH
+    /// timeout cannot stall every other computer.
     private func connectRegisteredRemoteHosts() async {
-        let aliases = metadata.remoteHostAliases
+        let aliases = RemoteHostConnectionMachine.aliasesEligibleForAutoConnect(
+            registered: metadata.remoteHostAliases,
+            states: remoteHostConnectionStates
+        )
         guard !aliases.isEmpty else { return }
-        for alias in aliases where remoteHosts[alias] == nil {
-            _ = await connectRemoteHost(alias, reportsFailure: false)
+        let bound = RemoteHostConnectionMachine.connectionConcurrencyLimit
+        var index = aliases.startIndex
+        while index < aliases.endIndex {
+            let end = aliases.index(
+                index,
+                offsetBy: bound,
+                limitedBy: aliases.endIndex
+            ) ?? aliases.endIndex
+            let batch = Array(aliases[index..<end])
+            await withTaskGroup(of: Void.self) { group in
+                for alias in batch {
+                    group.addTask {
+                        await self.connectRemoteHost(
+                            alias,
+                            reportsFailure: false
+                        )
+                    }
+                }
+            }
+            index = end
         }
     }
 
-    private func refreshRemoteHost(_ host: RemoteHostRuntime) async throws {
+    /// Loads one host's catalog into that host only. The merged maps stay
+    /// untouched until the caller publishes the host or refreshes an already
+    /// published one.
+    private func loadRemoteHostCatalog(
+        _ host: RemoteHostRuntime
+    ) async throws {
         async let persistedRequest = host.control.listPersistedSessions()
         async let rosterRequest = host.control.listRoster()
         let (allSessions, rosterEntries) = try await (
@@ -798,10 +949,36 @@ final class AppCoordinator: ObservableObject {
             uniquingKeysWith: { _, refreshed in refreshed }
         )
         host.unreachableReason = nil
+    }
+
+    private func publishRemoteHost(
+        _ host: RemoteHostRuntime,
+        generation: Int
+    ) {
+        let alias = host.alias
+        remoteHosts[alias] = host
+        unreachableRemoteHostReasons.removeValue(forKey: alias)
+        if let versionWarning = host.host.versionWarning {
+            warningMessage = versionWarning
+        }
+        listenForRemoteControlEvents(host, generation: generation)
+        applyPublishedRemoteHostOwnership(host)
+        applyRemoteHostEvent(alias, .succeed)
+        mergeCatalogState()
+        rebuildCatalog()
+    }
+
+    private func applyPublishedRemoteHostOwnership(_ host: RemoteHostRuntime) {
+        let alias = host.alias
         remoteDisconnectEpisodes.markConnected(alias)
-        for session in sessions {
+        for session in host.persistedSessions {
             hostAliasBySessionID[session.id.rawValue] = alias
         }
+    }
+
+    private func refreshRemoteHost(_ host: RemoteHostRuntime) async throws {
+        try await loadRemoteHostCatalog(host)
+        applyPublishedRemoteHostOwnership(host)
         mergeCatalogState()
         rebuildCatalog()
     }
@@ -809,29 +986,126 @@ final class AppCoordinator: ObservableObject {
     /// Republishes the merged view of every computer's catalog. Local state is
     /// kept separately so a local refresh cannot drop remote rows.
     private func mergeCatalogState() {
-        var sessions = localPersistedSessions
-        var roster = localRoster
-        var projectIDs = localProjectIDBySessionID
-        var checkouts = localMainCheckoutByProjectID
-        for host in remoteHosts.values {
-            sessions += host.persistedSessions
-            roster.merge(host.roster, uniquingKeysWith: { _, remote in remote })
-            projectIDs.merge(
-                host.projectIDBySessionID,
-                uniquingKeysWith: { _, remote in remote }
-            )
-            checkouts.merge(
-                host.mainCheckoutByProjectID,
-                uniquingKeysWith: { _, remote in remote }
-            )
-        }
-        persistedSessions = sessions
-        self.roster = roster
-        projectIDBySessionID = projectIDs
-        mainCheckoutByProjectID = checkouts
+        let merged = CatalogStateMerge.merge(
+            local: CatalogStateMerge.Slice(
+                sessions: localPersistedSessions,
+                roster: localRoster,
+                projectIDs: localProjectIDBySessionID,
+                checkouts: localMainCheckoutByProjectID
+            ),
+            remotes: remoteHosts.values.map { host in
+                CatalogStateMerge.Slice(
+                    sessions: host.persistedSessions,
+                    roster: host.roster,
+                    projectIDs: host.projectIDBySessionID,
+                    checkouts: host.mainCheckoutByProjectID
+                )
+            }
+        )
+        persistedSessions = merged.sessions
+        roster = merged.roster
+        projectIDBySessionID = merged.projectIDs
+        mainCheckoutByProjectID = merged.checkouts
     }
 
-    /// The computer that owns a conversation, or `nil` when it is local.
+    private func applyRemoteHostEvent(
+        _ alias: RemoteHostAlias,
+        _ event: RemoteHostConnectionEvent
+    ) {
+        let next = RemoteHostConnectionMachine.apply(
+            remoteHostConnectionStates[alias],
+            event
+        )
+        if let next {
+            remoteHostConnectionStates[alias] = next
+        } else {
+            remoteHostConnectionStates.removeValue(forKey: alias)
+        }
+    }
+
+    /// Drops the published runtime, listener, and session ownership for one
+    /// host. Connection intent is left to the caller.
+    private func uninstallRemoteHostArtifacts(
+        _ alias: RemoteHostAlias
+    ) -> RemoteHostRuntime? {
+        remoteEventTasks.removeValue(forKey: alias)?.cancel()
+        let host = remoteHosts.removeValue(forKey: alias)
+        hostAliasBySessionID = hostAliasBySessionID.filter {
+            $0.value != alias
+        }
+        unreachableRemoteHostReasons.removeValue(forKey: alias)
+        return host
+    }
+
+    private func shutdownUninstalledRemoteHost(
+        _ host: RemoteHostRuntime?
+    ) async {
+        await host?.shutdown()
+    }
+
+    private func reloadSSHConfigAliases() {
+        cachedSSHConfigAliases = SSHConfigHosts().aliases()
+    }
+
+    private func applyMainCheckout(_ projectID: String, path: String) {
+        if let alias = hostAlias(forProject: projectID),
+           let host = remoteHosts[alias] {
+            host.mainCheckoutByProjectID[projectID] = path
+        } else {
+            localMainCheckoutByProjectID[projectID] = path
+        }
+        mergeCatalogState()
+    }
+
+    private func applyRosterEntry(
+        _ entry: GrokRosterEntry,
+        sessionID: String
+    ) {
+        if let alias = hostAlias(forSession: sessionID),
+           let host = remoteHosts[alias] {
+            host.roster[sessionID] = entry
+        } else {
+            localRoster[sessionID] = entry
+        }
+        mergeCatalogState()
+    }
+
+    private func applyMaterializedSession(
+        _ persisted: GrokPersistedSession,
+        sessionID: String,
+        locations: ProjectLocationSnapshot
+    ) {
+        if let alias = hostAlias(forSession: sessionID),
+           let host = remoteHosts[alias] {
+            host.persistedSessions.removeAll {
+                $0.id.rawValue == sessionID
+            }
+            host.persistedSessions.append(persisted)
+            host.projectIDBySessionID.merge(
+                locations.projectIDBySessionID,
+                uniquingKeysWith: { _, refreshed in refreshed }
+            )
+            host.mainCheckoutByProjectID.merge(
+                locations.mainCheckoutByProjectID,
+                uniquingKeysWith: { _, refreshed in refreshed }
+            )
+        } else {
+            localPersistedSessions.removeAll {
+                $0.id.rawValue == sessionID
+            }
+            localPersistedSessions.append(persisted)
+            localProjectIDBySessionID.merge(
+                locations.projectIDBySessionID,
+                uniquingKeysWith: { _, refreshed in refreshed }
+            )
+            localMainCheckoutByProjectID.merge(
+                locations.mainCheckoutByProjectID,
+                uniquingKeysWith: { _, refreshed in refreshed }
+            )
+        }
+        mergeCatalogState()
+    }
+
     /// The context a remote disconnect would land in right now.
     var remoteDisconnectNotificationScope: RemoteDisconnectNotificationScope {
         RemoteDisconnectNotificationScope(
@@ -854,6 +1128,7 @@ final class AppCoordinator: ObservableObject {
         await notifications.notifyRemoteDisconnect(alias)
     }
 
+    /// The computer that owns a conversation, or `nil` when it is local.
     func hostAlias(forSession sessionID: String) -> RemoteHostAlias? {
         if let alias = hostAliasBySessionID[sessionID] { return alias }
         guard let projectID = projectIDBySessionID[sessionID] else {
@@ -913,11 +1188,9 @@ final class AppCoordinator: ObservableObject {
                 case .rosterChanged(let change):
                     for removed in change.removed {
                         host.roster.removeValue(forKey: removed.rawValue)
-                        self.roster.removeValue(forKey: removed.rawValue)
                     }
                     for entry in change.upserted {
                         host.roster[entry.id.rawValue] = entry
-                        self.roster[entry.id.rawValue] = entry
                         self.hostAliasBySessionID[entry.id.rawValue] = alias
                         if let directory = entry.cwd {
                             self.runtimeManager?
@@ -934,6 +1207,7 @@ final class AppCoordinator: ObservableObject {
                         self.materializePendingSessionIfNeeded(entry)
                         self.startLifecycleCatchupIfReady(entry)
                     }
+                    self.mergeCatalogState()
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
@@ -953,6 +1227,7 @@ final class AppCoordinator: ObservableObject {
     /// Refreshes every reachable host and quietly retries the ones that are
     /// not. A remote computer that was asleep, restarted, or off the network
     /// comes back on its own, without the user having to remove and add it.
+    /// An explicitly stopped host is never probed again.
     private func refreshRemoteHosts() async {
         for host in remoteHosts.values {
             do {
@@ -964,6 +1239,10 @@ final class AppCoordinator: ObservableObject {
         }
 
         for alias in metadata.remoteHostAliases {
+            if remoteHostConnectionStates[alias] == .stopped
+                || remoteHostConnectionStates[alias] == .connecting {
+                continue
+            }
             let host = remoteHosts[alias]
             guard host == nil || host?.unreachableReason != nil else {
                 continue
@@ -978,11 +1257,13 @@ final class AppCoordinator: ObservableObject {
     /// `Reconnect` action; the periodic refresh does the same on its own.
     @discardableResult
     func reconnectRemoteHost(_ alias: RemoteHostAlias) async -> String? {
-        remoteEventTasks.removeValue(forKey: alias)?.cancel()
-        if let host = remoteHosts.removeValue(forKey: alias) {
-            await host.shutdown()
-        }
-        return await connectRemoteHost(alias)
+        await shutdownUninstalledRemoteHost(
+            uninstallRemoteHostArtifacts(alias)
+        )
+        return await connectRemoteHost(
+            alias,
+            isExplicitRetry: true
+        )
     }
 
     // MARK: - Remote projects
@@ -1162,18 +1443,25 @@ final class AppCoordinator: ObservableObject {
 
     func addProject(url: URL) {
         let generation = lifecycleGeneration
-        Task { [weak self] in
+        addProjectTask?.cancel()
+        addProjectTask = Task { [weak self] in
             do {
                 let resolution = try await Task.detached {
                     try GitProjectResolver().resolve(checkout: url)
                 }.value
                 guard let self,
-                      generation == self.lifecycleGeneration else {
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
                     return
                 }
                 let projectID = resolution.identity.rawValue
-                self.mainCheckoutByProjectID[projectID] =
-                    resolution.mainCheckout.path
+                self.applyMainCheckout(
+                    projectID,
+                    path: resolution.mainCheckout.path
+                )
                 self.schedulePersistence { coordinator in
                     await coordinator.persist {
                         $0.registerProject(
@@ -1184,7 +1472,11 @@ final class AppCoordinator: ObservableObject {
                 }
             } catch {
                 guard let self,
-                      generation == self.lifecycleGeneration else {
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
                     return
                 }
                 self.warningMessage = error.localizedDescription
@@ -1339,7 +1631,9 @@ final class AppCoordinator: ObservableObject {
         let remoteRunner = hostAlias(forProject: projectID)
             .flatMap { remoteHosts[$0] }
             .map { (alias: $0.alias, runner: $0.commandRunner) }
-        Task {
+        let generation = lifecycleGeneration
+        worktreeConversationTask?.cancel()
+        worktreeConversationTask = Task { [weak self] in
             do {
                 let result = try await Task.detached {
                     let service = remoteRunner.map {
@@ -1350,16 +1644,34 @@ final class AppCoordinator: ObservableObject {
                         from: checkout
                     )
                 }.value
-                mainCheckoutByProjectID[projectID] =
-                    result.plan.project.mainCheckout.path
-                warningMessage = result.warning
-                createConversation(
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.applyMainCheckout(
+                    projectID,
+                    path: result.plan.project.mainCheckout.path
+                )
+                self.warningMessage = result.warning
+                self.createConversation(
                     in: projectID,
                     workingDirectory: result.plan.workingDirectory.path,
                     additionalArguments: result.plan.grokArguments
                 )
             } catch {
-                warningMessage = error.localizedDescription
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.warningMessage = error.localizedDescription
             }
         }
     }
@@ -1441,16 +1753,34 @@ final class AppCoordinator: ObservableObject {
             return
         }
         let directory = session(sessionID)?.cwd
-        Task {
+        let generation = lifecycleGeneration
+        renameConversationTask?.cancel()
+        renameConversationTask = Task { [weak self] in
             do {
                 try await controlClient.rename(
                     GrokSessionID(sessionID),
                     to: trimmed,
                     inDirectory: directory
                 )
-                try await refresh()
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                try await self.refresh()
             } catch {
-                warningMessage = error.localizedDescription
+                guard let self,
+                      CoordinatorMutationGate.allowsMutation(
+                          capturedGeneration: generation,
+                          currentGeneration: self.lifecycleGeneration,
+                          isCancelled: Task.isCancelled
+                      ) else {
+                    return
+                }
+                self.warningMessage = error.localizedDescription
             }
         }
     }
@@ -1486,7 +1816,7 @@ final class AppCoordinator: ObservableObject {
 
     func restart() async {
         await drainPersistenceTasks()
-        let detached = detachRuntimeState()
+        let detached = detachRuntimeState(remoteHostEvent: .restart)
         await stop(detached)
         started = false
         status = .starting
@@ -1495,13 +1825,15 @@ final class AppCoordinator: ObservableObject {
 
     func shutdown() async {
         await drainPersistenceTasks()
-        let detached = detachRuntimeState()
+        let detached = detachRuntimeState(remoteHostEvent: .shutdown)
         await stop(detached)
         applicationInstanceLock = nil
         started = false
     }
 
-    private func detachRuntimeState() -> DetachedRuntimeState {
+    private func detachRuntimeState(
+        remoteHostEvent: RemoteHostConnectionEvent = .restart
+    ) -> DetachedRuntimeState {
         lifecycleGeneration += 1
         controlEventsTask?.cancel()
         controlEventsTask = nil
@@ -1515,6 +1847,21 @@ final class AppCoordinator: ObservableObject {
         pendingMaterializationTasks.removeAll()
         pendingLifecycleCatchup.removeAll()
         completedLifecycleCatchup.removeAll()
+        cancelCoordinatorMutationTasks()
+        remoteEventTasks.values.forEach { $0.cancel() }
+        remoteEventTasks.removeAll()
+        let remotes = Array(remoteHosts.values)
+        remoteHosts.removeAll()
+        hostAliasBySessionID.removeAll()
+        unreachableRemoteHostReasons.removeAll()
+        for alias in Array(remoteHostConnectionStates.keys) {
+            applyRemoteHostEvent(alias, remoteHostEvent)
+        }
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
+        mergeCatalogState()
         agenticFinder?.cancel()
         agenticFinder = nil
         terminalControlAuthorizer.reset()
@@ -1534,12 +1881,27 @@ final class AppCoordinator: ObservableObject {
         lastAggregateActivity.removeAll()
         return DetachedRuntimeState(
             controlClient: control,
-            leaderSocket: leaderSocket
+            leaderSocket: leaderSocket,
+            remoteHosts: remotes
         )
+    }
+
+    private func cancelCoordinatorMutationTasks() {
+        worktreeConversationTask?.cancel()
+        worktreeConversationTask = nil
+        addProjectTask?.cancel()
+        addProjectTask = nil
+        renameConversationTask?.cancel()
+        renameConversationTask = nil
+        workflowCenterTasks.forEach { $0.cancel() }
+        workflowCenterTasks.removeAll()
     }
 
     private func stop(_ detached: DetachedRuntimeState) async {
         await detached.controlClient?.shutdown()
+        for host in detached.remoteHosts {
+            await host.shutdown()
+        }
         guard let leaderSocket = detached.leaderSocket else { return }
         do {
             _ = try await leaderProcessManager.stop(
@@ -2017,10 +2379,10 @@ final class AppCoordinator: ObservableObject {
                 switch event {
                 case .rosterChanged(let change):
                     for removed in change.removed {
-                        self.roster.removeValue(forKey: removed.rawValue)
+                        self.localRoster.removeValue(forKey: removed.rawValue)
                     }
                     for entry in change.upserted {
-                        self.roster[entry.id.rawValue] = entry
+                        self.localRoster[entry.id.rawValue] = entry
                         if let directory = entry.cwd {
                             self.runtimeManager?
                                 .resolveShellBaseWorkingDirectory(
@@ -2036,6 +2398,7 @@ final class AppCoordinator: ObservableObject {
                         self.materializePendingSessionIfNeeded(entry)
                         self.startLifecycleCatchupIfReady(entry)
                     }
+                    self.mergeCatalogState()
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
@@ -2071,7 +2434,7 @@ final class AppCoordinator: ObservableObject {
     ) async {
         guard isCurrent(control, generation: generation) else { return }
         let message = error.localizedDescription
-        let detached = detachRuntimeState()
+        let detached = detachRuntimeState(remoteHostEvent: .restart)
         await stop(detached)
         status = .failed(message)
     }
@@ -2146,13 +2509,20 @@ final class AppCoordinator: ObservableObject {
     /// Returning to Conan Code counts as reading whatever is on screen, so the
     /// open conversation lowers its indicator without a second click.
     private func observeApplicationActivation() {
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
+        let generation = lifecycleGeneration
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let sessionID = self.selectedSessionID else {
+                guard let self,
+                      generation == self.lifecycleGeneration,
+                      let sessionID = self.selectedSessionID else {
                     return
                 }
                 self.acknowledgeAttention(sessionID)
@@ -2224,7 +2594,7 @@ final class AppCoordinator: ObservableObject {
                 }), entry.isResident else {
                     return
                 }
-                self.roster[rootSessionID] = entry
+                self.applyRosterEntry(entry, sessionID: rootSessionID)
                 self.startLifecycleCatchupIfReady(entry)
             } catch {
                 // A roster broadcast will retry this path when the terminal
@@ -2586,10 +2956,11 @@ final class AppCoordinator: ObservableObject {
                           ) else {
                         return
                     }
-                    self.persistedSessions.removeAll {
-                        $0.id.rawValue == sessionID
-                    }
-                    self.persistedSessions.append(persisted)
+                    self.applyMaterializedSession(
+                        persisted,
+                        sessionID: sessionID,
+                        locations: locations
+                    )
                     if let directory = persisted.cwd {
                         self.runtimeManager?
                             .resolveShellBaseWorkingDirectory(
@@ -2606,14 +2977,6 @@ final class AppCoordinator: ObservableObject {
                             )
                     }
                     self.pendingSessions.removeValue(forKey: sessionID)
-                    self.projectIDBySessionID.merge(
-                        locations.projectIDBySessionID,
-                        uniquingKeysWith: { _, refreshed in refreshed }
-                    )
-                    self.mainCheckoutByProjectID.merge(
-                        locations.mainCheckoutByProjectID,
-                        uniquingKeysWith: { _, refreshed in refreshed }
-                    )
                     self.pendingMaterializationTasks.removeValue(
                         forKey: sessionID
                     )
@@ -2644,7 +3007,7 @@ final class AppCoordinator: ObservableObject {
             }
 
             switch request.method {
-            case "create":
+            case TerminalControlContract.Method.create:
                 guard let requestID = request.requestID,
                       !requestID.isEmpty else {
                     throw TerminalControlError.invalidRequest(
@@ -2691,13 +3054,16 @@ final class AppCoordinator: ObservableObject {
                 )
                 return .success(
                     .object([
-                        "tabID": .string(tab.id),
-                        "capability": .string(tab.capability),
-                        "state": .string(tab.state.wireValue),
+                        TerminalControlContract.Field.tabID:
+                            .string(tab.id),
+                        TerminalControlContract.Field.capability:
+                            .string(tab.capability),
+                        TerminalControlContract.Field.state:
+                            .string(tab.state.wireValue),
                     ])
                 )
 
-            case "execute":
+            case TerminalControlContract.Method.execute:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2710,13 +3076,16 @@ final class AppCoordinator: ObservableObject {
                 let commandID = try tab.execute(command)
                 return .success(
                     .object([
-                        "tabID": .string(tab.id),
-                        "commandID": .string(commandID),
-                        "state": .string(tab.state.wireValue),
+                        TerminalControlContract.Field.tabID:
+                            .string(tab.id),
+                        TerminalControlContract.Field.commandID:
+                            .string(commandID),
+                        TerminalControlContract.Field.state:
+                            .string(tab.state.wireValue),
                     ])
                 )
 
-            case "read":
+            case TerminalControlContract.Method.read:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2727,14 +3096,18 @@ final class AppCoordinator: ObservableObject {
                 )
                 return .success(
                     .object([
-                        "text": .string(result.text),
-                        "cursor": .string(result.cursor),
-                        "reset": .bool(result.reset),
-                        "truncated": .bool(result.truncated),
+                        TerminalControlContract.Field.text:
+                            .string(result.text),
+                        TerminalControlContract.Field.cursor:
+                            .string(result.cursor),
+                        TerminalControlContract.Field.reset:
+                            .bool(result.reset),
+                        TerminalControlContract.Field.truncated:
+                            .bool(result.truncated),
                     ])
                 )
 
-            case "write":
+            case TerminalControlContract.Method.write:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2747,7 +3120,7 @@ final class AppCoordinator: ObservableObject {
                 try tab.write(text)
                 return .success()
 
-            case "key":
+            case TerminalControlContract.Method.key:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2762,7 +3135,7 @@ final class AppCoordinator: ObservableObject {
                 try tab.sendKey(key)
                 return .success()
 
-            case "interrupt":
+            case TerminalControlContract.Method.interrupt:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2770,24 +3143,27 @@ final class AppCoordinator: ObservableObject {
                 try tab.sendKey(.interrupt)
                 return .success()
 
-            case "status":
+            case TerminalControlContract.Method.status:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
                 )
                 return .success(tab.statusPayload)
 
-            case "close":
+            case TerminalControlContract.Method.close:
                 let fields = try managedTerminalFields(request)
                 try runtimeManager.closeManagedTab(
                     tabID: fields.tabID,
                     capability: fields.capability
                 )
                 return .success(
-                    .object(["closed": .bool(true)])
+                    .object([
+                        TerminalControlContract.Field.closed:
+                            .bool(true)
+                    ])
                 )
 
-            case "shell-ready":
+            case TerminalControlContract.Method.shellReady:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2795,7 +3171,7 @@ final class AppCoordinator: ObservableObject {
                 try tab.markShellReady()
                 return .success(tab.statusPayload)
 
-            case "fetch-command":
+            case TerminalControlContract.Method.fetchCommand:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2807,13 +3183,16 @@ final class AppCoordinator: ObservableObject {
                 }
                 return .success(
                     .object([
-                        "command": .string(
-                            try tab.command(commandID: commandID)
-                        ),
+                        TerminalControlContract.Field.command:
+                            .string(
+                                try tab.command(
+                                    commandID: commandID
+                                )
+                            ),
                     ])
                 )
 
-            case "command-finished":
+            case TerminalControlContract.Method.commandFinished:
                 let tab = try managedTerminal(
                     request,
                     runtimeManager: runtimeManager
@@ -2912,5 +3291,158 @@ final class AppCoordinator: ObservableObject {
             UUID().uuidString.lowercased(),
             UUID().uuidString.lowercased(),
         ].joined()
+    }
+}
+
+/// Explicit per-host connection intent. Absence of a runtime is not enough to
+/// decide whether a registered computer should be probed again.
+enum RemoteHostConnectionState: Equatable, Sendable {
+    case connecting
+    case connected
+    case stopped
+    case failed
+}
+
+enum RemoteHostConnectionEvent: Equatable, Sendable {
+    case connect
+    case succeed
+    case fail
+    case stop
+    case retry
+    case restart
+    case shutdown
+    case remove
+}
+
+struct RemoteHostConnectionArtifacts: Equatable, Sendable {
+    var state: RemoteHostConnectionState?
+    var hasRuntime: Bool
+    var hasEventTask: Bool
+
+    static let empty = RemoteHostConnectionArtifacts(
+        state: nil,
+        hasRuntime: false,
+        hasEventTask: false
+    )
+}
+
+enum RemoteHostConnectionMachine {
+    /// Concurrent SSH probes share a bound so a few dead computers cannot
+    /// serialize every other host behind their full timeout.
+    static let connectionConcurrencyLimit = 4
+
+    static func apply(
+        _ state: RemoteHostConnectionState?,
+        _ event: RemoteHostConnectionEvent
+    ) -> RemoteHostConnectionState? {
+        switch (state, event) {
+        case (_, .remove), (_, .shutdown):
+            return nil
+        case (.stopped, .restart):
+            return .stopped
+        case (_, .restart):
+            return nil
+        case (.stopped, .connect),
+             (.stopped, .succeed),
+             (.stopped, .fail):
+            return .stopped
+        case (_, .stop):
+            return .stopped
+        case (.connecting, .succeed):
+            return .connected
+        case (.connecting, .fail), (.connected, .fail):
+            return .failed
+        case (_, .retry), (_, .connect):
+            return .connecting
+        case (.connected, .succeed):
+            return .connected
+        default:
+            return state
+        }
+    }
+
+    static func shouldAutoReconnect(
+        _ state: RemoteHostConnectionState?
+    ) -> Bool {
+        switch state {
+        case .none, .failed:
+            return true
+        case .connecting, .connected, .stopped:
+            return false
+        }
+    }
+
+    static func aliasesEligibleForAutoConnect(
+        registered: [RemoteHostAlias],
+        states: [RemoteHostAlias: RemoteHostConnectionState]
+    ) -> [RemoteHostAlias] {
+        registered.filter { shouldAutoReconnect(states[$0]) }
+    }
+
+    static func artifacts(
+        after event: RemoteHostConnectionEvent,
+        current: RemoteHostConnectionState?
+    ) -> RemoteHostConnectionArtifacts {
+        let state = apply(current, event)
+        let published = state == .connected
+        return RemoteHostConnectionArtifacts(
+            state: state,
+            hasRuntime: published,
+            hasEventTask: published
+        )
+    }
+}
+
+/// Local refresh input plus each host's own catalog. The merged maps are
+/// derived here; a refresh must never write the previous merge back into
+/// `local`.
+enum CatalogStateMerge {
+    struct Slice: Equatable {
+        var sessions: [GrokPersistedSession] = []
+        var roster: [String: GrokRosterEntry] = [:]
+        var projectIDs: [String: String] = [:]
+        var checkouts: [String: String] = [:]
+    }
+
+    static func merge(local: Slice, remotes: [Slice]) -> Slice {
+        var result = local
+        for remote in remotes {
+            result.sessions += remote.sessions
+            result.roster.merge(
+                remote.roster,
+                uniquingKeysWith: { _, next in next }
+            )
+            result.projectIDs.merge(
+                remote.projectIDs,
+                uniquingKeysWith: { _, next in next }
+            )
+            result.checkouts.merge(
+                remote.checkouts,
+                uniquingKeysWith: { _, next in next }
+            )
+        }
+        return result
+    }
+}
+
+enum AvailableRemoteHostAliases {
+    static func fromCache(
+        _ cached: [RemoteHostAlias],
+        registered: [RemoteHostAlias]
+    ) -> [RemoteHostAlias] {
+        let registeredIDs = Set(registered.map(\.rawValue))
+        return cached.filter { !registeredIDs.contains($0.rawValue) }
+    }
+}
+
+/// A detached coordinator task may mutate state only while its captured
+/// lifecycle generation is still current and the task has not been cancelled.
+enum CoordinatorMutationGate {
+    static func allowsMutation(
+        capturedGeneration: Int,
+        currentGeneration: Int,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled && capturedGeneration == currentGeneration
     }
 }

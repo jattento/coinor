@@ -469,6 +469,26 @@ func futureSchemaVersionFailsLoudlyWithoutBeingDestroyed() throws {
 }
 
 @Test
+func negativeSchemaVersionFailsLoudlyWithoutBeingDestroyed() throws {
+    let directory = try makeDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fileURL = directory.appendingPathComponent(MetadataStore.fileName)
+    let negativeBytes = Data(#"{"schemaVersion": -1}"#.utf8)
+    try negativeBytes.write(to: fileURL)
+
+    var caughtUnsupported = false
+    do {
+        _ = try MetadataStore(directoryURL: directory)
+    } catch MetadataStoreError.unsupportedSchemaVersion {
+        caughtUnsupported = true
+    }
+    #expect(caughtUnsupported)
+
+    let survivingBytes = try Data(contentsOf: fileURL)
+    #expect(survivingBytes == negativeBytes)
+}
+
+@Test
 func legacyDocumentMigratesForwardAndPreservesKnownData() async throws {
     let directory = try makeDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

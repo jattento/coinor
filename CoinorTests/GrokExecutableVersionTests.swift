@@ -134,5 +134,8 @@ func executableVersionProbeKillsACommandThatWouldOtherwiseHang() async throws {
         #expect(seconds >= 0.05 && seconds < 0.051)
     }
 
-    #expect(clock.now - startedAt < .seconds(1))
+    // The probe now waits for SIGTERM/SIGKILL to land instead of only
+    // scheduling them. Under a full suite that still has to beat the
+    // 5 second sleep, not a 1 second fire-and-forget budget.
+    #expect(clock.now - startedAt < .seconds(2))
 }

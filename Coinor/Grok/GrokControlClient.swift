@@ -156,7 +156,7 @@ actor GrokControlClient {
     func shutdown() async {
         readerTask?.cancel()
         readerTask = nil
-        transport?.terminate()
+        await transport?.shutdown()
         transport = nil
         if case .finished = state {} else {
             state = .finished(.notConnected)
@@ -441,7 +441,12 @@ actor GrokControlClient {
                     "limit": .int(configuration.pageSize),
                 ]
             )
-            let updates = result["updates"]?.arrayValue ?? []
+            guard let updates = result["updates"]?.arrayValue else {
+                throw GrokControlError.malformedPayload(
+                    method: GrokMethod.sessionUpdates,
+                    detail: "updates must be an array"
+                )
+            }
             for update in updates {
                 if let observation = GrokSubagentLifecycleObservation
                     .parsePersistedEnvelope(update) {
@@ -468,7 +473,7 @@ actor GrokControlClient {
                 )
             }
 
-            let hasMore = result["hasMore"]?.boolValue ?? false
+            let hasMore = try hasMore(in: result)
             guard hasMore else {
                 return observations
             }
@@ -478,6 +483,19 @@ actor GrokControlClient {
             offset += updates.count
         }
         throw GrokControlError.paginationStalled(cursor: String(offset))
+    }
+
+    /// Grok answers `x.ai/session/updates` with `"hasMore": true|false` on
+    /// every page, so a present-but-wrong-typed value is a compatibility
+    /// error rather than a silent last-page.
+    private func hasMore(in result: GrokJSONValue) throws -> Bool {
+        guard let hasMore = result["hasMore"]?.boolValue else {
+            throw GrokControlError.malformedPayload(
+                method: GrokMethod.sessionUpdates,
+                detail: "hasMore must be a bool"
+            )
+        }
+        return hasMore
     }
 
     // MARK: - Handshake

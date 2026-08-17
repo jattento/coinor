@@ -8,6 +8,7 @@ private enum ModelFixture {
     static func definition(
         name: String,
         source: String,
+        path: String? = nil,
         description: String? = nil,
         whenToUse: String? = nil
     ) -> GrokWorkflowDefinition {
@@ -15,6 +16,7 @@ private enum ModelFixture {
             "name": .string(name),
             "source": .string(source),
         ]
+        if let path { raw["path"] = .string(path) }
         if let description { raw["description"] = .string(description) }
         if let whenToUse { raw["when_to_use"] = .string(whenToUse) }
         return try! GrokWorkflowDefinition(raw: .object(raw))
@@ -292,7 +294,7 @@ func catalogDefaultSelectionPrefersProjectThenUserThenBuiltin() {
             ModelFixture.definition(name: "user-one", source: "user"),
         ]
     )
-    #expect(model.selectedDefinitionID == "user-one")
+    #expect(model.selectedDefinitionID == "user:user-one (user-one)")
 
     let generation2 = model.beginContext(
         sessionID: "s1",
@@ -309,7 +311,7 @@ func catalogDefaultSelectionPrefersProjectThenUserThenBuiltin() {
             ModelFixture.definition(name: "project-one", source: "project"),
         ]
     )
-    #expect(model.selectedDefinitionID == "project-one")
+    #expect(model.selectedDefinitionID == "project:project-one (project-one)")
 }
 
 @Test @MainActor
@@ -327,6 +329,52 @@ func catalogDefaultSelectionFallsBackToNilWhenOnlyUnknownSourcesExist() {
         definitions: [ModelFixture.definition(name: "fork-only", source: "downstream_fork")]
     )
     #expect(model.selectedDefinitionID == nil)
+}
+
+// MARK: - Composite identity
+
+@Test @MainActor
+func sameNamedDefinitionsFromDifferentOriginsAreSeparatelySelectable() {
+    let model = WorkflowCenterModel()
+    let generation = model.beginContext(
+        sessionID: "s1",
+        conversationTitle: "t",
+        projectTitle: "p",
+        remoteHostTitle: nil
+    )
+    model.completeCatalogLoad(
+        generation: generation,
+        sessionID: "s1",
+        definitions: [
+            ModelFixture.definition(name: "triage", source: "project"),
+            ModelFixture.definition(name: "triage", source: "user"),
+            ModelFixture.definition(name: "triage", source: "builtin"),
+        ]
+    )
+
+    let project = try! #require(model.definitions.first { $0.source == .project })
+    let user = try! #require(model.definitions.first { $0.source == .user })
+    let builtin = try! #require(model.definitions.first { $0.source == .builtin })
+    #expect(project.id != user.id)
+    #expect(user.id != builtin.id)
+    #expect(builtin.id != project.id)
+
+    // Default picks the project-origin triage; then each origin is
+    // selectable without ambiguity, so `selectedDefinition` follows the
+    // exact definition chosen.
+    #expect(model.selectedDefinitionID == project.id)
+    model.selectedDefinitionID = user.id
+    #expect(model.selectedDefinition!.name == "triage")
+    #expect(model.selectedDefinition!.source == .user)
+    model.selectedDefinitionID = builtin.id
+    #expect(model.selectedDefinition!.id == builtin.id)
+    #expect(model.selectedDefinition!.source == .builtin)
+
+    // Launching still sends the bare name: a launch is `launchWorkflow(
+    // name: selectedDefinition.name, ...)`, so the composite id must never
+    // leak into the name a user-origin definition would submit under.
+    model.selectedDefinitionID = user.id
+    #expect(model.selectedDefinition?.name == "triage")
 }
 
 // MARK: - Partial load failure

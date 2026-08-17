@@ -130,11 +130,23 @@ func installedSidechatSkillTargetsConanCodeAndNotHerdr() throws {
     for text in [script, skill] {
         #expect(!text.lowercased().contains("herdr"))
     }
-    #expect(script.contains("CONAN_CODE_CONTROL_CLIENT"))
-    #expect(script.contains("CONAN_CODE_REQUEST_ID"))
+    #expect(
+        script.contains(
+            TerminalControlContract.EnvironmentVariable.controlClient
+        )
+    )
+    #expect(
+        script.contains(
+            TerminalControlContract.EnvironmentVariable.requestID
+        )
+    )
     #expect(script.contains("--fork-session"))
     #expect(script.contains("--session-id"))
-    #expect(skill.contains("CONAN_CODE_REQUEST_ID"))
+    #expect(
+        skill.contains(
+            TerminalControlContract.EnvironmentVariable.requestID
+        )
+    )
     #expect(skill.contains("Conan Code"))
 }
 
@@ -168,12 +180,16 @@ func installedSidechatScriptParsesAndRefusesToRunOutsideConanCode() throws {
         environment: [
             "PATH": "/usr/bin:/bin",
             "HOME": home.path,
-            "CONAN_CODE_CONTROL_CLIENT": "/bin/echo",
+            TerminalControlContract.EnvironmentVariable.controlClient:
+                "/bin/echo",
         ]
     )
     #expect(missingRequestID.status == 1)
     #expect(
-        missingRequestID.output.contains("CONAN_CODE_REQUEST_ID is required"),
+        missingRequestID.output.contains(
+            TerminalControlContract.EnvironmentVariable.requestID
+                + " is required"
+        ),
         Comment(rawValue: missingRequestID.output)
     )
 }
@@ -253,8 +269,10 @@ func sidechatForksTheLiveSessionIntoANewConanCodeTab() throws {
     process.environment = [
         "PATH": "/usr/bin:/bin",
         "HOME": home.path,
-        "CONAN_CODE_CONTROL_CLIENT": stubClient.path,
-        "CONAN_CODE_REQUEST_ID": "11111111-2222-3333-4444-555555555555",
+        TerminalControlContract.EnvironmentVariable.controlClient:
+            stubClient.path,
+        TerminalControlContract.EnvironmentVariable.requestID:
+            "11111111-2222-3333-4444-555555555555",
         "COINOR_GROK_EXECUTABLE": "/bin/echo",
     ]
     let pipe = Pipe()

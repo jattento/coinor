@@ -13,21 +13,6 @@ private func launch(_ id: String) -> TerminalLaunchRequest {
     )
 }
 
-private func pane(
-    _ id: String,
-    parent: String,
-    sequence: UInt64,
-    activity: RuntimeActivity = .idle
-) -> RuntimePane {
-    RuntimePane(
-        id: id,
-        kind: .subagent(parentSessionID: parent),
-        launch: launch(id),
-        startSequence: sequence,
-        activity: activity
-    )
-}
-
 @Test
 func terminalLaunchRequestQuotesEveryArgumentAndSelectsExactMode() {
     let request = launch("child-id")
@@ -104,13 +89,20 @@ func managedShellLaunchUsesFixedZshEnvironmentAndBootstrap() {
     let request = TerminalLaunchRequest(
         managedTabID: "managed-id",
         workingDirectory: "/tmp/project",
-        environment: ["CONAN_CODE_TAB_ID": "managed-id"],
+        environment: [
+            TerminalControlContract.EnvironmentVariable.tabID:
+                "managed-id",
+        ],
         bootstrapPath: "/tmp/bootstrap script.zsh"
     )
 
     #expect(request.mode == .managedShell)
     #expect(request.explicitCommand == "/bin/zsh -il")
-    #expect(request.environment["CONAN_CODE_TAB_ID"] == "managed-id")
+    #expect(
+        request.environment[
+            TerminalControlContract.EnvironmentVariable.tabID
+        ] == "managed-id"
+    )
     #expect(
         request.initialInput
             == "source '/tmp/bootstrap script.zsh'\r"
@@ -181,63 +173,6 @@ func localLaunchPreservesTheExactPreRemoteBehavior() {
     #expect(request.explicitCommand == expectedCommand)
     #expect(request.surfaceWorkingDirectory == "/tmp/Project With Space")
     #expect(request.surfaceEnvironment == ["LOCAL_VALUE": "unchanged"])
-}
-
-@Test
-func descendantsStayFlatAndOrderedByStartSequence() {
-    let root = RuntimePane(
-        id: "root",
-        kind: .root,
-        launch: launch("root"),
-        startSequence: 0,
-        activity: .idle
-    )
-    var collection = ConversationPaneCollection(root: root)
-
-    collection.startDescendant(pane("grandchild", parent: "child", sequence: 2))
-    collection.startDescendant(pane("child", parent: "root", sequence: 1))
-
-    #expect(collection.descendants.map(\.id) == ["child", "grandchild"])
-    #expect(collection.usesSplitLayout)
-}
-
-@Test
-func stopTombstonePreventsDelayedPaneResurrection() {
-    let root = RuntimePane(
-        id: "root",
-        kind: .root,
-        launch: launch("root"),
-        startSequence: 0,
-        activity: .idle
-    )
-    var collection = ConversationPaneCollection(root: root)
-
-    collection.stopDescendant(sessionID: "child")
-    collection.startDescendant(pane("child", parent: "root", sequence: 1))
-
-    #expect(collection.descendants.isEmpty)
-    #expect(!collection.usesSplitLayout)
-}
-
-@Test
-func needsInputWinsAggregationAndRoutesFocusToFirstPane() {
-    let root = RuntimePane(
-        id: "root",
-        kind: .root,
-        launch: launch("root"),
-        startSequence: 0,
-        activity: .working
-    )
-    var collection = ConversationPaneCollection(root: root)
-    collection.startDescendant(
-        pane("child", parent: "root", sequence: 1, activity: .needsInput)
-    )
-    collection.startDescendant(
-        pane("grandchild", parent: "child", sequence: 2, activity: .working)
-    )
-
-    #expect(collection.aggregateActivity == .needsInput)
-    #expect(collection.attentionPaneID == "child")
 }
 
 @Test

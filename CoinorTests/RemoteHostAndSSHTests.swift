@@ -15,6 +15,8 @@ struct RemoteHostAliasTests {
         "host\"name",
         "host`name",
         "host\nname",
+        "-V",
+        "-any-other-option",
     ])
     func rejectsUnsafeAliases(_ rawValue: String) {
         #expect(RemoteHostAlias(rawValue: rawValue) == nil)
@@ -82,6 +84,59 @@ struct ShellQuotingTests {
 }
 
 @Suite
+struct ShellQuotingOfSSHCommandTests {
+    @Test(arguments: [
+        (true, true),
+        (true, false),
+        (false, true),
+        (false, false),
+    ])
+    func shellCommandKeepsTheOptionEndMarker(allocateTTY: Bool, batch: Bool)
+        throws
+    {
+        let alias = try #require(RemoteHostAlias(rawValue: "studio"))
+        let command = SSHCommand(
+            alias: alias,
+            controlPath: "/tmp/a.sock"
+        )
+        let arguments = command.arguments(
+            remoteCommand: "exec true",
+            allocateTTY: allocateTTY,
+            batch: batch
+        )
+
+        // The shell command must round-trip every vector argument in order.
+        #expect(
+            command.shellCommand(
+                remoteCommand: "exec true",
+                allocateTTY: allocateTTY,
+                batch: batch
+            ) == ShellQuoting.command(
+                [SSHCommand.executablePath] + arguments
+            )
+        )
+        // ... and keep the end-of-options marker in the last three positions.
+        #expect(arguments.suffix(3) == ["--", alias.rawValue, "exec true"])
+    }
+
+    @Test
+    func shellCommandPlacesTheSeparatorBeforeTheQuotedAlias() throws {
+        let alias = try #require(RemoteHostAlias(rawValue: "studio"))
+        let command = SSHCommand(
+            alias: alias,
+            controlPath: "/tmp/a.sock"
+        )
+
+        let shell = command.shellCommand(
+            remoteCommand: "exec true",
+            allocateTTY: true,
+            batch: true
+        )
+        #expect(shell.contains("'--' 'studio' 'exec true'"))
+    }
+}
+
+@Suite
 struct SSHCommandTests {
     @Test(arguments: [
         (true, true, "-tt", true),
@@ -118,7 +173,44 @@ struct SSHCommandTests {
         #expect(arguments.contains("ServerAliveCountMax=3"))
         #expect(arguments.contains(ttyArgument))
         #expect(arguments.contains("BatchMode=yes") == expectsBatchMode)
-        #expect(arguments.suffix(2) == ["studio-mac", "exec true"])
+        #expect(arguments.suffix(3) == ["--", "studio-mac", "exec true"])
+    }
+
+    @Test
+    func separatorSitsBetweenOptionsAndDestination() throws {
+        // Validation already rejects a leading `-`; `--` is the second
+        // line of defense for a destination that is otherwise legal.
+        let alias = try #require(RemoteHostAlias(rawValue: "studio"))
+        let command = SSHCommand(
+            alias: alias,
+            controlPath: "/tmp/coinor/control.sock"
+        )
+
+        let arguments = command.arguments(
+            remoteCommand: "exec true",
+            allocateTTY: true,
+            batch: true
+        )
+
+        // Every vector ends `...options, "--", destination, remoteCommand`.
+        let separatorIndex = try #require(arguments.firstIndex(of: "--"))
+        #expect(separatorIndex == arguments.count - 3)
+        #expect(arguments[separatorIndex + 1] == alias.rawValue)
+        #expect(arguments[separatorIndex + 2] == "exec true")
+        // Every option is settled before the separator, so nothing positional
+        // can drift in front of `--`.
+        #expect(
+            arguments.prefix(separatorIndex)
+                == [
+                    "-o", "ControlMaster=auto",
+                    "-o", "ControlPath=/tmp/coinor/control.sock",
+                    "-o", "ControlPersist=300",
+                    "-o", "ServerAliveInterval=15",
+                    "-o", "ServerAliveCountMax=3",
+                    "-tt",
+                    "-o", "BatchMode=yes",
+                ]
+        )
     }
 
     @Test

@@ -110,6 +110,9 @@ struct SSHCommand: Sendable {
         if batch {
             values += ["-o", "BatchMode=yes"]
         }
+        // `--` ends option parsing so the alias can never be read as an ssh
+        // option, even though validation already rejects a leading `-`.
+        values.append("--")
         values.append(alias.rawValue)
         values.append(remoteCommand)
         return values

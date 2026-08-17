@@ -24,6 +24,11 @@ enum GrokWorkflowControlOperation: String, Sendable {
 ///
 /// A definition is a launchable script, not a running instance; `GrokWorkflowRun`
 /// is the live/finished execution of one.
+///
+/// The wire protocol to Grok only ever carries the plain `name`
+/// (`GrokControlClient.launchWorkflow`); the composite `id` is Coinor-local
+/// selection identity so two same-named definitions from different origins
+/// stay separately selectable, and it never feeds a Grok request.
 struct GrokWorkflowDefinition: Identifiable, Sendable, Equatable {
     enum Source: Sendable, Equatable {
         case project
@@ -40,9 +45,26 @@ struct GrokWorkflowDefinition: Identifiable, Sendable, Equatable {
             case nil: self = .unknown("")
             }
         }
+
+        /// The stable origin prefix of a definition's composite identity.
+        var identityPrefix: String {
+            switch self {
+            case .project: return "project"
+            case .user: return "user"
+            case .builtin: return "builtin"
+            case .unknown(let value): return "unknown-\(value.isEmpty ? "unspecified" : value)"
+            }
+        }
     }
 
-    var id: String { name }
+    /// Coinor-local selection identity: origin + path, falling back to
+    /// origin + name when the definition has no path. Distinct from `name`,
+    /// which is what launching sends to Grok, so same-named definitions from
+    /// different origins remain separately selectable.
+    var id: String {
+        let location = path.flatMap { $0.isEmpty ? nil : $0 } ?? name
+        return "\(source.identityPrefix):\(location) (\(name))"
+    }
 
     let name: String
     let description: String?

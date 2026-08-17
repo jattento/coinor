@@ -33,7 +33,7 @@ Status terms:
 
 | Acceptance criterion | Evidence | Status |
 | --- | --- | --- |
-| Nonblank surface at desktop and compact sizes | `Spikes/GhosttySpike/test.sh`, image probe, spike screenshots | Phase 0 pass |
+| Nonblank surface at desktop and compact sizes | Phase 0 Ghostty spike (`Spikes/GhosttySpike/test.sh` in git history), image probe, spike screenshots | Phase 0 pass |
 | Keyboard and resize do not recreate or shift the surface | `exercise.sh` lifecycle counters and input checks | Phase 0 pass |
 | Surface recreation is clean | Four creates matched four destroys; no visible child remained | Phase 0 pass |
 | No installed Ghostty application is required | Minimal-environment and dependency checks | Phase 0 pass |
@@ -46,7 +46,7 @@ Status terms:
 
 | Acceptance criterion | Evidence | Status |
 | --- | --- | --- |
-| Root and observer render the same live turn | `python3 Spikes/GrokSharedSession/run_spike.py` | Phase 0 pass |
+| Root and observer render the same live turn | Phase 0 shared-session spike (`Spikes/GrokSharedSession/run_spike.py` in git history) | Phase 0 pass |
 | Observer does not steal or duplicate execution | Driver-only reverse-request counts | Phase 0 pass |
 | Hidden subagent loads by explicit ID | Native hidden child exact resume | Phase 0 pass |
 | No Herdr or global `use_leader` | Isolated child environment and private leader | Phase 0 pass |
@@ -58,7 +58,7 @@ Grok's native ACP lifecycle and has no hook or relay runtime dependency.
 
 | Acceptance criterion | Evidence | Status |
 | --- | --- | --- |
-| Real start reaches listener | `Spikes/HookSpike/RESULTS.md` | Phase 0 pass |
+| Real start reaches listener | Phase 0 hook spike (`Spikes/HookSpike/RESULTS.md` in git history) | Phase 0 pass |
 | Stop closes pane state | Hook spike and production lifecycle tests | Phase 0 pass |
 | Abrupt root death clears descendants | Real `SIGKILL` plus root-death test | Phase 0 pass |
 | Cancellation closes without `SubagentStop` | Real cancellation plus persisted-cancellation test | Phase 0 pass |

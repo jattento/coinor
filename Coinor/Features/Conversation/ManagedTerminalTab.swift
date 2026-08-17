@@ -272,19 +272,24 @@ final class ManagedTerminalTab: Identifiable {
 
     var statusPayload: GrokJSONValue {
         var payload: [String: GrokJSONValue] = [
-            "tabID": .string(id),
-            "title": .string(name),
-            "state": .string(state.wireValue),
-            "cwd": .string(session.workingDirectory),
+            TerminalControlContract.Field.tabID: .string(id),
+            TerminalControlContract.Field.title: .string(name),
+            TerminalControlContract.Field.state:
+                .string(state.wireValue),
+            TerminalControlContract.Field.cwd:
+                .string(session.workingDirectory),
         ]
         if case .running(let commandID) = state {
-            payload["commandID"] = .string(commandID)
+            payload[TerminalControlContract.Field.commandID] =
+                .string(commandID)
         }
         if case .exited(let code) = state {
-            payload["shellExitCode"] = .int(Int(code))
+            payload[TerminalControlContract.Field.shellExitCode] =
+                .int(Int(code))
         }
         if let lastExitCode {
-            payload["lastExitCode"] = .int(lastExitCode)
+            payload[TerminalControlContract.Field.lastExitCode] =
+                .int(lastExitCode)
         }
         return .object(payload)
     }

@@ -345,9 +345,78 @@ struct GhosttySurfaceResizePolicy: Equatable {
     }
 }
 
+/// Sole owner of a surface's raw `ghostty_surface_t`.
+///
+/// Ghostty answers clipboard requests through callbacks that carry no
+/// isolation guarantee, while the surface is freed from the main actor during
+/// shutdown. Every read of the pointer, every C call that takes it, and the
+/// free itself happen under this lock, so a callback either runs against a
+/// live surface or is skipped, and the surface is freed exactly once.
+///
+/// The lock is recursive because Ghostty C calls made under `withHandle`
+/// (notably `ghostty_surface_key` on paste) re-enter the clipboard callbacks,
+/// which also go through `withHandle`. A non-recursive lock deadlocks that
+/// path. Cross-thread invalidation still waits for the in-flight body, then
+/// frees once.
+///
+/// A `withHandle` body still must not hop to the main actor: holding the lock
+/// across a main-thread wait would let shutdown deadlock against a callback.
+final class GhosttySurfaceHandle: @unchecked Sendable {
+    private let lock = NSRecursiveLock()
+    private var handle: ghostty_surface_t?
+    private let free: (ghostty_surface_t) -> Void
+
+    /// The free operation is injectable so the lifecycle can be exercised
+    /// without a live Ghostty surface.
+    init(
+        free: @escaping (ghostty_surface_t) -> Void = {
+            ghostty_surface_free($0)
+        }
+    ) {
+        self.free = free
+    }
+
+    var isValid: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return handle != nil
+    }
+
+    func adopt(_ handle: ghostty_surface_t) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.handle = handle
+    }
+
+    /// Runs `body` with the live surface, or returns `nil` when the surface
+    /// has already been freed.
+    @discardableResult
+    func withHandle<Result>(
+        _ body: (ghostty_surface_t) throws -> Result
+    ) rethrows -> Result? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let handle else { return nil }
+        return try body(handle)
+    }
+
+    /// Frees the surface once. The handle is cleared before the free so a
+    /// callback that Ghostty fires during teardown cannot complete a request
+    /// against a pointer that is already being destroyed. Any `withHandle`
+    /// already in flight on another thread finishes first; later ones skip.
+    func invalidate() {
+        lock.lock()
+        let doomed = handle
+        handle = nil
+        lock.unlock()
+        guard let doomed else { return }
+        free(doomed)
+    }
+}
+
 @MainActor
 final class GhosttySurfaceView: NSView, NSMenuItemValidation {
-    nonisolated(unsafe) private(set) var surfaceHandle: ghostty_surface_t?
+    nonisolated let surfaceHandle = GhosttySurfaceHandle()
     private let runtime: GhosttyRuntime
     private let launch: TerminalLaunchRequest
     private var tracking: NSTrackingArea?
@@ -465,7 +534,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             }
         }
 
-        surfaceHandle = surface
+        surfaceHandle.adopt(surface)
         updateTrackingAreas()
     }
 
@@ -474,9 +543,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     deinit {
-        if let surfaceHandle {
-            ghostty_surface_free(surfaceHandle)
-        }
+        surfaceHandle.invalidate()
     }
 
     override func viewDidMoveToWindow() {
@@ -600,7 +667,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         var flags = ghostty_binding_flags_e(0)
         let isBinding = (event.characters ?? "").withCString {
             key.text = $0
-            return surfaceHandle.map {
+            return surfaceHandle.withHandle {
                 ghostty_surface_key_is_binding($0, key, &flags)
             } ?? false
         }
@@ -611,7 +678,9 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let captured = surfaceHandle.map(ghostty_surface_mouse_captured) ?? false
+        let captured = surfaceHandle.withHandle(
+            ghostty_surface_mouse_captured
+        ) ?? false
         dispatchMouseCommands(
             mouseRouter.mouseDown(
                 mouseInput(event),
@@ -693,23 +762,27 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        guard let surfaceHandle else { return }
+        guard surfaceHandle.isValid else { return }
         let scrollEvent = GhosttyScrollEventMapper.event(
             deltaX: event.scrollingDeltaX,
             deltaY: event.scrollingDeltaY,
             hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
             momentumPhase: event.momentumPhase
         )
-        ghostty_surface_mouse_scroll(
-            surfaceHandle,
-            scrollEvent.deltaX,
-            scrollEvent.deltaY,
-            scrollEvent.modifiers
-        )
+        surfaceHandle.withHandle {
+            ghostty_surface_mouse_scroll(
+                $0,
+                scrollEvent.deltaX,
+                scrollEvent.deltaY,
+                scrollEvent.modifiers
+            )
+        }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let mouseCaptured = surfaceHandle.map(ghostty_surface_mouse_captured) ?? false
+        let mouseCaptured = surfaceHandle.withHandle(
+            ghostty_surface_mouse_captured
+        ) ?? false
         guard GhosttyHostContextMenuPolicy.allowsMenu(
             buttonNumber: event.buttonNumber,
             modifiers: event.modifierFlags,
@@ -806,7 +879,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
              #selector(find(_:)),
              #selector(findNext(_:)),
              #selector(findPrevious(_:)):
-            surfaceHandle != nil
+            surfaceHandle.isValid
         default:
             true
         }
@@ -837,15 +910,17 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     func sendText(_ text: String) {
-        guard let surfaceHandle, !text.isEmpty else { return }
+        guard !text.isEmpty else { return }
         let bytes = Array(text.utf8)
-        bytes.withUnsafeBytes {
-            guard let baseAddress = $0.baseAddress else { return }
-            ghostty_surface_text(
-                surfaceHandle,
-                baseAddress.assumingMemoryBound(to: CChar.self),
-                UInt(bytes.count)
-            )
+        surfaceHandle.withHandle { handle in
+            bytes.withUnsafeBytes {
+                guard let baseAddress = $0.baseAddress else { return }
+                ghostty_surface_text(
+                    handle,
+                    baseAddress.assumingMemoryBound(to: CChar.self),
+                    UInt(bytes.count)
+                )
+            }
         }
     }
 
@@ -874,40 +949,41 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     var processHasExited: Bool {
-        surfaceHandle.map(ghostty_surface_process_exited) ?? true
+        surfaceHandle.withHandle(ghostty_surface_process_exited) ?? true
     }
 
     func screenText() -> String {
-        guard let surfaceHandle else { return "" }
-        var text = ghostty_text_s()
-        let selection = ghostty_selection_s(
-            top_left: ghostty_point_s(
-                tag: GHOSTTY_POINT_SCREEN,
-                coord: GHOSTTY_POINT_COORD_TOP_LEFT,
-                x: 0,
-                y: 0
-            ),
-            bottom_right: ghostty_point_s(
-                tag: GHOSTTY_POINT_SCREEN,
-                coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
-                x: 0,
-                y: 0
-            ),
-            rectangle: false
-        )
-        guard ghostty_surface_read_text(
-            surfaceHandle,
-            selection,
-            &text
-        ) else {
-            return ""
-        }
-        defer { GhosttyPinnedTextAPI.free(&text) }
-        guard let pointer = text.text else { return "" }
-        return String(
-            data: Data(bytes: pointer, count: Int(text.text_len)),
-            encoding: .utf8
-        ) ?? ""
+        surfaceHandle.withHandle { handle in
+            var text = ghostty_text_s()
+            let selection = ghostty_selection_s(
+                top_left: ghostty_point_s(
+                    tag: GHOSTTY_POINT_SCREEN,
+                    coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                    x: 0,
+                    y: 0
+                ),
+                bottom_right: ghostty_point_s(
+                    tag: GHOSTTY_POINT_SCREEN,
+                    coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                    x: 0,
+                    y: 0
+                ),
+                rectangle: false
+            )
+            guard ghostty_surface_read_text(
+                handle,
+                selection,
+                &text
+            ) else {
+                return ""
+            }
+            defer { GhosttyPinnedTextAPI.free(&text) }
+            guard let pointer = text.text else { return "" }
+            return String(
+                data: Data(bytes: pointer, count: Int(text.text_len)),
+                encoding: .utf8
+            ) ?? ""
+        } ?? ""
     }
 
     func updateTerminalTitle(_ title: String) {
@@ -1042,7 +1118,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     func shutdown() {
         cancelMouseInteraction()
-        guard !isShuttingDown, let surfaceHandle else { return }
+        guard !isShuttingDown, surfaceHandle.isValid else { return }
         isShuttingDown = true
         removeObservers()
         onCloseRequest = nil
@@ -1060,8 +1136,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         search.reset()
         search.onCommand = nil
         search.onClose = nil
-        ghostty_surface_free(surfaceHandle)
-        self.surfaceHandle = nil
+        surfaceHandle.invalidate()
     }
 
     private var searchTarget: TerminalSearchTarget {
@@ -1230,36 +1305,44 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     private func updateOcclusion() {
-        guard let surfaceHandle else { return }
+        guard surfaceHandle.isValid else { return }
         let visible = hostVisible
             && window?.occlusionState.contains(.visible) == true
-        ghostty_surface_set_occlusion(surfaceHandle, visible)
+        surfaceHandle.withHandle {
+            ghostty_surface_set_occlusion($0, visible)
+        }
     }
 
     private func updateDisplayProperties() {
-        guard let window, let surfaceHandle else { return }
+        guard let window, surfaceHandle.isValid else { return }
         let scale = window.backingScaleFactor
-        ghostty_surface_set_content_scale(surfaceHandle, scale, scale)
+        surfaceHandle.withHandle {
+            ghostty_surface_set_content_scale($0, scale, scale)
+        }
         layer?.contentsScale = scale
         if let screenNumber = window.screen?
             .deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
             as? NSNumber {
-            ghostty_surface_set_display_id(surfaceHandle, screenNumber.uint32Value)
+            surfaceHandle.withHandle {
+                ghostty_surface_set_display_id($0, screenNumber.uint32Value)
+            }
         }
         updateSurfaceSize()
     }
 
     private func updateFocus() {
-        guard let surfaceHandle else { return }
+        guard surfaceHandle.isValid else { return }
         let focused = hostVisible
             && window?.isKeyWindow == true
             && window?.firstResponder === self
-        ghostty_surface_set_focus(surfaceHandle, focused)
+        surfaceHandle.withHandle {
+            ghostty_surface_set_focus($0, focused)
+        }
     }
 
     private func updateSurfaceSize() {
         guard window != nil,
-              let surfaceHandle,
+              surfaceHandle.isValid,
               bounds.width > 0,
               bounds.height > 0 else {
             return
@@ -1275,29 +1358,33 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         ) else {
             return
         }
-        ghostty_surface_set_size(
-            surfaceHandle,
-            UInt32(requestedSize.width),
-            UInt32(requestedSize.height)
-        )
+        surfaceHandle.withHandle {
+            ghostty_surface_set_size(
+                $0,
+                UInt32(requestedSize.width),
+                UInt32(requestedSize.height)
+            )
+        }
     }
 
     private func sendKey(
         _ event: NSEvent,
         action: ghostty_input_action_e
     ) {
-        guard let surfaceHandle else { return }
+        guard surfaceHandle.isValid else { return }
         var key = makeKeyEvent(event, action: action)
         let characters = action.rawValue == GHOSTTY_ACTION_RELEASE.rawValue
             ? nil
             : GhosttyKeyEventText.sendableText(for: event)
-        if let characters {
-            characters.withCString {
-                key.text = $0
-                _ = ghostty_surface_key(surfaceHandle, key)
+        surfaceHandle.withHandle { handle in
+            if let characters {
+                characters.withCString {
+                    key.text = $0
+                    _ = ghostty_surface_key(handle, key)
+                }
+            } else {
+                _ = ghostty_surface_key(handle, key)
             }
-        } else {
-            _ = ghostty_surface_key(surfaceHandle, key)
         }
     }
 
@@ -1307,7 +1394,6 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         text: String? = nil,
         unshiftedCodepoint: UInt32 = 0
     ) {
-        guard let surfaceHandle else { return }
         var key = ghostty_input_key_s()
         key.action = GHOSTTY_ACTION_PRESS
         key.mods = modifiers
@@ -1315,17 +1401,19 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         key.keycode = keyCode
         key.composing = false
         key.unshifted_codepoint = unshiftedCodepoint
-        if let text {
-            text.withCString {
-                key.text = $0
-                _ = ghostty_surface_key(surfaceHandle, key)
+        surfaceHandle.withHandle { handle in
+            if let text {
+                text.withCString {
+                    key.text = $0
+                    _ = ghostty_surface_key(handle, key)
+                }
+            } else {
+                _ = ghostty_surface_key(handle, key)
             }
-        } else {
-            _ = ghostty_surface_key(surfaceHandle, key)
+            key.action = GHOSTTY_ACTION_RELEASE
+            key.text = nil
+            _ = ghostty_surface_key(handle, key)
         }
-        key.action = GHOSTTY_ACTION_RELEASE
-        key.text = nil
-        _ = ghostty_surface_key(surfaceHandle, key)
     }
 
     private func makeKeyEvent(
@@ -1363,14 +1451,16 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         state: ghostty_input_mouse_state_e,
         button: ghostty_input_mouse_button_e
     ) -> Bool {
-        guard let surfaceHandle else { return false }
+        guard surfaceHandle.isValid else { return false }
         sendMousePosition(input)
-        return ghostty_surface_mouse_button(
-            surfaceHandle,
-            state,
-            button,
-            Self.modifiers(input.modifiers)
-        )
+        return surfaceHandle.withHandle {
+            ghostty_surface_mouse_button(
+                $0,
+                state,
+                button,
+                Self.modifiers(input.modifiers)
+            )
+        } ?? false
     }
 
     private func sendMousePosition(_ event: NSEvent) {
@@ -1378,13 +1468,14 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     private func sendMousePosition(_ input: GhosttyMouseInput) {
-        guard let surfaceHandle else { return }
-        ghostty_surface_mouse_pos(
-            surfaceHandle,
-            input.point.x,
-            input.point.y,
-            Self.modifiers(input.modifiers)
-        )
+        surfaceHandle.withHandle {
+            ghostty_surface_mouse_pos(
+                $0,
+                input.point.x,
+                input.point.y,
+                Self.modifiers(input.modifiers)
+            )
+        }
     }
 
     private func mouseInput(_ event: NSEvent) -> GhosttyMouseInput {
@@ -1402,7 +1493,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private func dispatchMouseCommands(
         _ commands: [GhosttyMouseRoutingCommand]
     ) {
-        guard let surfaceHandle else { return }
+        guard surfaceHandle.isValid else { return }
 
         for command in commands {
             switch command {
@@ -1416,30 +1507,33 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                 case .release:
                     GHOSTTY_MOUSE_RELEASE
                 }
-                _ = ghostty_surface_mouse_button(
-                    surfaceHandle,
-                    state,
-                    GHOSTTY_MOUSE_LEFT,
-                    Self.modifiers(input.modifiers)
-                )
+                surfaceHandle.withHandle {
+                    ghostty_surface_mouse_button(
+                        $0,
+                        state,
+                        GHOSTTY_MOUSE_LEFT,
+                        Self.modifiers(input.modifiers)
+                    )
+                }
             }
         }
     }
 
     private var hasSelection: Bool {
-        surfaceHandle.map(ghostty_surface_has_selection) ?? false
+        surfaceHandle.withHandle(ghostty_surface_has_selection) ?? false
     }
 
     @discardableResult
     private func performBindingAction(_ action: String) -> Bool {
-        guard let surfaceHandle else { return false }
-        return action.withCString {
-            ghostty_surface_binding_action(
-                surfaceHandle,
-                $0,
-                UInt(action.utf8.count)
-            )
-        }
+        surfaceHandle.withHandle { handle in
+            action.withCString {
+                ghostty_surface_binding_action(
+                    handle,
+                    $0,
+                    UInt(action.utf8.count)
+                )
+            }
+        } ?? false
     }
 
     private static func modifiers(

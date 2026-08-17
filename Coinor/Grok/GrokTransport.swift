@@ -20,6 +20,15 @@ protocol GrokTransport: Sendable {
     func start() throws -> AsyncStream<GrokTransportEvent>
     func send(_ payload: Data) throws
     func terminate()
+    /// Closes the stream and waits until the underlying process has actually
+    /// exited. The default implementation is fire-and-forget `terminate()`.
+    func shutdown() async
+}
+
+extension GrokTransport {
+    func shutdown() async {
+        terminate()
+    }
 }
 
 /// Runs Grok as a child process and speaks to it over its standard streams.
@@ -85,6 +94,7 @@ final class GrokSubprocessTransport: GrokTransport, @unchecked Sendable {
                     + error.localizedDescription
             )
         }
+        SubprocessOutputCapture.isolateProcessGroup(process)
         return stream
     }
 
@@ -108,11 +118,72 @@ final class GrokSubprocessTransport: GrokTransport, @unchecked Sendable {
         try? inbound.fileHandleForWriting.close()
         queue.asyncAfter(deadline: .now() + terminationGrace) { [process] in
             guard process.isRunning else { return }
-            process.terminate()
+            SubprocessOutputCapture.signalProcessGroup(process, SIGTERM)
         }
         queue.asyncAfter(deadline: .now() + terminationGrace + terminationGrace) { [process] in
             guard process.isRunning else { return }
-            kill(process.processIdentifier, SIGKILL)
+            SubprocessOutputCapture.signalProcessGroup(process, SIGKILL)
+        }
+    }
+
+    /// Same escalation as `terminate()`, but this method does not return until
+    /// the child (and its process group) has actually exited or the bounded
+    /// wait elapses.
+    func shutdown() async {
+        try? inbound.fileHandleForWriting.close()
+        SubprocessOutputCapture.isolateProcessGroup(process)
+
+        let grace = Self.duration(from: terminationGrace)
+        let started = ContinuousClock.now
+        let termAt = started + grace
+        let killAt = started + grace + grace
+        let hardCap = started + grace + grace + .seconds(2)
+
+        if !Task.isCancelled {
+            await waitWhileRunning(until: termAt)
+        }
+        if process.isRunning {
+            SubprocessOutputCapture.signalProcessGroup(process, SIGTERM)
+        }
+        if !Task.isCancelled {
+            await waitWhileRunning(until: killAt)
+        }
+        if process.isRunning {
+            SubprocessOutputCapture.signalProcessGroup(process, SIGKILL)
+        }
+        await waitWhileRunning(until: hardCap)
+        if process.isRunning {
+            SubprocessOutputCapture.signalProcessGroup(process, SIGKILL)
+        }
+    }
+
+    private func waitWhileRunning(until deadline: ContinuousClock.Instant) async {
+        while process.isRunning, ContinuousClock.now < deadline {
+            if Task.isCancelled { return }
+            do {
+                try await Task.sleep(for: .milliseconds(20))
+            } catch {
+                return
+            }
+        }
+    }
+
+    private static func duration(
+        from interval: DispatchTimeInterval
+    ) -> Duration {
+        switch interval {
+        case let .seconds(value):
+            .seconds(Int64(value))
+        case let .milliseconds(value):
+            .milliseconds(Int64(value))
+        case let .microseconds(value):
+            .microseconds(Int64(value))
+        case let .nanoseconds(value):
+            .nanoseconds(Int64(value))
+        case .never:
+            .seconds(60)
+        @unknown default:
+            .seconds(2)
         }
     }
 

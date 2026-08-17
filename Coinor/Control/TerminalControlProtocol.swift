@@ -1,7 +1,8 @@
 import Foundation
 
 struct TerminalControlRequest: Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion =
+        TerminalControlContract.protocolVersion
 
     let version: Int
     let method: String
@@ -26,7 +27,9 @@ struct TerminalControlRequest: Equatable, Sendable {
                 "the request must be a JSON object"
             )
         }
-        guard let version = object["version"]?.intValue else {
+        guard let version =
+                object[TerminalControlContract.Field.version]?
+                .intValue else {
             throw TerminalControlError.invalidRequest(
                 "version is required"
             )
@@ -34,32 +37,52 @@ struct TerminalControlRequest: Equatable, Sendable {
         guard version == Self.currentVersion else {
             throw TerminalControlError.unsupportedVersion(version)
         }
-        guard let method = object["method"]?.stringValue,
+        guard let method =
+                object[TerminalControlContract.Field.method]?
+                .stringValue,
               !method.isEmpty else {
             throw TerminalControlError.invalidRequest(
                 "method is required"
             )
         }
-        guard let token = object["token"]?.stringValue,
-              !token.isEmpty else {
+        guard let token = object[TerminalControlContract.Field.token]?
+            .stringValue,
+            !token.isEmpty else {
             throw TerminalControlError.unauthorized
         }
 
         self.version = version
         self.method = method
         self.token = token
-        requestID = object["requestID"]?.stringValue
-        title = object["title"]?.stringValue
-        cwd = object["cwd"]?.stringValue
-        tabID = object["tabID"]?.stringValue
-        capability = object["capability"]?.stringValue
-        command = object["command"]?.stringValue
-        commandID = object["commandID"]?.stringValue
-        text = object["text"]?.stringValue
-        key = object["key"]?.stringValue
-        cursor = object["cursor"]?.stringValue
-        maxBytes = object["maxBytes"]?.intValue
-        exitCode = object["exitCode"]?.intValue
+        requestID =
+            object[TerminalControlContract.Field.requestID]?
+            .stringValue
+        title = object[TerminalControlContract.Field.title]?
+            .stringValue
+        cwd = object[TerminalControlContract.Field.cwd]?
+            .stringValue
+        tabID = object[TerminalControlContract.Field.tabID]?
+            .stringValue
+        capability =
+            object[TerminalControlContract.Field.capability]?
+            .stringValue
+        command = object[TerminalControlContract.Field.command]?
+            .stringValue
+        commandID =
+            object[TerminalControlContract.Field.commandID]?
+            .stringValue
+        text = object[TerminalControlContract.Field.text]?
+            .stringValue
+        key = object[TerminalControlContract.Field.key]?
+            .stringValue
+        cursor = object[TerminalControlContract.Field.cursor]?
+            .stringValue
+        maxBytes =
+            object[TerminalControlContract.Field.maxBytes]?
+            .intValue
+        exitCode =
+            object[TerminalControlContract.Field.exitCode]?
+            .intValue
     }
 }
 
@@ -154,8 +177,8 @@ struct TerminalControlResponse: Equatable, Sendable {
     ) -> TerminalControlResponse {
         TerminalControlResponse(
             value: .object([
-                "ok": .bool(true),
-                "result": result,
+                TerminalControlContract.Field.ok: .bool(true),
+                TerminalControlContract.Field.result: result,
             ])
         )
     }
@@ -165,12 +188,14 @@ struct TerminalControlResponse: Equatable, Sendable {
     ) -> TerminalControlResponse {
         TerminalControlResponse(
             value: .object([
-                "ok": .bool(false),
-                "error": .object([
-                    "code": .string(error.code),
-                    "message": .string(
-                        error.localizedDescription
-                    ),
+                TerminalControlContract.Field.ok: .bool(false),
+                TerminalControlContract.Field.error: .object([
+                    TerminalControlContract.Field.code:
+                        .string(error.code),
+                    TerminalControlContract.Field.message:
+                        .string(
+                            error.localizedDescription
+                        ),
                 ]),
             ])
         )

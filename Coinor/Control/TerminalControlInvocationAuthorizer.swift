@@ -30,9 +30,17 @@ struct GrokTerminalToolInvocation: Equatable, Sendable {
     }
 
     var terminalControlRequestID: String? {
+        let literal =
+            NSRegularExpression.escapedPattern(
+                for: TerminalControlContract.EnvironmentVariable
+                    .requestID
+            )
         let pattern =
-            #"(?:^|[\s;&|])CONAN_CODE_REQUEST_ID=['"]?([A-Za-z0-9-]{16,128})['"]?"#
-        guard let expression = try? NSRegularExpression(pattern: pattern),
+            #"(?:^|[\s;&|])"# + literal
+            + #"=['"]?([A-Za-z0-9-]{16,128})['"]?"#
+        guard let expression = try? NSRegularExpression(
+            pattern: pattern
+        ),
               let match = expression.firstMatch(
                   in: command,
                   range: NSRange(command.startIndex..., in: command)

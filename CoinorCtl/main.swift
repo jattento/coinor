@@ -66,28 +66,34 @@ func buildRequest(
     arguments: [String]
 ) -> (method: String, fields: [String: Any]) {
     switch command {
-    case "create":
+    case TerminalControlContract.Method.create:
         let options = ParsedOptions(
             arguments,
             allowed: ["request-id", "title", "cwd"]
         )
-        return ("create", [
-            "requestID": options.required("request-id"),
-            "title": options.optional("title") ?? "Service",
-            "cwd": options.optional("cwd")
+        return (TerminalControlContract.Method.create, [
+            TerminalControlContract.Field.requestID:
+                options.required("request-id"),
+            TerminalControlContract.Field.title:
+                options.optional("title") ?? "Service",
+            TerminalControlContract.Field.cwd:
+                options.optional("cwd")
                 ?? FileManager.default.currentDirectoryPath,
         ])
-    case "execute":
+    case TerminalControlContract.Method.execute:
         let options = ParsedOptions(
             arguments,
             allowed: ["tab", "capability", "command"]
         )
-        return ("execute", [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
-            "command": options.required("command"),
+        return (TerminalControlContract.Method.execute, [
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
+            TerminalControlContract.Field.command:
+                options.required("command"),
         ])
-    case "read":
+    case TerminalControlContract.Method.read:
         let options = ParsedOptions(
             arguments,
             allowed: [
@@ -95,67 +101,88 @@ func buildRequest(
             ]
         )
         var fields: [String: Any] = [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
         ]
         if let cursor = options.optional("cursor") {
-            fields["cursor"] = cursor
+            fields[TerminalControlContract.Field.cursor] = cursor
         }
         if let maxBytes = options.optionalInt("max-bytes") {
-            fields["maxBytes"] = maxBytes
+            fields[TerminalControlContract.Field.maxBytes] =
+                maxBytes
         }
-        return ("read", fields)
-    case "write":
+        return (TerminalControlContract.Method.read, fields)
+    case TerminalControlContract.Method.write:
         let options = ParsedOptions(
             arguments,
             allowed: ["tab", "capability", "text"]
         )
-        return ("write", [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
-            "text": options.required("text"),
+        return (TerminalControlContract.Method.write, [
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
+            TerminalControlContract.Field.text:
+                options.required("text"),
         ])
-    case "key":
+    case TerminalControlContract.Method.key:
         let options = ParsedOptions(
             arguments,
             allowed: ["tab", "capability", "key"]
         )
-        return ("key", [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
-            "key": options.required("key"),
+        return (TerminalControlContract.Method.key, [
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
+            TerminalControlContract.Field.key:
+                options.required("key"),
         ])
-    case "interrupt", "status", "close", "shell-ready":
+    case TerminalControlContract.Method.interrupt,
+         TerminalControlContract.Method.status,
+         TerminalControlContract.Method.close,
+         TerminalControlContract.Method.shellReady:
         let options = ParsedOptions(
             arguments,
             allowed: ["tab", "capability"]
         )
         return (command, [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
         ])
-    case "fetch-command":
+    case TerminalControlContract.Method.fetchCommand:
         let options = ParsedOptions(
             arguments,
             allowed: ["tab", "capability", "command-id"]
         )
-        return ("fetch-command", [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
-            "commandID": options.required("command-id"),
+        return (TerminalControlContract.Method.fetchCommand, [
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
+            TerminalControlContract.Field.commandID:
+                options.required("command-id"),
         ])
-    case "command-finished":
+    case TerminalControlContract.Method.commandFinished:
         let options = ParsedOptions(
             arguments,
             allowed: [
                 "tab", "capability", "command-id", "exit-code",
             ]
         )
-        return ("command-finished", [
-            "tabID": options.required("tab"),
-            "capability": options.required("capability"),
-            "commandID": options.required("command-id"),
-            "exitCode": options.requiredInt("exit-code"),
+        return (TerminalControlContract.Method.commandFinished, [
+            TerminalControlContract.Field.tabID:
+                options.required("tab"),
+            TerminalControlContract.Field.capability:
+                options.required("capability"),
+            TerminalControlContract.Field.commandID:
+                options.required("command-id"),
+            TerminalControlContract.Field.exitCode:
+                options.requiredInt("exit-code"),
         ])
     default:
         fail("unknown command '\(command)'")
@@ -168,9 +195,10 @@ func finalizePayload(
     token: String
 ) -> [String: Any] {
     var payload = fields
-    payload["version"] = 1
-    payload["method"] = method
-    payload["token"] = token
+    payload[TerminalControlContract.Field.version] =
+        TerminalControlContract.protocolVersion
+    payload[TerminalControlContract.Field.method] = method
+    payload[TerminalControlContract.Field.token] = token
     return payload
 }
 
@@ -286,9 +314,17 @@ func parseObject(_ data: Data) -> [String: Any]? {
 }
 
 let environment = ProcessInfo.processInfo.environment
-guard let socketPath = environment["CONAN_CODE_CONTROL_SOCKET"],
+guard let socketPath =
+        environment[
+            TerminalControlContract.EnvironmentVariable
+                .controlSocket
+        ],
       !socketPath.isEmpty,
-      let token = environment["CONAN_CODE_CONTROL_TOKEN"],
+      let token =
+        environment[
+            TerminalControlContract.EnvironmentVariable
+                .controlToken
+        ],
       !token.isEmpty else {
     fail("not running inside Conan Code")
 }
@@ -323,12 +359,17 @@ let responseData = sendRequest(
     body: requestBody
 )
 let responseObject = parseObject(responseData)
-let ok = responseObject?["ok"] as? Bool == true
+let ok = responseObject?[TerminalControlContract.Field.ok]
+    as? Bool == true
 
-if command == "fetch-command" {
+if command == TerminalControlContract.Method.fetchCommand {
     if ok,
-       let result = responseObject?["result"] as? [String: Any],
-       let commandText = result["command"] as? String {
+       let result =
+        responseObject?[TerminalControlContract.Field.result]
+        as? [String: Any],
+       let commandText =
+        result[TerminalControlContract.Field.command]
+        as? String {
         FileHandle.standardOutput.write(Data(commandText.utf8))
         exit(0)
     }

@@ -260,11 +260,16 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 managedTabID: tabID,
                 workingDirectory: workingDirectory,
                 environment: [
-                    "CONAN_CODE_CONTROL_SOCKET": controlSocket,
-                    "CONAN_CODE_CONTROL_TOKEN": controlToken,
-                    "CONAN_CODE_CONTROL_CLIENT": controlClientPath,
-                    "CONAN_CODE_TAB_ID": tabID,
-                    "CONAN_CODE_TAB_CAPABILITY": capability,
+                    TerminalControlContract.EnvironmentVariable
+                        .controlSocket: controlSocket,
+                    TerminalControlContract.EnvironmentVariable
+                        .controlToken: controlToken,
+                    TerminalControlContract.EnvironmentVariable
+                        .controlClient: controlClientPath,
+                    TerminalControlContract.EnvironmentVariable
+                        .tabID: tabID,
+                    TerminalControlContract.EnvironmentVariable
+                        .tabCapability: capability,
                 ],
                 bootstrapPath: bootstrapPath
             ),

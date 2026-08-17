@@ -15,6 +15,8 @@ struct RemoteHostAlias: Hashable, Codable, Sendable, RawRepresentable {
     init?(rawValue: String) {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= 255 else { return nil }
+        // ssh would parse a leading `-` as an option, not a destination.
+        guard !trimmed.hasPrefix("-") else { return nil }
         let allowed = CharacterSet(
             charactersIn: "abcdefghijklmnopqrstuvwxyz"
                 + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_"

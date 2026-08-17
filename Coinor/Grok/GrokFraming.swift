@@ -51,7 +51,7 @@ struct GrokFrameDecoder {
         dropLeadingTerminators()
         guard let first = buffer.first else { return nil }
         if first == UInt8(ascii: "{") || first == UInt8(ascii: "[") {
-            return takeLineFrame()
+            return try takeLineFrame()
         }
         return try takeHeaderFrame()
     }
@@ -66,11 +66,16 @@ struct GrokFrameDecoder {
         }
     }
 
-    private mutating func takeLineFrame() -> Data? {
+    private mutating func takeLineFrame() throws -> Data? {
         guard let newline = buffer.firstIndex(of: 0x0A) else { return nil }
         var end = newline
         if end > 0, buffer[end - 1] == 0x0D {
             end -= 1
+        }
+        // A line that already exceeds the frame size before its terminating
+        // newline arrives is rejected the same way one that arrives whole is.
+        if end > maximumFrameSize {
+            throw GrokControlError.frameTooLarge(end)
         }
         let payload = Data(buffer[0 ..< end])
         buffer.removeFirst(newline + 1)
@@ -91,13 +96,20 @@ struct GrokFrameDecoder {
         guard let length = contentLength(in: headerText) else {
             throw GrokControlError.malformedFrame("expected a JSON message or a Content-Length header, got \(headerText.prefix(64))")
         }
+        guard length >= 0 else {
+            throw GrokControlError.malformedFrame("Content-Length cannot be negative")
+        }
         guard length <= maximumFrameSize else {
             throw GrokControlError.frameTooLarge(length)
         }
         let bodyStart = headerEnd.end
-        guard buffer.count >= bodyStart + length else { return nil }
-        let payload = Data(buffer[bodyStart ..< bodyStart + length])
-        buffer.removeFirst(bodyStart + length)
+        let (end, overflow) = bodyStart.addingReportingOverflow(length)
+        guard !overflow else {
+            throw GrokControlError.malformedFrame("Content-Length \(length) overflows the frame bounds")
+        }
+        guard buffer.count >= end else { return nil }
+        let payload = Data(buffer[bodyStart ..< end])
+        buffer.removeFirst(end)
         return payload
     }
 

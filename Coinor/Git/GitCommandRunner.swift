@@ -14,6 +14,7 @@ enum GitServiceError: Error, Equatable, Sendable {
     case executableNotExecutable(String)
     case commandLaunchFailed(arguments: [String], detail: String)
     case commandFailed(arguments: [String], directory: String, status: Int32, detail: String)
+    case commandTimedOut(arguments: [String], directory: String, seconds: Double)
     case invalidRepository(path: String, detail: String)
     case malformedOutput(command: String, detail: String)
     case invalidWorktreeName(String)
@@ -33,6 +34,8 @@ extension GitServiceError: LocalizedError {
         case let .commandFailed(arguments, directory, status, detail):
             let suffix = detail.isEmpty ? "" : " Git reported: \(detail)"
             return "Git \(arguments.joined(separator: " ")) failed in \(directory) with status \(status).\(suffix)"
+        case let .commandTimedOut(arguments, directory, seconds):
+            return "Git \(arguments.joined(separator: " ")) did not finish in \(directory) within \(Int(seconds)) seconds."
         case let .invalidRepository(path, detail):
             return "Conan Code could not resolve the Git repository at \(path): \(detail)"
         case let .malformedOutput(command, detail):
@@ -49,6 +52,8 @@ protocol GitCommandRunning: Sendable {
 
 struct GitProcessRunner: GitCommandRunning, Sendable {
     static let systemExecutable = URL(fileURLWithPath: "/usr/bin/git", isDirectory: false)
+    /// Local Git can block on the network, a credential helper, or a lock.
+    static let defaultDeadline: Duration = .seconds(60)
 
     let executable: URL
 
@@ -74,34 +79,18 @@ struct GitProcessRunner: GitCommandRunning, Sendable {
     }
 
     func run(arguments: [String], workingDirectory: URL) throws -> GitCommandResult {
-        let fileManager = FileManager.default
-        let captureDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("coinor-git-\(UUID().uuidString)", isDirectory: true)
-        let outputURL = captureDirectory.appendingPathComponent("stdout")
-        let errorURL = captureDirectory.appendingPathComponent("stderr")
-
-        try fileManager.createDirectory(
-            at: captureDirectory,
-            withIntermediateDirectories: true
+        try run(
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            deadline: Self.defaultDeadline
         )
-        defer { try? fileManager.removeItem(at: captureDirectory) }
+    }
 
-        guard fileManager.createFile(atPath: outputURL.path, contents: nil),
-              fileManager.createFile(atPath: errorURL.path, contents: nil)
-        else {
-            throw GitServiceError.commandLaunchFailed(
-                arguments: arguments,
-                detail: "could not create temporary output files"
-            )
-        }
-
-        let outputHandle = try FileHandle(forWritingTo: outputURL)
-        let errorHandle = try FileHandle(forWritingTo: errorURL)
-        defer {
-            try? outputHandle.close()
-            try? errorHandle.close()
-        }
-
+    func run(
+        arguments: [String],
+        workingDirectory: URL,
+        deadline: Duration
+    ) throws -> GitCommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -111,31 +100,29 @@ struct GitProcessRunner: GitCommandRunning, Sendable {
         environment["LANG"] = "C"
         environment["GIT_TERMINAL_PROMPT"] = "0"
         process.environment = environment
-        process.standardOutput = outputHandle
-        process.standardError = errorHandle
 
         do {
-            try process.run()
+            let capture = try SubprocessOutputCapture(label: "git")
+            let captured = try capture.run(process: process, deadline: deadline)
+            return GitCommandResult(
+                standardOutput: captured.standardOutput,
+                standardError: captured.standardError,
+                terminationStatus: captured.terminationStatus
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch SubprocessCaptureError.timedOut {
+            throw GitServiceError.commandTimedOut(
+                arguments: arguments,
+                directory: workingDirectory.path,
+                seconds: SubprocessOutputCapture.seconds(in: deadline)
+            )
         } catch {
             throw GitServiceError.commandLaunchFailed(
                 arguments: arguments,
                 detail: error.localizedDescription
             )
         }
-        process.waitUntilExit()
-        try outputHandle.synchronize()
-        try errorHandle.synchronize()
-
-        return GitCommandResult(
-            standardOutput: Self.readUTF8(outputURL),
-            standardError: Self.readUTF8(errorURL),
-            terminationStatus: process.terminationStatus
-        )
-    }
-
-    private static func readUTF8(_ url: URL) -> String {
-        guard let data = try? Data(contentsOf: url) else { return "" }
-        return String(decoding: data, as: UTF8.self)
     }
 }
 

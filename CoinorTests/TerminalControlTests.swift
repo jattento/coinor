@@ -21,7 +21,9 @@ func terminalControlRequestDecodesAllCommandFields() throws {
     )
 
     #expect(request.version == 1)
-    #expect(request.method == "execute")
+    #expect(
+        request.method == TerminalControlContract.Method.execute
+    )
     #expect(request.token == "secret")
     #expect(request.tabID == "tab")
     #expect(request.capability == "cap")
@@ -53,7 +55,8 @@ func terminalControlResponseUsesStableSuccessAndErrorShapes() throws {
 @Test
 func grokToolInvocationExtractsOnlyLiteralControlNonces() {
     let command =
-        "CONAN_CODE_REQUEST_ID=12345678-1234-1234-1234-123456789abc "
+        TerminalControlContract.EnvironmentVariable.requestID
+        + "=12345678-1234-1234-1234-123456789abc "
         + "sh ~/.grok/skills/conan-code-long-running/terminal.sh create "
         + "--request-id 12345678-1234-1234-1234-123456789abc"
     let params: GrokJSONValue = [
@@ -79,7 +82,8 @@ func grokToolInvocationExtractsOnlyLiteralControlNonces() {
 
     let hiddenBehindShellExpansion = GrokTerminalToolInvocation(
         sessionID: "session",
-        command: #"CONAN_CODE_REQUEST_ID="$REQUEST_ID" coinorctl create"#
+        command:
+            #"\#(TerminalControlContract.EnvironmentVariable.requestID)="$REQUEST_ID" coinorctl create"#
     )
     #expect(
         hiddenBehindShellExpansion.terminalControlRequestID == nil
@@ -96,7 +100,8 @@ func terminalControlNonceCanBeConsumedOnlyOnce() async {
         GrokTerminalToolInvocation(
             sessionID: "session",
             command:
-                "CONAN_CODE_REQUEST_ID=12345678-1234-1234-1234-123456789abc ctl"
+                TerminalControlContract.EnvironmentVariable.requestID
+                + "=12345678-1234-1234-1234-123456789abc ctl"
         )
     )
 
@@ -117,7 +122,8 @@ func terminalControlNonceCanBeConsumedOnlyOnce() async {
         GrokTerminalToolInvocation(
             sessionID: "session",
             command:
-                "CONAN_CODE_REQUEST_ID=abcdefab-cdef-abcd-efab-cdefabcdefab ctl"
+                TerminalControlContract.EnvironmentVariable.requestID
+                + "=abcdefab-cdef-abcd-efab-cdefabcdefab ctl"
         )
     )
     authorizer.reset()
@@ -237,9 +243,12 @@ func managedTerminalBootstrapReportsCommandCompletionInZsh() throws {
     ]
     process.environment = [
         "COMPLETION_LOG": completionLog.path,
-        "CONAN_CODE_CONTROL_CLIENT": fakeControlClient.path,
-        "CONAN_CODE_TAB_CAPABILITY": "capability",
-        "CONAN_CODE_TAB_ID": "tab",
+        TerminalControlContract.EnvironmentVariable.controlClient:
+            fakeControlClient.path,
+        TerminalControlContract.EnvironmentVariable.tabCapability:
+            "capability",
+        TerminalControlContract.EnvironmentVariable.tabID:
+            "tab",
     ]
     let output = Pipe()
     process.standardOutput = output
@@ -260,5 +269,64 @@ func managedTerminalBootstrapReportsCommandCompletionInZsh() throws {
 private extension String {
     var quotedForShell: String {
         "'" + replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+// MARK: - Shell script and release script pinning
+
+/// The shipped shell scripts and the release script cannot import Swift
+/// constants, so each one is pinned against `TerminalControlContract` by
+/// reading the file back and requiring the shared literals verbatim. A
+/// typo in a script, or a rename of a contract constant without updating
+/// the script, fails CI instead of silently breaking the control channel.
+
+@Test
+func conanCodeTerminalScriptPinsContractLiterals() throws {
+    let url =
+        TerminalControlScriptFile.coinorResourcesDirectory
+        .appendingPathComponent("conan-code-terminal.sh")
+    let text = try String(contentsOf: url, encoding: .utf8)
+
+    for literal in TerminalControlScriptText.conanCodeTerminalScriptAdverts
+    {
+        #expect(text.contains(literal))
+    }
+}
+
+@Test
+func sidechatScriptPinsContractLiterals() throws {
+    let url =
+        TerminalControlScriptFile.coinorResourcesDirectory
+        .appendingPathComponent("sidechat.sh")
+    let text = try String(contentsOf: url, encoding: .utf8)
+
+    for literal in TerminalControlScriptText.sidechatScriptAdverts {
+        #expect(text.contains(literal))
+    }
+}
+
+@Test
+func managedTerminalBootstrapPinsContractLiterals() throws {
+    let url =
+        TerminalControlScriptFile.coinorResourcesDirectory
+        .appendingPathComponent("managed-terminal-bootstrap.zsh")
+    let text = try String(contentsOf: url, encoding: .utf8)
+
+    for literal in
+        TerminalControlScriptText.managedTerminalBootstrapAdverts
+    {
+        #expect(text.contains(literal))
+    }
+}
+
+@Test
+func verifyAppScriptPinsContractLiterals() throws {
+    let url =
+        TerminalControlScriptFile.releaseScriptsDirectory
+        .appendingPathComponent("verify-app.sh")
+    let text = try String(contentsOf: url, encoding: .utf8)
+
+    for literal in TerminalControlScriptText.verifyAppScriptAdverts {
+        #expect(text.contains(literal))
     }
 }

@@ -184,155 +184,81 @@ struct GrokControlLaunch: Sendable, Equatable {
 
 /// Runs the already-resolved Grok executable directly to capture its version.
 ///
-/// Output goes to temporary files so an unexpectedly noisy binary cannot fill
-/// a pipe and deadlock. The completion gate makes process exit and timeout
-/// race safely; whichever wins resolves the probe exactly once.
+/// Capture, bounding, and process-group termination are owned by
+/// `SubprocessOutputCapture` so a noisy `--version` cannot fill a pipe or the
+/// disk, and a hang is killed instead of racing a detached waiter.
 struct GrokExecutableVersionProbe: Sendable {
-    private static let captureLimit = 16 * 1024
-
     func run(
         launch: GrokControlLaunch,
         timeout: Duration
     ) async throws -> String {
         try launch.validate()
 
-        let fileManager = FileManager.default
-        let captureDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent(
-                "coinor-grok-version-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        let outputURL = captureDirectory.appendingPathComponent("stdout")
-        let errorURL = captureDirectory.appendingPathComponent("stderr")
-
-        try fileManager.createDirectory(
-            at: captureDirectory,
-            withIntermediateDirectories: true
-        )
+        let capture: SubprocessOutputCapture
         do {
-            guard fileManager.createFile(atPath: outputURL.path, contents: nil),
-                  fileManager.createFile(atPath: errorURL.path, contents: nil)
-            else {
-                throw GrokControlError.launchFailed(
-                    "could not create temporary files for `grok --version`"
-                )
-            }
-
-            let outputHandle = try FileHandle(forWritingTo: outputURL)
-            let errorHandle = try FileHandle(forWritingTo: errorURL)
-            let process = Process()
-            process.executableURL = launch.executable.url
-            process.arguments = ["--version"]
-            process.currentDirectoryURL = launch.workingDirectory
-            process.environment = launch.environment
-            process.standardOutput = outputHandle
-            process.standardError = errorHandle
-
-            let timeoutSeconds = Self.seconds(in: timeout)
-            return try await withCheckedThrowingContinuation { continuation in
-                let completion = GrokVersionProbeCompletion(
-                    continuation: continuation,
-                    captureDirectory: captureDirectory
-                )
-
-                do {
-                    try process.run()
-                    try? outputHandle.close()
-                    try? errorHandle.close()
-                } catch {
-                    try? outputHandle.close()
-                    try? errorHandle.close()
-                    guard let continuation = completion.claim() else { return }
-                    completion.cleanup()
-                    continuation.resume(
-                        throwing: GrokControlError.launchFailed(
-                            "could not run \(launch.executable.path) --version: "
-                                + error.localizedDescription
-                        )
-                    )
-                    return
-                }
-
-                Thread.detachNewThread {
-                    process.waitUntilExit()
-                    guard let continuation = completion.claim() else { return }
-                    let result = Self.result(
-                        path: launch.executable.path,
-                        status: process.terminationStatus,
-                        outputURL: outputURL,
-                        errorURL: errorURL
-                    )
-                    completion.cleanup()
-                    continuation.resume(with: result)
-                }
-
-                DispatchQueue.global(qos: .utility).asyncAfter(
-                    deadline: .now() + timeoutSeconds
-                ) {
-                    guard let continuation = completion.claim() else { return }
-                    if process.isRunning {
-                        kill(process.processIdentifier, SIGKILL)
-                    }
-                    completion.cleanup()
-                    continuation.resume(
-                        throwing: GrokControlError.executableVersionTimedOut(
-                            path: launch.executable.path,
-                            seconds: timeoutSeconds
-                        )
-                    )
-                }
-            }
+            capture = try SubprocessOutputCapture(label: "grok-version")
         } catch {
-            try? fileManager.removeItem(at: captureDirectory)
-            throw error
+            throw GrokControlError.launchFailed(
+                "could not create temporary files for `grok --version`"
+            )
         }
+
+        let process = Process()
+        process.executableURL = launch.executable.url
+        process.arguments = ["--version"]
+        process.currentDirectoryURL = launch.workingDirectory
+        process.environment = launch.environment
+
+        let captured: SubprocessCaptureResult
+        do {
+            captured = try await capture.run(process: process, deadline: timeout)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch SubprocessCaptureError.timedOut {
+            throw GrokControlError.executableVersionTimedOut(
+                path: launch.executable.path,
+                seconds: Self.seconds(in: timeout)
+            )
+        } catch {
+            throw GrokControlError.launchFailed(
+                "could not run \(launch.executable.path) --version: "
+                    + error.localizedDescription
+            )
+        }
+
+        return try Self.result(
+            path: launch.executable.path,
+            status: captured.terminationStatus,
+            output: captured.standardOutput,
+            diagnostic: captured.standardError
+        )
     }
 
     private static func result(
         path: String,
         status: Int32,
-        outputURL: URL,
-        errorURL: URL
-    ) -> Result<String, any Error> {
-        let output = readTail(outputURL)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let diagnostic = readTail(errorURL)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        output: String,
+        diagnostic: String
+    ) throws -> String {
+        let output = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let diagnostic = diagnostic.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard status == 0 else {
             let detail = [diagnostic, output]
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
-            return .failure(
-                GrokControlError.executableVersionFailed(
-                    path: path,
-                    status: status,
-                    diagnostics: detail
-                )
+            throw GrokControlError.executableVersionFailed(
+                path: path,
+                status: status,
+                diagnostics: detail
             )
         }
 
         let version = output.isEmpty ? diagnostic : output
         guard !version.isEmpty else {
-            return .failure(GrokControlError.executableVersionEmpty(path))
+            throw GrokControlError.executableVersionEmpty(path)
         }
-        return .success(version)
-    }
-
-    private static func readTail(_ url: URL) -> String {
-        guard let handle = try? FileHandle(forReadingFrom: url) else {
-            return ""
-        }
-        defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else {
-            return ""
-        }
-        let offset = size > UInt64(captureLimit)
-            ? size - UInt64(captureLimit)
-            : 0
-        try? handle.seek(toOffset: offset)
-        let data = (try? handle.readToEnd()) ?? nil
-        return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+        return version
     }
 
     private static func seconds(in duration: Duration) -> Double {
@@ -340,31 +266,6 @@ struct GrokExecutableVersionProbe: Sendable {
         let value = Double(components.seconds)
             + Double(components.attoseconds) / 1_000_000_000_000_000_000
         return max(value, 0.001)
-    }
-}
-
-private final class GrokVersionProbeCompletion: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<String, any Error>?
-    private let captureDirectory: URL
-
-    init(
-        continuation: CheckedContinuation<String, any Error>,
-        captureDirectory: URL
-    ) {
-        self.continuation = continuation
-        self.captureDirectory = captureDirectory
-    }
-
-    func claim() -> CheckedContinuation<String, any Error>? {
-        lock.withLock {
-            defer { continuation = nil }
-            return continuation
-        }
-    }
-
-    func cleanup() {
-        try? FileManager.default.removeItem(at: captureDirectory)
     }
 }
 

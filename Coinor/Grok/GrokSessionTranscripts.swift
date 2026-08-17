@@ -8,7 +8,12 @@ import Foundation
 /// what lets Conan Code hand the conversation finder a path to grep rather than
 /// exporting every transcript into a prompt.
 struct GrokSessionTranscriptLocator: Sendable {
+    /// The on-disk convention Grok persists sessions with:
+    /// `<grok-home>/sessions/<url-encoded-cwd>/<session-id>/chat_history.jsonl`.
+    /// These constants are the contract the live `grok` binary must keep.
     static let transcriptFileName = "chat_history.jsonl"
+    static let sessionsDirectoryName = "sessions"
+    static let grokHomeDirectoryName = ".grok"
 
     let root: URL
 
@@ -28,9 +33,9 @@ struct GrokSessionTranscriptLocator: Sendable {
             grokHome = URL(fileURLWithPath: configured, isDirectory: true)
         } else {
             grokHome = homeDirectory
-                .appendingPathComponent(".grok", isDirectory: true)
+                .appendingPathComponent(grokHomeDirectoryName, isDirectory: true)
         }
-        return grokHome.appendingPathComponent("sessions", isDirectory: true)
+        return grokHome.appendingPathComponent(sessionsDirectoryName, isDirectory: true)
     }
 
     /// Session identifier to absolute transcript path, for every session that

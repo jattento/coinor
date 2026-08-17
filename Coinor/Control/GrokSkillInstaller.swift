@@ -90,6 +90,11 @@ struct GrokSkillDescriptor: Sendable {
 }
 
 struct GrokSkillInstaller {
+    /// The convention Grok loads skills from: `<grok-home>/skills/<name>/`.
+    /// This constant is the contract the live `grok` binary must keep.
+    static let skillsDirectoryName = "skills"
+    static let grokHomeDirectoryName = ".grok"
+
     let skills: [GrokSkillDescriptor]
 
     init(skills: [GrokSkillDescriptor] = GrokSkillDescriptor.all) {
@@ -102,8 +107,8 @@ struct GrokSkillInstaller {
         fileManager: FileManager = .default
     ) throws {
         let skillsDirectory = homeDirectory
-            .appendingPathComponent(".grok", isDirectory: true)
-            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent(Self.grokHomeDirectoryName, isDirectory: true)
+            .appendingPathComponent(Self.skillsDirectoryName, isDirectory: true)
 
         for skill in skills {
             let destinationDirectory = skillsDirectory

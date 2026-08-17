@@ -27,7 +27,7 @@ func parsesEveryFieldOfEachWorkflowDefinitionKind() throws {
     let definitions = try rows.map { try GrokWorkflowDefinition(raw: $0) }
 
     let builtin = try #require(definitions.first { $0.name == "review-changes" })
-    #expect(builtin.id == "review-changes")
+    #expect(builtin.id == "builtin:review-changes (review-changes)")
     #expect(builtin.description == "Fan out a diff review across independent reviewer subagents and merge findings.")
     #expect(builtin.whenToUse == "Use before opening a pull request to catch correctness and style issues in parallel.")
     #expect(builtin.source == .builtin)
@@ -35,6 +35,7 @@ func parsesEveryFieldOfEachWorkflowDefinitionKind() throws {
 
     let project = try #require(definitions.first { $0.name == "release-checklist" })
     #expect(project.source == .project)
+    #expect(project.id == "project:.grok/workflows/release-checklist.rhai (release-checklist)")
     #expect(project.path == ".grok/workflows/release-checklist.rhai")
 
     let user = try #require(definitions.first { $0.name == "personal-notes-triage" })

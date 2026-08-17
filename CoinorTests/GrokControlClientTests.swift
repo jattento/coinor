@@ -61,6 +61,10 @@ private final class FakeGrokTransport: GrokTransport, @unchecked Sendable {
         lock.withLock { terminated = true }
     }
 
+    func shutdown() async {
+        terminate()
+    }
+
     func emit(_ message: GrokJSONValue) {
         guard let payload = try? message.encoded() else { return }
         emit(GrokFraming.encode(payload))
@@ -1141,6 +1145,70 @@ func persistedChildFailureBecomesATerminalObservation() async throws {
     #expect(observations.first?.childSessionID == "child")
     #expect(observations.first?.parentSessionID == "root")
     #expect(observations.first?.status == "failed")
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["updates": .null]),
+    GrokJSONValue.object(["updates": "not-an-array"]),
+    GrokJSONValue.object(["updates": [:]]),
+])
+func rejectsAnUpdatesPageWithoutAnUpdatesArray(
+    _ payload: GrokJSONValue
+) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        var page = payload
+        if case var .object(members) = page {
+            members["hasMore"] = .bool(false)
+            page = .object(members)
+        }
+        transport.emit(result(for: request, page))
+    }
+
+    await #expect(
+        throws: GrokControlError.malformedPayload(
+            method: GrokMethod.sessionUpdates,
+            detail: "updates must be an array"
+        )
+    ) {
+        _ = try await client.listSubagentLifecycle(
+            sessionID: "root",
+            cwd: "/tmp/project"
+        )
+    }
+    await client.shutdown()
+}
+
+@Test(arguments: [
+    GrokJSONValue.object([:]),
+    GrokJSONValue.object(["hasMore": .null]),
+    GrokJSONValue.object(["hasMore": 1]),
+    GrokJSONValue.object(["hasMore": "no"]),
+])
+func rejectsAnUpdatesPageWithoutABooleanHasMore(
+    _ payload: GrokJSONValue
+) async throws {
+    let (client, _, _) = try await connectedClient { request, transport in
+        var page = payload
+        if case var .object(members) = page {
+            members["updates"] = .array([])
+            page = .object(members)
+        }
+        transport.emit(result(for: request, page))
+    }
+
+    await #expect(
+        throws: GrokControlError.malformedPayload(
+            method: GrokMethod.sessionUpdates,
+            detail: "hasMore must be a bool"
+        )
+    ) {
+        _ = try await client.listSubagentLifecycle(
+            sessionID: "root",
+            cwd: "/tmp/project"
+        )
+    }
     await client.shutdown()
 }
 

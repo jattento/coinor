@@ -455,10 +455,12 @@ final class GhosttyRuntime: ObservableObject {
         state: UnsafeMutableRawPointer?
     ) -> Bool {
         guard location == GHOSTTY_CLIPBOARD_STANDARD,
-              let surface = surface(from: userdata),
-              let handle = surface.surfaceHandle else {
+              let surface = surface(from: userdata) else {
             return false
         }
+        // The pasteboard is read before the surface lock is taken: hopping to
+        // the main thread while holding it would deadlock against a shutdown
+        // that is freeing the surface.
         let value: String?
         if Thread.isMainThread {
             value = NSPasteboard.general.string(forType: .string)
@@ -468,10 +470,17 @@ final class GhosttyRuntime: ObservableObject {
             }
         }
         guard let value else { return false }
-        value.withCString {
-            ghostty_surface_complete_clipboard_request(handle, $0, state, true)
-        }
-        return true
+        return surface.surfaceHandle.withHandle { handle in
+            value.withCString {
+                ghostty_surface_complete_clipboard_request(
+                    handle,
+                    $0,
+                    state,
+                    true
+                )
+            }
+            return true
+        } ?? false
     }
 
     fileprivate nonisolated static func confirmClipboard(
@@ -480,19 +489,18 @@ final class GhosttyRuntime: ObservableObject {
         state: UnsafeMutableRawPointer?,
         request: ghostty_clipboard_request_e
     ) {
-        guard let surface = surface(from: userdata),
-              let handle = surface.surfaceHandle else {
-            return
-        }
+        guard let surface = surface(from: userdata) else { return }
         let value = string.map(String.init(cString:)) ?? ""
         let confirmed = request == GHOSTTY_CLIPBOARD_REQUEST_PASTE
-        value.withCString {
-            ghostty_surface_complete_clipboard_request(
-                handle,
-                $0,
-                state,
-                confirmed
-            )
+        surface.surfaceHandle.withHandle { handle in
+            value.withCString {
+                ghostty_surface_complete_clipboard_request(
+                    handle,
+                    $0,
+                    state,
+                    confirmed
+                )
+            }
         }
     }
 

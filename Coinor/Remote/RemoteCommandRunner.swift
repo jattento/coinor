@@ -37,36 +37,6 @@ struct SSHCommandRunner: RemoteCommandRunning, Sendable {
     ) throws -> RemoteCommandResult {
         try ssh.prepareControlDirectory()
 
-        let fileManager = FileManager.default
-        let captureDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent(
-                "coinor-ssh-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        try fileManager.createDirectory(
-            at: captureDirectory,
-            withIntermediateDirectories: true
-        )
-        defer { try? fileManager.removeItem(at: captureDirectory) }
-
-        let outputURL = captureDirectory.appendingPathComponent("stdout")
-        let errorURL = captureDirectory.appendingPathComponent("stderr")
-        guard fileManager.createFile(atPath: outputURL.path, contents: nil),
-              fileManager.createFile(atPath: errorURL.path, contents: nil)
-        else {
-            throw RemoteHostError.unreachable(
-                alias: ssh.alias.rawValue,
-                detail: "could not create temporary output files"
-            )
-        }
-
-        let outputHandle = try FileHandle(forWritingTo: outputURL)
-        let errorHandle = try FileHandle(forWritingTo: errorURL)
-        defer {
-            try? outputHandle.close()
-            try? errorHandle.close()
-        }
-
         let process = Process()
         process.executableURL = URL(
             fileURLWithPath: SSHCommand.executablePath,
@@ -78,51 +48,29 @@ struct SSHCommandRunner: RemoteCommandRunning, Sendable {
             batch: true
         )
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = outputHandle
-        process.standardError = errorHandle
 
         do {
-            try process.run()
+            let capture = try SubprocessOutputCapture(label: "ssh")
+            let captured = try capture.run(process: process, deadline: timeout)
+            return RemoteCommandResult(
+                standardOutput: captured.standardOutput,
+                standardError: captured.standardError,
+                terminationStatus: captured.terminationStatus
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch SubprocessCaptureError.timedOut {
+            throw RemoteHostError.unreachable(
+                alias: ssh.alias.rawValue,
+                detail: "the command did not finish within "
+                    + "\(Int(SubprocessOutputCapture.seconds(in: timeout))) seconds"
+            )
         } catch {
             throw RemoteHostError.unreachable(
                 alias: ssh.alias.rawValue,
                 detail: error.localizedDescription
             )
         }
-
-        let deadline = Date().addingTimeInterval(Self.seconds(in: timeout))
-        while process.isRunning, Date() < deadline {
-            usleep(20_000)
-        }
-        if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
-            process.waitUntilExit()
-            throw RemoteHostError.unreachable(
-                alias: ssh.alias.rawValue,
-                detail: "the command did not finish within "
-                    + "\(Int(Self.seconds(in: timeout))) seconds"
-            )
-        }
-        process.waitUntilExit()
-        try? outputHandle.synchronize()
-        try? errorHandle.synchronize()
-
-        return RemoteCommandResult(
-            standardOutput: Self.readUTF8(outputURL),
-            standardError: Self.readUTF8(errorURL),
-            terminationStatus: process.terminationStatus
-        )
-    }
-
-    private static func readUTF8(_ url: URL) -> String {
-        guard let data = try? Data(contentsOf: url) else { return "" }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    private static func seconds(in duration: Duration) -> TimeInterval {
-        let components = duration.components
-        return TimeInterval(components.seconds)
-            + TimeInterval(components.attoseconds) / 1e18
     }
 }
 
@@ -182,6 +130,8 @@ struct SSHGitCommandRunner: GitCommandRunning, Sendable {
                 remoteCommand: remoteCommand,
                 timeout: .seconds(60)
             )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw GitServiceError.commandLaunchFailed(
                 arguments: arguments,

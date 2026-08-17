@@ -90,9 +90,139 @@ private final class LateFinderStub: AgenticConversationFinding, @unchecked Senda
     }
 }
 
+/// What the fake Grok saw of the workspace it was started in.
+private struct FakeGrokReport: Decodable {
+    let cwd: String
+    let prompt: String
+    let index: String
+    let workspaceMode: String
+    let transcriptsMode: String
+    let indexMode: String
+    let transcripts: [String: String]
+}
+
+/// A fake Grok that records its arguments and everything reachable from the
+/// workspace it was handed, so a test can assert what the finder exposes.
+private let reportingGrokScript = #"""
+#!/usr/bin/env python3
+import json
+import os
+import stat
+import sys
+
+argv = sys.argv[1:]
+with open(os.environ["FAKE_GROK_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps(argv) + "\n")
+if argv[:2] == ["sessions", "delete"]:
+    sys.exit(0)
+
+cwd = os.getcwd()
+prompt = argv[argv.index("-p") + 1]
+index_path = [
+    line.strip() for line in prompt.splitlines()
+    if line.strip().endswith("conversations.jsonl")
+][0]
+with open(index_path, encoding="utf-8") as index:
+    index_body = index.read()
+
+transcripts_dir = os.path.join(cwd, "transcripts")
+transcripts = {}
+for name in sorted(os.listdir(transcripts_dir)):
+    with open(os.path.join(transcripts_dir, name), encoding="utf-8") as handle:
+        transcripts[name] = handle.read()
+
+def mode(path):
+    return oct(stat.S_IMODE(os.stat(path).st_mode))
+
+with open(
+    os.path.join(os.environ["FAKE_GROK_HOME"], "report.json"),
+    "w",
+    encoding="utf-8",
+) as out:
+    json.dump({
+        "cwd": cwd,
+        "prompt": prompt,
+        "index": index_body,
+        "workspaceMode": mode(cwd),
+        "transcriptsMode": mode(transcripts_dir),
+        "indexMode": mode(index_path),
+        "transcripts": transcripts,
+    }, out)
+
+if os.environ.get("FAKE_GROK_FAIL") == "1":
+    sys.stderr.write("fake grok refused to search\n")
+    sys.exit(1)
+
+print(json.dumps({
+    "structuredOutput": {
+        "message": "I found one conversation.",
+        "matches": [{
+            "sessionID": "session-real-path",
+            "reason": "The first prompt mentions slow tabs.",
+            "confidence": 0.9,
+            "open": True,
+            "pin": False
+        }]
+    }
+}))
+"""#
+
 private struct TestGrokFixture {
     let directory: URL
     let executable: GrokExecutable
+
+    /// Where the finder puts one search's workspace, so a test can prove the
+    /// workspace is gone once the search is over.
+    var finderRoot: URL {
+        directory.appendingPathComponent("AgenticFinder", isDirectory: true)
+    }
+
+    func remainingWorkspaces() -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: finderRoot,
+            includingPropertiesForKeys: nil
+        )) ?? []
+    }
+
+    func report() throws -> FakeGrokReport {
+        try JSONDecoder().decode(
+            FakeGrokReport.self,
+            from: Data(
+                contentsOf: directory.appendingPathComponent("report.json")
+            )
+        )
+    }
+
+    func writeTranscript(_ name: String, body: String) throws -> String {
+        let url = directory.appendingPathComponent(
+            "\(name)-chat_history.jsonl",
+            isDirectory: false
+        )
+        try Data(body.utf8).write(to: url)
+        return url.path
+    }
+
+    func finder(failing: Bool = false) -> GrokAgenticConversationFinder {
+        GrokAgenticConversationFinder(
+            executable: executable,
+            supportDirectory: directory,
+            environment: [
+                "FAKE_GROK_LOG": directory
+                    .appendingPathComponent("fake-grok.log").path,
+                "FAKE_GROK_HOME": directory.path,
+                "FAKE_GROK_FAIL": failing ? "1" : "0",
+            ]
+        )
+    }
+
+    func invocations() throws -> [[String]] {
+        try String(
+            contentsOf: directory.appendingPathComponent("fake-grok.log"),
+            encoding: .utf8
+        )
+        .split(separator: "\n")
+        .map { try JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+    }
 
     static func make(script: String) throws -> TestGrokFixture {
         let directory = FileManager.default.temporaryDirectory
@@ -408,55 +538,13 @@ func finderModelLoadsCandidatesAndPublishesTheRealResponse() async throws {
 
 @Test
 func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
-    let fixture = try TestGrokFixture.make(
-        script: #"""
-        #!/usr/bin/env python3
-        import json
-        import os
-        import sys
-
-        with open(os.environ["FAKE_GROK_LOG"], "a", encoding="utf-8") as log:
-            log.write(json.dumps(sys.argv[1:]) + "\n")
-        if sys.argv[1:3] == ["sessions", "delete"]:
-            sys.exit(0)
-        argv = sys.argv[1:]
-        prompt = argv[argv.index("-p") + 1]
-        index_path = [
-            line.strip() for line in prompt.splitlines()
-            if line.strip().endswith("conversations.jsonl")
-        ][0]
-        with open(index_path, encoding="utf-8") as index:
-            body = index.read()
-        with open(
-            os.path.join(os.environ["FAKE_GROK_HOME"], "captured-index"),
-            "w",
-            encoding="utf-8",
-        ) as out:
-            out.write(body)
-        print(json.dumps({
-            "structuredOutput": {
-                "message": "I found one conversation.",
-                "matches": [{
-                    "sessionID": "session-real-path",
-                    "reason": "The first prompt mentions slow tabs.",
-                    "confidence": 0.9,
-                    "open": True,
-                    "pin": False
-                }]
-            }
-        }))
-        """#
-    )
+    let fixture = try TestGrokFixture.make(script: reportingGrokScript)
     defer { try? FileManager.default.removeItem(at: fixture.directory) }
-    let log = fixture.directory.appendingPathComponent("fake-grok.log")
-    let finder = GrokAgenticConversationFinder(
-        executable: fixture.executable,
-        supportDirectory: fixture.directory,
-        environment: [
-            "FAKE_GROK_LOG": log.path,
-            "FAKE_GROK_HOME": fixture.directory.path,
-        ]
+    let transcript = try fixture.writeTranscript(
+        "slow-tabs",
+        body: #"{"type":"user","content":"changing tabs got slow"}"# + "\n"
     )
+    let finder = fixture.finder()
 
     let response = try await finder.find(
         AgenticFinderRequest(
@@ -469,16 +557,14 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
                     lastActivity: nil,
                     archived: true,
                     pinned: false,
-                    transcriptPath: "/tmp/does-not-matter/chat_history.jsonl"
+                    transcriptPath: transcript
                 ),
             ]
         )
     )
 
     #expect(response.matches.first?.sessionID == "session-real-path")
-    let invocations = try String(contentsOf: log, encoding: .utf8)
-        .split(separator: "\n")
-        .map { try JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+    let invocations = try fixture.invocations()
     #expect(invocations.count == 2)
     #expect(invocations[0].contains("--json-schema"))
     #expect(invocations[0].contains("--no-memory"))
@@ -497,17 +583,237 @@ func realFinderProcessUsesStructuredOutputAndDeletesItsSession() async throws {
     #expect(!prompt.contains("Changing tabs gets slower."))
     #expect(prompt.utf8.count < 8_000)
 
-    let capturedIndex = try String(
-        contentsOf: fixture.directory.appendingPathComponent("captured-index"),
-        encoding: .utf8
-    )
+    let report = try fixture.report()
     let indexed = try JSONDecoder().decode(
         AgenticFinderCandidate.self,
-        from: Data(capturedIndex.split(separator: "\n")[0].utf8)
+        from: Data(report.index.split(separator: "\n")[0].utf8)
     )
     #expect(indexed.id == "session-real-path")
     #expect(indexed.title == "Slow tabs")
-    #expect(indexed.transcriptPath == "/tmp/does-not-matter/chat_history.jsonl")
+    // The index names the copy inside the workspace, never the transcript
+    // where it lives: a path outside the workspace is a path the agent could
+    // be talked into following.
+    let indexedPath = try #require(indexed.transcriptPath)
+    #expect(indexedPath.hasPrefix(fixture.finderRoot.path + "/"))
+    #expect(indexedPath != transcript)
+    #expect(!report.index.contains(transcript))
+    #expect(!prompt.contains(transcript))
+}
+
+/// The denylist alone was fail-open: `read_file`, `grep`, and `list_dir`
+/// survived it, so any transcript could talk the agent into reading a secret
+/// somewhere else on disk. The allowlist is the control that closes it.
+@Test
+func finderStartsGrokWithTheToolAllowlistAndKeepsTheDenylist() async throws {
+    let fixture = try TestGrokFixture.make(script: reportingGrokScript)
+    defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+    _ = try await fixture.finder().find(
+        AgenticFinderRequest(
+            query: "the slow tabs one",
+            candidates: [
+                AgenticFinderCandidate(
+                    id: "session-real-path",
+                    title: "Slow tabs",
+                    project: "Conan Code",
+                    lastActivity: nil,
+                    archived: false,
+                    pinned: false,
+                    transcriptPath: try fixture.writeTranscript(
+                        "slow-tabs",
+                        body: "{}\n"
+                    )
+                ),
+            ]
+        )
+    )
+
+    let search = try #require(fixture.invocations().first)
+    let allowlist = try #require(search.firstIndex(of: "--tools"))
+    #expect(
+        search[search.index(after: allowlist)]
+            == GrokAgenticConversationFinder.allowedTools
+                .joined(separator: ",")
+    )
+    let denylist = try #require(search.firstIndex(of: "--disallowed-tools"))
+    let denied = search[search.index(after: denylist)]
+        .split(separator: ",")
+        .map { String($0) }
+    for tool in ["run_terminal_cmd", "web_fetch", "search_replace", "Agent"] {
+        #expect(denied.contains(tool))
+    }
+    for tool in GrokAgenticConversationFinder.allowedTools {
+        #expect(!denied.contains(tool))
+    }
+}
+
+@Test
+func finderWorkspaceIsPrivateHoldsOnlyCopiesAndIsRemovedAfterwards() async throws {
+    let fixture = try TestGrokFixture.make(script: reportingGrokScript)
+    defer { try? FileManager.default.removeItem(at: fixture.directory) }
+    let body = #"{"type":"user","content":"changing tabs got slow"}"# + "\n"
+    let transcript = try fixture.writeTranscript("slow-tabs", body: body)
+
+    _ = try await fixture.finder().find(
+        AgenticFinderRequest(
+            query: "the slow tabs one",
+            candidates: [
+                AgenticFinderCandidate(
+                    id: "session-real-path",
+                    title: "Slow tabs",
+                    project: "Conan Code",
+                    lastActivity: nil,
+                    archived: false,
+                    pinned: false,
+                    transcriptPath: transcript
+                ),
+                AgenticFinderCandidate(
+                    id: "session-unreadable",
+                    title: "Gone",
+                    project: "Conan Code",
+                    lastActivity: nil,
+                    archived: false,
+                    pinned: false,
+                    transcriptPath: fixture.directory
+                        .appendingPathComponent("missing.jsonl").path
+                ),
+            ]
+        )
+    )
+
+    let report = try fixture.report()
+    // Explicit 0700/0600, not whatever the process umask happened to be: the
+    // workspace holds copies of the user's conversations.
+    #expect(report.workspaceMode == "0o700")
+    #expect(report.transcriptsMode == "0o700")
+    #expect(report.indexMode == "0o600")
+    // Exactly one copy — the candidate whose transcript could not be read is
+    // indexed without a path rather than pointed at a file that is not there.
+    #expect(report.transcripts.count == 1)
+    #expect(report.transcripts.values.first == body)
+    let indexed = try report.index
+        .split(separator: "\n")
+        .map {
+            try JSONDecoder().decode(
+                AgenticFinderCandidate.self,
+                from: Data($0.utf8)
+            )
+        }
+    #expect(indexed.count == 2)
+    #expect(indexed[0].transcriptPath != nil)
+    #expect(indexed[1].transcriptPath == nil)
+
+    #expect(fixture.remainingWorkspaces().isEmpty)
+}
+
+@Test
+func finderRemovesItsWorkspaceWhenTheSearchFails() async throws {
+    let fixture = try TestGrokFixture.make(script: reportingGrokScript)
+    defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+    await #expect(throws: AgenticFinderError.self) {
+        try await fixture.finder(failing: true).find(
+            AgenticFinderRequest(
+                query: "the slow tabs one",
+                candidates: [
+                    AgenticFinderCandidate(
+                        id: "session-real-path",
+                        title: "Slow tabs",
+                        project: "Conan Code",
+                        lastActivity: nil,
+                        archived: false,
+                        pinned: false,
+                        transcriptPath: try fixture.writeTranscript(
+                            "slow-tabs",
+                            body: "{}\n"
+                        )
+                    ),
+                ]
+            )
+        )
+    }
+
+    #expect(fixture.remainingWorkspaces().isEmpty)
+}
+
+@Test
+func finderBoundsTheTranscriptCopiesItPlacesInItsWorkspace() async throws {
+    let fixture = try TestGrokFixture.make(script: reportingGrokScript)
+    defer { try? FileManager.default.removeItem(at: fixture.directory) }
+    let line = #"{"type":"user","content":"padding padding padding padding"}"#
+    let huge = Array(repeating: line, count: 6_000).joined(separator: "\n")
+        + "\n"
+    #expect(
+        huge.utf8.count
+            > AgenticFinderTranscriptExcerpt.maximumTranscriptBytes * 4
+    )
+
+    _ = try await fixture.finder().find(
+        AgenticFinderRequest(
+            query: "the padded one",
+            candidates: [
+                AgenticFinderCandidate(
+                    id: "session-real-path",
+                    title: "Padded",
+                    project: "Conan Code",
+                    lastActivity: nil,
+                    archived: false,
+                    pinned: false,
+                    transcriptPath: try fixture.writeTranscript(
+                        "padded",
+                        body: huge
+                    )
+                ),
+            ]
+        )
+    )
+
+    let copied = try #require(fixture.report().transcripts.values.first)
+    #expect(
+        copied.utf8.count
+            <= AgenticFinderTranscriptExcerpt.maximumTranscriptBytes
+                + AgenticFinderTranscriptExcerpt.truncationNotice.utf8.count
+                + 2
+    )
+    let lines = copied.split(separator: "\n")
+    // Cut on a line boundary and said so, so the copy stays parseable as JSONL
+    // and the finder can report that it did not see everything.
+    #expect(
+        String(lines.last ?? "")
+            == AgenticFinderTranscriptExcerpt.truncationNotice
+    )
+    #expect(lines.dropLast().allSatisfy { String($0) == line })
+}
+
+@Test
+func transcriptCopyNamesCannotEscapeTheWorkspace() {
+    for hostile in [
+        "../../../etc/passwd",
+        "..",
+        "/absolute/secret",
+        "a/b",
+        "",
+        "session id with spaces",
+    ] {
+        let name = AgenticFinderTranscriptExcerpt.fileName(
+            order: 3,
+            sessionID: hostile
+        )
+        #expect(!name.contains("/"))
+        #expect(!name.contains(".."))
+        #expect(name.hasPrefix("0003"))
+        #expect(name.hasSuffix(".jsonl"))
+    }
+}
+
+@Test
+func transcriptExcerptsAreStrippedOfControlCharacters() {
+    let bounded = AgenticFinderTranscriptExcerpt.bounded(
+        "clean\u{1B}[31m text\u{0}\u{7}\nsecond\tline\n",
+        maximumBytes: 1_000
+    )
+
+    #expect(bounded == "clean[31m text\nsecond\tline\n")
 }
 
 @Test(

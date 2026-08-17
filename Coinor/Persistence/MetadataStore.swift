@@ -85,6 +85,14 @@ actor MetadataStore {
             throw MetadataStoreError.corrupt(url: url, reason: String(describing: error))
         }
 
+        guard decoded.schemaVersion >= 0 else {
+            throw MetadataStoreError.unsupportedSchemaVersion(
+                found: decoded.schemaVersion,
+                supported: MetadataSchema.currentVersion,
+                url: url
+            )
+        }
+
         guard decoded.schemaVersion <= MetadataSchema.currentVersion else {
             throw MetadataStoreError.unsupportedSchemaVersion(
                 found: decoded.schemaVersion,

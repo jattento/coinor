@@ -93,6 +93,25 @@ struct SSHInvocationExecutionTests {
     }
 
     @Test
+    func theOptionEndMarkerIsAcceptedBeforeTheDestination() throws {
+        let command = try ssh()
+        let arguments = command.arguments(
+            remoteCommand: "true",
+            allocateTTY: false,
+            batch: true
+        )
+        let separatorIndex = try #require(arguments.firstIndex(of: "--"))
+
+        #expect(separatorIndex == arguments.count - 3)
+        let result = try run(arguments)
+
+        // Parsed cleanly and reached the connection attempt, which
+        // ProxyCommand=false fails. An option parse error would exit 1 with
+        // a usage message instead of 255.
+        #expect(result.status == Int32(RemoteReconnectPolicy.sshFailureExitCode))
+    }
+
+    @Test
     func opensshAcceptsTheInteractivePaneInvocation() throws {
         let command = try ssh()
         let result = try run(

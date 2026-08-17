@@ -114,3 +114,54 @@ func rejectsALeadingBlockThatIsNeitherJSONNorAHeader() {
         _ = try decode(&decoder, "grok: could not start\r\n\r\n")
     }
 }
+
+@Test
+func rejectsASingleLineThatExceedsTheFrameSizeEvenBeforeItsNewline() {
+    var decoder = GrokFrameDecoder(maximumFrameSize: 16)
+    let oversizedLine = "{\"payload\":\"" + String(repeating: "x", count: 64) + "\"}"
+
+    #expect(throws: GrokControlError.frameTooLarge(oversizedLine.utf8.count)) {
+        _ = try decode(&decoder, oversizedLine)
+    }
+}
+
+@Test
+func rejectsAnOversizedLineOnceItsNewlineArrives() {
+    var decoder = GrokFrameDecoder(maximumFrameSize: 16)
+    let oversizedLine = "{\"payload\":\"" + String(repeating: "x", count: 64) + "\"}\n"
+
+    #expect(throws: GrokControlError.frameTooLarge(oversizedLine.utf8.count - 1)) {
+        _ = try decode(&decoder, oversizedLine)
+    }
+}
+
+@Test
+func acceptsALineAtExactlyTheFrameSizeBoundary() throws {
+    var decoder = GrokFrameDecoder(maximumFrameSize: 16)
+
+    // Line framing only applies to JSON payloads (leading `{` or `[`).
+    let payload = "{\"k\":\"01234567\"}"
+    #expect(payload.utf8.count == 16)
+    let frames = try decode(&decoder, payload + "\n")
+
+    #expect(frames == [payload])
+}
+
+@Test
+func rejectsANegativeContentLengthAsMalformed() {
+    var decoder = GrokFrameDecoder()
+
+    #expect(throws: GrokControlError.self) {
+        _ = try decode(&decoder, "Content-Length: -1\r\n\r\n")
+    }
+}
+
+@Test
+func rejectsAContentLengthThatWouldOverflowWhenAddedToTheBodyStart() {
+    var decoder = GrokFrameDecoder()
+    let huge = "\(Int.max)"
+
+    #expect(throws: GrokControlError.self) {
+        _ = try decode(&decoder, "Content-Length: \(huge)\r\n\r\n")
+    }
+}
