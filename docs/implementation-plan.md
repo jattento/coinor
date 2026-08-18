@@ -311,30 +311,6 @@ Acceptance criteria:
   including after failures, unless the user explicitly keeps a named service
   running
 
-## Phase 10: native Grok Workflows
-
-Implement:
-
-- an app-level Workflows sidebar destination using the last selected conversation
-- structured ACP discovery, launch, snapshot, control, and live update handling
-- project, personal, built-in, and forward-compatible source grouping
-- friendly key/value arguments, raw JSON, and validated agent budgets
-- revision-gated run storage with event-timestamp ordering across runs
-- responsive catalog, launcher, run list, phase/agent/event inspector, and
-  status-specific pause, resume, stop, and higher-budget resume controls
-- independent catalog/run loading, empty, failure, interrupted, terminal, and
-  budget-limited presentation
-
-Acceptance criteria:
-
-- no slash command is required to discover, launch, inspect, or control a run
-- Grok remains the owner of scripts and authoritative run state
-- late responses and stale revisions cannot overwrite a newer context or run
-- a budget-limited run never offers an invalid bare resume
-- all terminal states stay inspectable and unknown additive payload fields are
-  tolerated
-- normal and compact layouts remain usable in the native application
-
 ## Test shape
 
 Use focused tests at each boundary:

@@ -96,30 +96,10 @@ Its responsibilities are:
 - call `x.ai/sessions/list` for live and dormant activity state
 - consume `x.ai/sessions/changed` notifications
 - call `x.ai/session/rename` for root conversations
-- list, launch, snapshot, and control workflows through
-  `x.ai/workflows/{list,launch,snapshot,control}`
-- publish live `workflow_updated` session notifications alongside subagent
-  lifecycle events
 - provide explicit health and compatibility errors to the UI
 
 The session catalog and live roster are joined by Grok session ID. Catalog rows
 own project/worktree metadata; roster rows own current activity and residency.
-
-### Workflow presentation
-
-`WorkflowCenterModel` is a `MainActor` presentation model scoped to the last
-selected conversation. Catalog and run loads have independent state and a
-context generation, so responses from an abandoned conversation cannot update
-the current view. `GrokWorkflowRunStore` keeps runs from other sessions in
-memory, filters them by the active context, and accepts only a strictly newer
-revision for each individual run.
-
-The workflow center sends exact camel-case ACP requests and parses the same run
-payload for snapshots, control responses, and live notifications. Run revisions
-are used only to reject stale updates within one run; cross-run ordering uses
-Grok's event timestamp because revisions are not globally comparable. Grok owns
-all scripts and authoritative run state. Coinor does not persist, synthesize, or
-mutate either one.
 
 ### Isolated Grok leader
 

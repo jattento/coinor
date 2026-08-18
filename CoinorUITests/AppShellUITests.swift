@@ -7,10 +7,6 @@ private enum Identifier {
     static let sidebar = "AppShellSidebar"
     static let conversationSearch = "AppShellConversationSearch"
     static let terminalRegion = "AppShellTerminalRegion"
-    static let workflowsDestination = "AppShellWorkflowsDestination"
-    static let workflowCenter = "WorkflowCenter"
-    static let workflowRefresh = "WorkflowRefreshButton"
-    static let workflowBack = "WorkflowBackButton"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
 }
 
@@ -113,29 +109,6 @@ final class AppShellUITests: XCTestCase {
         let app = launchApp()
         XCTAssertTrue(element(Identifier.sidebar, in: app).waitForExistence(timeout: 15))
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))
-    }
-
-    func testWorkflowsDestinationOpensAndReturnsToTheConversation() {
-        let app = launchApp()
-        XCTAssertTrue(element(Identifier.sidebar, in: app).waitForExistence(timeout: 15))
-
-        let workflows = element(Identifier.workflowsDestination, in: app)
-        XCTAssertTrue(workflows.waitForExistence(timeout: 5))
-        workflows.click()
-
-        XCTAssertTrue(
-            element(Identifier.workflowCenter, in: app).waitForExistence(timeout: 10)
-        )
-        XCTAssertTrue(
-            app.buttons["Refresh Workflows"].waitForExistence(timeout: 5)
-        )
-
-        let back = app.buttons["Back to Conversation"]
-        XCTAssertTrue(back.waitForExistence(timeout: 5))
-        back.click()
-        XCTAssertTrue(
-            element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 5)
-        )
     }
 
     func testHealthyStartupClearsDiagnosticsAfterLeaderConnects() {

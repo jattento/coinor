@@ -2,7 +2,6 @@ import SwiftUI
 
 enum AppShellDestination: Equatable {
     case conversation
-    case workflows
 }
 
 struct AppShellView: View {
@@ -20,21 +19,10 @@ struct AppShellView: View {
             .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
         } detail: {
             VStack(spacing: 0) {
-                if case .ready = coordinator.status,
-                   destination == .workflows {
-                    WorkflowCenterView(
-                        model: coordinator.workflowCenter,
-                        coordinator: coordinator,
-                        returnToConversation: {
-                            destination = .conversation
-                        }
-                    )
-                } else {
-                    ConversationContentView(
-                        model: model,
-                        coordinator: coordinator
-                    )
-                }
+                ConversationContentView(
+                    model: model,
+                    coordinator: coordinator
+                )
                 if case .ready = coordinator.status,
                    model.unresolvedStartupCheckCount > 0 {
                     Divider()
@@ -56,11 +44,6 @@ struct AppShellView: View {
         }
         .task {
             await model.monitorGrokUpdates()
-        }
-        .onChange(of: coordinator.selectedSessionID) { _ in
-            if destination == .workflows {
-                destination = .conversation
-            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

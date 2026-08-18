@@ -21,10 +21,6 @@ enum GrokMethod {
     static let sessionUpdate = "x.ai/session/update"
     static let sessionUpdates = "x.ai/session/updates"
     static let leaderReconnected = "x.ai/leader_reconnected"
-    static let workflowsList = "x.ai/workflows/list"
-    static let workflowsLaunch = "x.ai/workflows/launch"
-    static let workflowsSnapshot = "x.ai/workflows/snapshot"
-    static let workflowsControl = "x.ai/workflows/control"
 
     static let requestPermission = "session/request_permission"
     static let askUserQuestion = "x.ai/ask_user_question"

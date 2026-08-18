@@ -39,8 +39,6 @@ struct AppShellSidebar: View {
                 }
             }
 
-            workflowDestinationRow
-
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if isSearching && !agenticSearch.isPresented {
@@ -236,46 +234,6 @@ struct AppShellSidebar: View {
         }
         .onDisappear {
             coordinator.setVisibleConversationNavigationIDs([])
-        }
-    }
-
-    private var workflowDestinationRow: some View {
-        SidebarHoverState(isDisabled: reorder.isActive) { isHovered in
-            Button {
-                reorder.cancel()
-                if agenticSearch.isPresented {
-                    dismissAgenticSearch()
-                }
-                destination = .workflows
-                coordinator.prepareWorkflowCenter()
-            } label: {
-                HStack(spacing: SidebarStyle.iconGap) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: SidebarStyle.iconWidth)
-                    Text("Workflows")
-                        .font(SidebarStyle.projectFont)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .foregroundStyle(Color(nsColor: .labelColor))
-                .padding(.horizontal, SidebarStyle.rowPadding)
-                .frame(height: SidebarReorderMetrics.projectHeaderHeight)
-                .background(
-                    SidebarRowBackground(
-                        isSelected: destination == .workflows,
-                        isHovered: isHovered
-                    )
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, SidebarStyle.rowInset)
-            .padding(.vertical, 5)
-            .accessibilityLabel("Workflows")
-            .accessibilityIdentifier(AppShellIdentifier.workflowsDestination)
         }
     }
 

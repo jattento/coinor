@@ -21,7 +21,6 @@ struct GrokPermissionOption: Sendable, Equatable {
 enum GrokControlEvent: Sendable {
     case rosterChanged(GrokRosterChange)
     case subagentLifecycle(GrokSubagentLifecycleObservation)
-    case workflowUpdated(GrokWorkflowRun)
     case notification(method: String, params: GrokJSONValue)
     case terminated(GrokControlError)
 }
@@ -280,112 +279,6 @@ actor GrokControlClient {
             entries.append(entry)
         }
         return entries
-    }
-
-    func listWorkflows(sessionID: String) async throws -> [GrokWorkflowDefinition] {
-        let result = try await callExtension(
-            GrokMethod.workflowsList,
-            params: ["sessionId": .string(sessionID)]
-        )
-        guard let workflows = result.objectValue?["workflows"],
-              case let .array(rows) = workflows else {
-            throw GrokControlError.malformedPayload(
-                method: GrokMethod.workflowsList,
-                detail: "workflows must be an array"
-            )
-        }
-        return try rows.map(GrokWorkflowDefinition.init(raw:))
-    }
-
-    func snapshotWorkflows(sessionID: String) async throws -> [GrokWorkflowRun] {
-        let result = try await callExtension(
-            GrokMethod.workflowsSnapshot,
-            params: ["sessionId": .string(sessionID)]
-        )
-        guard let runs = result.objectValue?["runs"],
-              case let .array(rows) = runs else {
-            throw GrokControlError.malformedPayload(
-                method: GrokMethod.workflowsSnapshot,
-                detail: "runs must be an array"
-            )
-        }
-        return try rows.map {
-            try GrokWorkflowRun.parseSnapshotRow(sessionID: sessionID, raw: $0)
-        }
-    }
-
-    func launchWorkflow(
-        sessionID: String,
-        name: String,
-        args: GrokJSONValue?,
-        agentBudget: Int?
-    ) async throws -> GrokWorkflowLaunchResult {
-        try validateAgentBudget(agentBudget, method: GrokMethod.workflowsLaunch)
-        var params: [String: GrokJSONValue] = [
-            "sessionId": .string(sessionID),
-            "name": .string(name),
-        ]
-        if let args {
-            params["args"] = args
-        }
-        if let agentBudget {
-            params["agentBudget"] = .int(agentBudget)
-        }
-        let result = try await callExtension(
-            GrokMethod.workflowsLaunch,
-            params: .object(params)
-        )
-        guard let runID = result["runId"]?.stringValue, !runID.isEmpty else {
-            throw GrokControlError.malformedPayload(
-                method: GrokMethod.workflowsLaunch,
-                detail: "runId must be a nonempty string"
-            )
-        }
-        guard let resultName = result["name"]?.stringValue, !resultName.isEmpty else {
-            throw GrokControlError.malformedPayload(
-                method: GrokMethod.workflowsLaunch,
-                detail: "name must be a nonempty string"
-            )
-        }
-        return GrokWorkflowLaunchResult(runID: runID, name: resultName)
-    }
-
-    func controlWorkflow(
-        sessionID: String,
-        runID: String,
-        operation: GrokWorkflowControlOperation,
-        agentBudget: Int?
-    ) async throws -> GrokWorkflowRun {
-        try validateAgentBudget(agentBudget, method: GrokMethod.workflowsControl)
-        var params: [String: GrokJSONValue] = [
-            "sessionId": .string(sessionID),
-            "runId": .string(runID),
-            "operation": .string(operation.rawValue),
-        ]
-        if let agentBudget {
-            params["agentBudget"] = .int(agentBudget)
-        }
-        let result = try await callExtension(
-            GrokMethod.workflowsControl,
-            params: .object(params)
-        )
-        guard let run = result.objectValue?["run"], case .object = run else {
-            throw GrokControlError.malformedPayload(
-                method: GrokMethod.workflowsControl,
-                detail: "run must be an object"
-            )
-        }
-        return try GrokWorkflowRun.parseSnapshotRow(sessionID: sessionID, raw: run)
-    }
-
-    private func validateAgentBudget(_ agentBudget: Int?, method: String) throws {
-        guard let agentBudget else { return }
-        guard (1 ... 1024).contains(agentBudget) else {
-            throw GrokControlError.malformedPayload(
-                method: method,
-                detail: "agentBudget must be between 1 and 1024"
-            )
-        }
     }
 
     private func sessionRows(
@@ -1019,11 +912,6 @@ actor GrokControlClient {
                   let observation = GrokSubagentLifecycleObservation
                     .parseNotification(params: params) {
             event = .subagentLifecycle(observation)
-        } else if let run = GrokWorkflowRun.parseNotification(
-            method: method,
-            params: params
-        ) {
-            event = .workflowUpdated(run)
         } else {
             event = .notification(method: method, params: params)
         }
