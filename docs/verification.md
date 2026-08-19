@@ -14,6 +14,64 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.0 Verification
+
+Scheduled automations, backed by launchd and run by `grok` itself, ship as
+version `0.6.0` build `38`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` passed end to end: 516 Swift Testing tests in 43
+  suites, 46 XCTest cases, and 5 application-shell XCUITests. The opt-in live
+  remote-host UI test remained skipped because `COINOR_LIVE_REMOTE_HOST` was
+  not set.
+- `scripts/release/verify-app.sh` reported version `0.6.0 (38)`, arm64, macOS
+  13.0 minimum, deep-strict ad-hoc signature, App Sandbox disabled,
+  `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `scripts/release/security-scan.sh` passed over 85 commits, the tracked
+  snapshot, and every file in the release bundle, with no leaks found.
+
+Automation-specific verification:
+
+- Cron parsing and the launchd compiler are covered for wildcards, steps,
+  ranges, lists, and month and weekday names, including that `0` and `7` both
+  mean Sunday and are not emitted twice. Schedules that expand past the entry
+  limit are rejected in the editor rather than handed to launchd.
+- Every recurrence the schedule picker can produce is asserted to compile into
+  at least one launchd calendar interval, and an expression the picker cannot
+  describe round-trips through the custom mode unchanged.
+- The generated job is asserted to invoke `grok` headlessly in the automation's
+  project, with the shared instruction appended through `--rules`, permissions
+  pre-approved, a freshly minted session per run, and the model pinned only
+  when one is chosen.
+- Command injection is proven by execution, not inspection: the generated
+  script is run with a stub `grok` that records its argument vector, and a
+  hostile prompt arrives as one intact argument while the injected command
+  never runs.
+- A live, opt-in test (`COINOR_RUN_LIVE_LAUNCHD=1`) installs a real job into
+  the user's launchd domain, starts it through the same `kickstart` the Run Now
+  control uses, and reads the recorded run back with its session identifier,
+  then confirms removal unloads the job.
+- The run log reader is covered for folding start and finish events, non-zero
+  exit codes, newest-first ordering, partially written trailing lines, and logs
+  written before runs recorded a trigger.
+
+Manual verification:
+
+- Creating an automation with the recurrence picker installed its launchd job;
+  the automation then fired on its own schedule repeatedly and each run
+  completed successfully.
+- Run Now started a run immediately, the row and detail showed it in flight,
+  and the run settled to a success state with its duration.
+- Each run's conversation appeared in the sidebar under its project with the
+  clock badge and was renamed after its automation.
+- A finished run raised a native notification.
+
 ## Conan Code 0.5.29 Verification
 
 Native Grok Workflows, complete live-subagent working state, and exact-once

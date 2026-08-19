@@ -159,6 +159,62 @@ func runNowKickstartsTheJob() throws {
     // -k restarts the job even if a previous run is still going.
     #expect(invocation.contains("-k"))
     #expect(invocation.last?.hasSuffix(AutomationJob.label(for: "auto-1")) == true)
+
+    // A marker is left so the job records this run as manual rather than
+    // scheduled; launchd starts both the same way.
+    let marker = AutomationJob.forcedMarkerPath(
+        runLogPath: harness.installer.runLogURL.path,
+        automationID: "auto-1"
+    )
+    #expect(FileManager.default.fileExists(atPath: marker))
+}
+
+/// A failed kickstart must not leave a marker behind, or the next scheduled
+/// run would be mislabelled as manual.
+@Test
+func aFailedRunNowRemovesItsMarker() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("AutomationMarker-\(UUID().uuidString)", isDirectory: true)
+    let launchAgents = directory.appendingPathComponent("LaunchAgents", isDirectory: true)
+    let support = directory.appendingPathComponent("Support", isDirectory: true)
+    try FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    struct Boom: Error {}
+    let installer = AutomationJobInstaller(
+        launchAgentsDirectory: launchAgents,
+        supportDirectory: support,
+        grokExecutablePath: "/Users/me/bin/grok",
+        runLaunchctl: { _ in throw Boom() }
+    )
+
+    #expect(throws: (any Error).self) {
+        try installer.runNow(automationID: "auto-1")
+    }
+    let marker = AutomationJob.forcedMarkerPath(
+        runLogPath: installer.runLogURL.path,
+        automationID: "auto-1"
+    )
+    #expect(!FileManager.default.fileExists(atPath: marker))
+}
+
+/// The generated job must consume the marker, so a forced run is recorded as
+/// manual exactly once and the next scheduled run is not.
+@Test
+func theJobConsumesTheForcedMarker() throws {
+    let harness = try Harness()
+    defer { harness.cleanUp() }
+
+    let script = AutomationJob.script(
+        automation: automation(),
+        systemPrompt: "policy",
+        grokExecutablePath: "/usr/bin/true",
+        runLogPath: harness.installer.runLogURL.path
+    )
+    #expect(script.contains("trigger=forced"))
+    #expect(script.contains("trigger=scheduled"))
+    #expect(script.contains("/bin/rm -f \"$marker\""))
 }
 
 // MARK: - Synchronise

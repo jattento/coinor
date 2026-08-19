@@ -125,12 +125,31 @@ struct AutomationJobInstaller: Sendable {
     }
 
     /// Runs the automation immediately, independently of its schedule.
-    func runNow(automationID: String) throws {
-        try runLaunchctl([
-            "kickstart",
-            "-k",
-            "\(domain)/\(AutomationJob.label(for: automationID))",
-        ])
+    ///
+    /// launchd starts a forced run through the same command as a scheduled
+    /// one, so a marker is left for the job to consume and record the run as
+    /// manual.
+    func runNow(
+        automationID: String,
+        fileManager: FileManager = .default
+    ) throws {
+        let marker = AutomationJob.forcedMarkerPath(
+            runLogPath: runLogURL.path,
+            automationID: automationID
+        )
+        fileManager.createFile(atPath: marker, contents: Data())
+        do {
+            try runLaunchctl([
+                "kickstart",
+                "-k",
+                "\(domain)/\(AutomationJob.label(for: automationID))",
+            ])
+        } catch {
+            // The run never started, so the marker must not label the next
+            // scheduled run as manual.
+            try? fileManager.removeItem(atPath: marker)
+            throw error
+        }
     }
 
     /// Reconciles every job with the current configuration, so the on-disk

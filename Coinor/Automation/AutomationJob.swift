@@ -106,16 +106,30 @@ enum AutomationJob {
         // Only Conan Code-owned identifiers are interpolated into the JSON;
         // they are UUIDs, so they cannot carry a quote or a backslash.
         let automationID = automation.id
+        // "Run Now" drops a marker before kickstarting the job, because
+        // launchd starts a scheduled run and a forced run through the exact
+        // same command. Consuming the marker is what tells them apart.
+        let marker = forcedMarkerPath(
+            runLogPath: runLogPath,
+            automationID: automationID
+        )
         return """
         #!/bin/sh
         set -u
         log=\(shellQuoted(runLogPath))
         /bin/mkdir -p "$(/usr/bin/dirname "$log")"
+        marker=\(shellQuoted(marker))
+        if [ -f "$marker" ]; then
+          trigger=forced
+          /bin/rm -f "$marker"
+        else
+          trigger=scheduled
+        fi
         session_id=$(/usr/bin/uuidgen | /usr/bin/tr 'A-Z' 'a-z')
         run_id=$(/usr/bin/uuidgen)
         started=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
-        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","startedAt":"%s","status":"running"}\\n' \\
-          "$run_id" \(shellQuoted(automationID)) "$session_id" "$started" >> "$log"
+        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","startedAt":"%s","status":"running","trigger":"%s"}\\n' \\
+          "$run_id" \(shellQuoted(automationID)) "$session_id" "$started" "$trigger" >> "$log"
         \(command)
         status=$?
         finished=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -126,8 +140,8 @@ enum AutomationJob {
           state=failed
           title='Automation failed'
         fi
-        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","finishedAt":"%s","status":"%s","exitCode":%s}\\n' \\
-          "$run_id" \(shellQuoted(automationID)) "$session_id" "$finished" "$state" "$status" >> "$log"
+        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","finishedAt":"%s","status":"%s","exitCode":%s,"trigger":"%s"}\\n' \\
+          "$run_id" \(shellQuoted(automationID)) "$session_id" "$finished" "$state" "$status" "$trigger" >> "$log"
         /usr/bin/osascript -e "display notification \\"$(printf '%s' \(shellQuoted(appleScriptSafe(automation.name))))\\" with title \\"$title\\"" >/dev/null 2>&1 || true
         exit $status
         """
@@ -188,6 +202,17 @@ enum AutomationJob {
             format: .xml,
             options: 0
         )
+    }
+
+    /// Where "Run Now" leaves its marker for a given automation. It sits
+    /// beside the run log so both live in the same Conan Code directory.
+    static func forcedMarkerPath(
+        runLogPath: String,
+        automationID: String
+    ) -> String {
+        let directory = (runLogPath as NSString).deletingLastPathComponent
+        return (directory as NSString)
+            .appendingPathComponent("automation-forced-\(automationID)")
     }
 
     /// Single-quotes a value for `/bin/sh`, so a prompt containing quotes,

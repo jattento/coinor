@@ -76,6 +76,35 @@ func aPartiallyWrittenTrailingLineIsSkipped() {
     #expect(runs.map(\.id) == ["r1"])
 }
 
+// MARK: - Trigger
+
+@Test
+func aForcedRunIsReportedAsManual() {
+    let log = """
+    {"runID":"r1","automationID":"a1","sessionID":"s1","startedAt":"2026-01-01T09:00:00Z","status":"running","trigger":"forced"}
+    {"runID":"r1","automationID":"a1","sessionID":"s1","finishedAt":"2026-01-01T09:01:00Z","status":"succeeded","exitCode":0,"trigger":"forced"}
+    """
+    let runs = AutomationRunLog.runs(from: log)
+    #expect(runs[0].trigger == .forced)
+}
+
+@Test
+func aScheduledRunIsReportedAsScheduled() {
+    let log = """
+    {"runID":"r1","automationID":"a1","sessionID":"s1","startedAt":"2026-01-01T09:00:00Z","status":"running","trigger":"scheduled"}
+    """
+    #expect(AutomationRunLog.runs(from: log)[0].trigger == .scheduled)
+}
+
+/// Logs written before runs recorded a trigger must still read back.
+@Test
+func aRunWithoutATriggerDefaultsToScheduled() {
+    let log = """
+    {"runID":"r1","automationID":"a1","sessionID":"s1","startedAt":"2026-01-01T09:00:00Z","status":"running"}
+    """
+    #expect(AutomationRunLog.runs(from: log)[0].trigger == .scheduled)
+}
+
 @Test
 func anEmptyLogYieldsNoRuns() {
     #expect(AutomationRunLog.runs(from: "").isEmpty)

@@ -118,6 +118,51 @@ struct AutomationSettings: Equatable, Sendable, Codable {
 struct AutomationState: Equatable, Sendable, Codable {
     var settings: AutomationSettings?
     var automations: [String: Automation]
+    /// Runs whose Grok session has already been titled after its automation.
+    ///
+    /// Titling happens once per run so a conversation the user renamed by hand
+    /// is never overwritten on the next refresh. Oldest entries are pruned.
+    var titledRunIDs: [String]
 
-    static let empty = AutomationState(settings: nil, automations: [:])
+    static let empty = AutomationState(
+        settings: nil,
+        automations: [:],
+        titledRunIDs: []
+    )
+
+    /// Keeps the persisted list bounded; runs age out long before this.
+    static let titledRunHistoryLimit = 400
+}
+
+extension AutomationState {
+    private enum CodingKeys: String, CodingKey {
+        case settings, automations, titledRunIDs
+    }
+
+    /// Decodes leniently so a document written before run titling existed
+    /// still parses.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settings = try container.decodeIfPresent(
+            AutomationSettings.self,
+            forKey: .settings
+        )
+        automations = try container.decodeIfPresent(
+            [String: Automation].self,
+            forKey: .automations
+        ) ?? [:]
+        titledRunIDs = try container.decodeIfPresent(
+            [String].self,
+            forKey: .titledRunIDs
+        ) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(settings, forKey: .settings)
+        try container.encode(automations, forKey: .automations)
+        if !titledRunIDs.isEmpty {
+            try container.encode(titledRunIDs, forKey: .titledRunIDs)
+        }
+    }
 }

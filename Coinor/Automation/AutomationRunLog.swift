@@ -20,6 +20,8 @@ enum AutomationRunLog {
         var finishedAt: Date?
         var status: String
         var exitCode: Int?
+        /// Absent in logs written before runs recorded why they started.
+        var trigger: String?
     }
 
     /// Parses the log into runs, newest first, folding each run's start and
@@ -57,6 +59,9 @@ enum AutomationRunLog {
                 )
             }()
             run.sessionID = event.sessionID
+            if let trigger = event.trigger.flatMap(AutomationTrigger.init(rawValue:)) {
+                run.trigger = trigger
+            }
             if let startedAt = event.startedAt { run.startedAt = startedAt }
             if let finishedAt = event.finishedAt { run.finishedAt = finishedAt }
             run.status = status(from: event.status)

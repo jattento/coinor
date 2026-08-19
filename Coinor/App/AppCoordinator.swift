@@ -1487,6 +1487,44 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// Names an automation run's conversation after the automation that
+    /// created it.
+    ///
+    /// A run's session is created by `grok` from a launchd job, so Grok titles
+    /// it from the prompt's contents and the conversation is indistinguishable
+    /// from a hand-started one. Renaming it through Grok's own rename makes it
+    /// legible everywhere, not just inside Conan Code.
+    ///
+    /// Unlike `renameConversation`, this does not share the interactive rename
+    /// task slot: several runs can settle at once.
+    @discardableResult
+    func titleAutomationRun(
+        sessionID: String,
+        workingDirectory: String,
+        title: String
+    ) async -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let controlClient = controlClient(forSession: sessionID)
+        else {
+            return false
+        }
+        do {
+            try await controlClient.rename(
+                GrokSessionID(sessionID),
+                to: trimmed,
+                // The session may not be in the catalog yet, so the directory
+                // comes from the automation rather than from a lookup.
+                inDirectory: session(sessionID)?.cwd ?? workingDirectory
+            )
+            return true
+        } catch {
+            // A run that cannot be renamed still works; it just keeps Grok's
+            // generated title.
+            return false
+        }
+    }
+
     func renameConversation(_ sessionID: String, title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,

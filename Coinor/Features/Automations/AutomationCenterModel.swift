@@ -15,11 +15,57 @@ final class AutomationCenterModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var runs: [AutomationRun] = []
     @Published private(set) var models: [GrokModelOption] = []
+    /// Automations the user just asked to run, before their job has managed to
+    /// append a run line. Without this the "Run Now" button would look inert
+    /// for the second or two launchd takes to start the job.
+    @Published private(set) var startingAutomationIDs: Set<String> = []
 
     private var installer: AutomationJobInstaller?
+    private var pollTask: Task<Void, Never>?
+
+    /// How often the run log is re-read while the tab is on screen. Runs are
+    /// started by launchd out of process, so polling the log is what makes
+    /// their progress visible.
+    private static let pollInterval: Duration = .seconds(2)
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
+    }
+
+    deinit {
+        pollTask?.cancel()
+    }
+
+    // MARK: - Live state
+
+    /// Whether this automation has a run in flight right now.
+    func isRunning(_ automationID: String) -> Bool {
+        if startingAutomationIDs.contains(automationID) { return true }
+        return runs.contains {
+            $0.automationID == automationID && $0.status == .running
+        }
+    }
+
+    /// The most recent run of an automation, for the row's status line.
+    func latestRun(for automationID: String) -> AutomationRun? {
+        runs.first { $0.automationID == automationID }
+    }
+
+    /// Starts polling the run log while the Automations tab is visible.
+    func startPolling() {
+        guard pollTask == nil else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: AutomationCenterModel.pollInterval)
+                guard !Task.isCancelled else { return }
+                await self?.reloadRuns()
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     // MARK: - Derived configuration
@@ -63,8 +109,7 @@ final class AutomationCenterModel: ObservableObject {
     /// job with the stored configuration.
     func refresh() {
         guard let installer = resolveInstaller() else { return }
-        runs = AutomationRunLog.runs(at: installer.runLogURL)
-        coordinator.registerAutomationSessions(runs)
+        reloadRuns()
         if models.isEmpty {
             let path = installer.grokExecutablePath
             Task.detached {
@@ -78,6 +123,56 @@ final class AutomationCenterModel: ObservableObject {
             automations: automations,
             systemPrompt: systemPrompt
         )
+    }
+
+    /// Re-reads the run log written by the launchd jobs.
+    ///
+    /// This is the only channel through which Conan Code learns that a run
+    /// started or finished, because the runs happen in another process.
+    func reloadRuns() {
+        guard let installer = resolveInstaller() else { return }
+        let loaded = AutomationRunLog.runs(at: installer.runLogURL)
+        guard loaded != runs else { return }
+        runs = loaded
+        // Once a run has appeared in the log, the optimistic marker is no
+        // longer needed for that automation.
+        startingAutomationIDs = startingAutomationIDs.filter { id in
+            !loaded.contains { $0.automationID == id }
+        }
+        coordinator.registerAutomationSessions(loaded)
+        titleNewRuns(loaded)
+    }
+
+    /// Names each new run's conversation after its automation.
+    ///
+    /// `grok` titles the session from the prompt's contents, which makes an
+    /// automation run indistinguishable from a hand-started conversation in
+    /// the sidebar. Renaming happens once per run, so a title the user later
+    /// changes by hand is never overwritten.
+    private func titleNewRuns(_ loaded: [AutomationRun]) {
+        let document = coordinator.metadata
+        let pending = loaded.filter { run in
+            run.sessionID != nil && !document.hasTitledAutomationRun(run.id)
+        }
+        guard !pending.isEmpty else { return }
+
+        Task {
+            for run in pending {
+                guard let sessionID = run.sessionID,
+                      let automation = coordinator.metadata.automation(run.automationID)
+                else { continue }
+                let renamed = await coordinator.titleAutomationRun(
+                    sessionID: sessionID,
+                    workingDirectory: automation.workingDirectory,
+                    title: automation.name
+                )
+                guard renamed else { continue }
+                await coordinator.persist(
+                    { $0.markAutomationRunTitled(run.id) },
+                    rebuildCatalog: false
+                )
+            }
+        }
     }
 
     // MARK: - Mutations
@@ -138,6 +233,16 @@ final class AutomationCenterModel: ObservableObject {
                 )
             }
             try installer.runNow(automationID: automationID)
+            // Show the run as in flight straight away: launchd takes a moment
+            // to start the job, and the log line only lands after that.
+            startingAutomationIDs.insert(automationID)
+            errorMessage = nil
+            startPolling()
+            Task {
+                // Give the job time to append its first line, then reconcile.
+                try? await Task.sleep(for: .seconds(1))
+                reloadRuns()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -145,6 +250,12 @@ final class AutomationCenterModel: ObservableObject {
 
     func dismissError() {
         errorMessage = nil
+    }
+
+    /// Opens the conversation a run created, in the ordinary conversation
+    /// view. The session is Grok's, so it behaves like any other.
+    func openConversation(_ sessionID: String) {
+        coordinator.selectConversation(sessionID)
     }
 
     // MARK: - Job plumbing

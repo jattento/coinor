@@ -57,4 +57,25 @@ extension MetadataDocument {
         value.isPaused = paused
         upsertAutomation(value)
     }
+
+    // MARK: - Run titling
+
+    /// Whether this run's conversation has already been named after its
+    /// automation. Titling once is what keeps a manual rename from being
+    /// overwritten on the next refresh.
+    func hasTitledAutomationRun(_ runID: String) -> Bool {
+        automation.titledRunIDs.contains(runID)
+    }
+
+    mutating func markAutomationRunTitled(_ runID: String) {
+        var state = automation
+        guard !state.titledRunIDs.contains(runID) else { return }
+        state.titledRunIDs.append(runID)
+        if state.titledRunIDs.count > AutomationState.titledRunHistoryLimit {
+            state.titledRunIDs.removeFirst(
+                state.titledRunIDs.count - AutomationState.titledRunHistoryLimit
+            )
+        }
+        automation = state
+    }
 }

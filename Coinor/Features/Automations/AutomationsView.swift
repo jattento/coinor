@@ -18,7 +18,13 @@ struct AutomationsView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { model.refresh() }
+        .onAppear {
+            model.refresh()
+            // Runs happen in another process, so the log is polled while this
+            // tab is on screen and left alone when it is not.
+            model.startPolling()
+        }
+        .onDisappear { model.stopPolling() }
         .overlay(alignment: .top) {
             if let message = model.errorMessage {
                 HStack(spacing: 8) {
@@ -107,14 +113,51 @@ struct AutomationsView: View {
         if model.automations.isEmpty {
             emptyState
         } else {
-            List(selection: $selectedAutomationID) {
-                ForEach(model.automations) { automation in
-                    automationRow(automation)
-                        .tag(automation.id)
+            // Resizable, so the balance between the list and the detail is the
+            // user's call rather than a fixed guess.
+            HSplitView {
+                List(selection: $selectedAutomationID) {
+                    ForEach(model.automations) { automation in
+                        automationRow(automation)
+                            .tag(automation.id)
+                    }
                 }
+                .listStyle(.sidebar)
+                .frame(minWidth: 260, idealWidth: 380, maxWidth: 560)
+
+                // The detail is the point of the tab: schedule, prompt and
+                // every execution for the selected automation.
+                Group {
+                    if let automation = selectedAutomation {
+                        AutomationDetailView(
+                            model: model,
+                            automation: automation,
+                            edit: { editingAutomationID = automation.id }
+                        )
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 28))
+                                .foregroundStyle(.secondary)
+                            Text("Select an automation")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(minWidth: 420)
             }
-            .listStyle(.sidebar)
         }
+    }
+
+    /// The automation currently shown in the detail pane, defaulting to the
+    /// first so the tab is never blank when automations exist.
+    private var selectedAutomation: Automation? {
+        if let selectedAutomationID,
+           let match = model.automation(selectedAutomationID) {
+            return match
+        }
+        return model.automations.first
     }
 
     private var emptyState: some View {
@@ -143,33 +186,50 @@ struct AutomationsView: View {
     }
 
     private func automationRow(_ automation: Automation) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: automation.isPaused ? "pause.circle" : "clock")
-                .foregroundStyle(automation.isPaused ? .orange : .secondary)
-            VStack(alignment: .leading, spacing: 2) {
+        // Two lines: the name and controls on top, the schedule underneath, so
+        // the schedule has the full row width instead of competing with the
+        // status for space.
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: automation.isPaused ? "pause.circle" : "clock")
+                    .foregroundStyle(automation.isPaused ? .orange : .secondary)
                 Text(automation.name)
                     .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                if automation.isPaused {
+                    Text("Paused")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                Spacer(minLength: 4)
+                if model.isRunning(automation.id) {
+                    // Already in flight: a second kickstart would restart it.
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Running now")
+                } else {
+                    Button {
+                        model.runNow(automation.id)
+                    } label: {
+                        Label("Run Now", systemImage: "play.fill")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Run this automation now")
+                }
+            }
+
+            HStack(spacing: 6) {
                 Text(subtitle(for: automation))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                runStatus(for: automation)
             }
-            Spacer()
-            if automation.isPaused {
-                Text("Paused")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-            Button {
-                model.runNow(automation.id)
-            } label: {
-                Label("Run Now", systemImage: "play.fill")
-                    .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .help("Run this automation now")
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture {
             selectedAutomationID = automation.id
@@ -192,25 +252,49 @@ struct AutomationsView: View {
         }
     }
 
+    /// What happened on the most recent run, so the row reports progress
+    /// without the user having to open the automation.
+    @ViewBuilder
+    private func runStatus(for automation: Automation) -> some View {
+        if model.isRunning(automation.id) {
+            Text("Running…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if let run = model.latestRun(for: automation.id) {
+            HStack(spacing: 4) {
+                switch run.status {
+                case .succeeded:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .failed:
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                case .running:
+                    EmptyView()
+                }
+                if let finished = run.finishedAt {
+                    Text(finished.formatted(.relative(presentation: .numeric)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .help(run.errorMessage ?? "Last run \(run.status.rawValue)")
+        }
+    }
+
+    /// The row's second line. Kept short on purpose: the next run time and the
+    /// model are shown in full in the detail, so the row does not repeat them
+    /// at the cost of truncating the schedule.
     private func subtitle(for automation: Automation) -> String {
-        var parts: [String] = [automation.schedule]
+        // Described the way it was configured, not as raw cron.
+        var parts: [String] = [
+            AutomationRecurrence.parse(automation.schedule).summary,
+        ]
         let project = model.projectName(for: automation)
         if !project.isEmpty {
             parts.append(project)
         }
-        if let modelID = automation.model, !modelID.isEmpty {
-            parts.append(modelID)
-        }
-        if let next = nextFire(for: automation) {
-            parts.append("next \(next.formatted(date: .abbreviated, time: .shortened))")
-        }
         return parts.joined(separator: " • ")
-    }
-
-    private func nextFire(for automation: Automation) -> Date? {
-        guard let schedule = try? CronSchedule.parse(automation.schedule),
-              !automation.isPaused else { return nil }
-        return schedule.nextFire(after: Date())
     }
 
     private var newAutomationID: String {
@@ -295,12 +379,16 @@ struct AutomationEditorView: View {
     @Binding var isPresented: Bool
 
     @State private var name = ""
-    @State private var schedule = ""
-    @State private var scheduleProblem: String?
+    @State private var recurrence: AutomationRecurrence = .daily(hour: 9, minute: 0)
     @State private var prompt = ""
     @State private var selectedProjectID: String?
     @State private var selectedModel: String?
     @State private var isPaused = false
+
+    /// Why the current schedule cannot be used, or `nil` when it is valid.
+    private var scheduleProblem: String? {
+        Self.scheduleProblem(in: recurrence.cronExpression)
+    }
 
     /// Why this schedule cannot be used, or `nil` when it is valid.
     ///
@@ -324,6 +412,187 @@ struct AutomationEditorView: View {
         model.automation(automationID) == nil
     }
 
+    // MARK: - Schedule editor
+
+    /// A recurrence picker rather than a cron field: the mode chooses which
+    /// controls appear, and cron is generated underneath. `Custom` still
+    /// exposes the raw expression for anything the friendly modes cannot say.
+    @ViewBuilder
+    private var scheduleEditor: some View {
+        Picker("Repeat", selection: recurrenceKind) {
+            ForEach(AutomationRecurrence.Kind.allCases) { kind in
+                Text(kind.title).tag(kind)
+            }
+        }
+
+        switch recurrence {
+        case let .everyMinutes(interval):
+            Picker("Every", selection: Binding(
+                get: { interval },
+                set: { recurrence = .everyMinutes($0) }
+            )) {
+                ForEach(AutomationRecurrence.minuteIntervals, id: \.self) { value in
+                    Text("\(value) minutes").tag(value)
+                }
+            }
+
+        case let .hourly(minute):
+            Picker("At minute", selection: Binding(
+                get: { minute },
+                set: { recurrence = .hourly(minute: $0) }
+            )) {
+                ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { value in
+                    Text(":\(String(format: "%02d", value))").tag(value)
+                }
+            }
+
+        case let .daily(hour, minute):
+            timePicker(hour: hour, minute: minute) {
+                .daily(hour: $0, minute: $1)
+            }
+
+        case let .weekly(weekdays, hour, minute):
+            weekdayPicker(selected: weekdays) {
+                recurrence = .weekly(weekdays: $0, hour: hour, minute: minute)
+            }
+            timePicker(hour: hour, minute: minute) {
+                .weekly(weekdays: weekdays, hour: $0, minute: $1)
+            }
+
+        case let .monthly(day, hour, minute):
+            Picker("On day", selection: Binding(
+                get: { day },
+                set: { recurrence = .monthly(day: $0, hour: hour, minute: minute) }
+            )) {
+                ForEach(1...28, id: \.self) { value in
+                    Text("\(value)").tag(value)
+                }
+            }
+            timePicker(hour: hour, minute: minute) {
+                .monthly(day: day, hour: $0, minute: $1)
+            }
+
+        case let .custom(expression):
+            TextField("Cron expression", text: Binding(
+                get: { expression },
+                set: { recurrence = .custom($0) }
+            ))
+            .font(.system(size: 12, design: .monospaced))
+            Text("minute hour day month weekday")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        // What this actually means, in words, plus the next time it will run.
+        HStack(spacing: 6) {
+            Image(systemName: "clock")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recurrence.summary)
+                    .font(.callout)
+                if let next = nextRun {
+                    Text("Next run \(next.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        if let scheduleProblem {
+            Label(scheduleProblem, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    /// The mode selector. Switching modes keeps the time already chosen.
+    private var recurrenceKind: Binding<AutomationRecurrence.Kind> {
+        Binding(
+            get: { recurrence.kind },
+            set: { kind in
+                guard kind != recurrence.kind else { return }
+                recurrence = .default(for: kind, from: recurrence)
+            }
+        )
+    }
+
+    private func timePicker(
+        hour: Int,
+        minute: Int,
+        rebuild: @escaping (Int, Int) -> AutomationRecurrence
+    ) -> some View {
+        DatePicker(
+            "At",
+            selection: Binding(
+                get: {
+                    var components = DateComponents()
+                    components.hour = hour
+                    components.minute = minute
+                    return Calendar.current.date(from: components) ?? Date()
+                },
+                set: { date in
+                    let parts = Calendar.current.dateComponents(
+                        [.hour, .minute],
+                        from: date
+                    )
+                    recurrence = rebuild(parts.hour ?? 0, parts.minute ?? 0)
+                }
+            ),
+            displayedComponents: .hourAndMinute
+        )
+    }
+
+    private func weekdayPicker(
+        selected: Set<Int>,
+        update: @escaping (Set<Int>) -> Void
+    ) -> some View {
+        HStack(spacing: 4) {
+            Text("On")
+            Spacer()
+            ForEach(0..<7, id: \.self) { day in
+                let isOn = selected.contains(day)
+                Button {
+                    var next = selected
+                    if isOn {
+                        // Never leave the schedule with no day selected.
+                        if next.count > 1 { next.remove(day) }
+                    } else {
+                        next.insert(day)
+                    }
+                    update(next)
+                } label: {
+                    Text(AutomationRecurrence.weekdayNames[day])
+                        .font(.system(size: 11, weight: isOn ? .semibold : .regular))
+                        .frame(width: 34, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(isOn ? Color.accentColor : Color.clear)
+                        )
+                        .foregroundStyle(isOn ? Color.white : Color.secondary)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(
+                                    isOn
+                                        ? Color.clear
+                                        : Color(nsColor: .separatorColor)
+                                )
+                        }
+                }
+                .buttonStyle(.plain)
+                .help(AutomationRecurrence.weekdayNames[day])
+            }
+        }
+    }
+
+    /// The next time this schedule fires, so the user can sanity-check it.
+    private var nextRun: Date? {
+        guard scheduleProblem == nil,
+              let parsed = try? CronSchedule.parse(recurrence.cronExpression) else {
+            return nil
+        }
+        return parsed.nextFire(after: Date())
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -342,15 +611,11 @@ struct AutomationEditorView: View {
 
             Form {
                 TextField("Name", text: $name)
-                TextField("Schedule (cron)", text: $schedule)
-                    .onChange(of: schedule) { newValue in
-                        scheduleProblem = Self.scheduleProblem(in: newValue)
-                    }
-                if let scheduleProblem {
-                    Label(scheduleProblem, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+
+                Section("Schedule") {
+                    scheduleEditor
                 }
+
                 Picker("Project", selection: $selectedProjectID) {
                     ForEach(model.projectSuggestions()) { suggestion in
                         Text(suggestion.name).tag(Optional(suggestion.id))
@@ -408,7 +673,7 @@ struct AutomationEditorView: View {
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && Self.scheduleProblem(in: schedule) == nil
+            && scheduleProblem == nil
             && !prompt.trimmingCharacters(in: .whitespaces).isEmpty
             && selectedProjectID != nil
     }
@@ -416,7 +681,7 @@ struct AutomationEditorView: View {
     private func load() {
         if let automation = model.automation(automationID) {
             name = automation.name
-            schedule = automation.schedule
+            recurrence = .parse(automation.schedule)
             prompt = automation.prompt
             isPaused = automation.isPaused
             selectedModel = automation.model
@@ -427,13 +692,12 @@ struct AutomationEditorView: View {
             }
         } else {
             name = ""
-            schedule = "0 * * * *"
+            recurrence = .daily(hour: 9, minute: 0)
             prompt = ""
             isPaused = false
             selectedProjectID = model.projectSuggestions().first?.id
             selectedModel = nil
         }
-        scheduleProblem = Self.scheduleProblem(in: schedule)
     }
 
     private func workingDirectory(from projectID: String?) -> String {
@@ -446,7 +710,7 @@ struct AutomationEditorView: View {
         let automation = Automation(
             id: automationID,
             name: name.trimmingCharacters(in: .whitespaces),
-            schedule: schedule.trimmingCharacters(in: .whitespaces),
+            schedule: recurrence.cronExpression,
             workingDirectory: workingDirectory(from: selectedProjectID),
             prompt: prompt,
             model: selectedModel,

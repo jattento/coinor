@@ -92,6 +92,65 @@ func defaultSystemPromptForbidsAskingTheUser() {
     #expect(text.contains("clarification"))
 }
 
+// MARK: - Run titling bookkeeping
+
+@Test
+func aRunIsOnlyTitledOnce() {
+    var document = MetadataDocument.empty
+    #expect(!document.hasTitledAutomationRun("run-1"))
+
+    document.markAutomationRunTitled("run-1")
+    #expect(document.hasTitledAutomationRun("run-1"))
+
+    // Marking again must not duplicate the entry, so a manual rename later is
+    // never overwritten by a second titling pass.
+    document.markAutomationRunTitled("run-1")
+    #expect(document.automation.titledRunIDs == ["run-1"])
+}
+
+@Test
+func titledRunHistoryIsPruned() {
+    var document = MetadataDocument.empty
+    let limit = AutomationState.titledRunHistoryLimit
+    for index in 0..<(limit + 25) {
+        document.markAutomationRunTitled("run-\(index)")
+    }
+    let stored = document.automation.titledRunIDs
+    #expect(stored.count == limit)
+    // The oldest entries are dropped, the newest kept.
+    #expect(stored.last == "run-\(limit + 24)")
+    #expect(!stored.contains("run-0"))
+}
+
+@Test
+func titledRunsSurviveRelaunch() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("AutomationTitled-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    do {
+        let store = try MetadataStore(directoryURL: directory)
+        try await store.update { $0.markAutomationRunTitled("run-7") }
+    }
+
+    let store = try MetadataStore(directoryURL: directory)
+    let document = await store.currentDocument
+    #expect(document.hasTitledAutomationRun("run-7"))
+}
+
+/// An automation slice written before run titling existed must still decode.
+@Test
+func automationStateWithoutTitledRunsDecodes() throws {
+    let json = #"{"automations":{}}"#
+    let state = try JSONDecoder().decode(
+        AutomationState.self,
+        from: Data(json.utf8)
+    )
+    #expect(state.titledRunIDs.isEmpty)
+    #expect(state.automations.isEmpty)
+}
+
 // MARK: - Persistence round trip
 
 @Test
