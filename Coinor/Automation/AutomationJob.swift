@@ -61,6 +61,9 @@ enum AutomationJob {
         if let model = automation.model, !model.isEmpty {
             tokens += [.flag("--model"), .value(model)]
         }
+        if let effort = automation.reasoningEffort {
+            tokens += [.flag("--reasoning-effort"), .value(effort.rawValue)]
+        }
         tokens += [.flag("--always-approve"), .flag("-p"), .value(automation.prompt)]
         return tokens
     }

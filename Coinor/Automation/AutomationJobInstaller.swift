@@ -96,12 +96,25 @@ struct AutomationJobInstaller: Sendable {
             logPath: jobLogURL.path
         )
         let url = plistURL(for: automation.id)
+        // `bootout` kills whatever the job is running right now, so reloading
+        // an unchanged job would abort a run in flight. Reinstall only when the
+        // definition actually changed, or when launchd does not have it loaded.
+        if (try? Data(contentsOf: url)) == data,
+           isLoaded(automationID: automation.id) {
+            return
+        }
         try data.write(to: url, options: .atomic)
 
         // Replace any previous definition: bootout is best-effort because the
         // job may not be loaded yet.
         try? unload(automationID: automation.id)
         try runLaunchctl(["bootstrap", domain, url.path])
+    }
+
+    /// Whether launchd already knows this job.
+    func isLoaded(automationID: String) -> Bool {
+        let target = "\(domain)/\(AutomationJob.label(for: automationID))"
+        return (try? runLaunchctl(["print", target])) != nil
     }
 
     /// Unloads and deletes the job.
@@ -198,7 +211,9 @@ struct AutomationJobInstaller: Sendable {
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = arguments
         let errors = Pipe()
-        process.standardOutput = Pipe()
+        // `print` writes a long job dump nobody reads here; discarding it
+        // keeps a full pipe buffer from blocking the process.
+        process.standardOutput = FileHandle.nullDevice
         process.standardError = errors
         try process.run()
         let data = errors.fileHandleForReading.readDataToEndOfFile()

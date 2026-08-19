@@ -88,6 +88,7 @@ func rejectedScheduleReportsItsSize() throws {
 
 private func sampleAutomation(
     model: String? = nil,
+    reasoningEffort: AutomationReasoningEffort? = nil,
     prompt: String = "review open PRs",
     schedule: String = "0 9 * * *"
 ) -> Automation {
@@ -97,7 +98,8 @@ private func sampleAutomation(
         schedule: schedule,
         workingDirectory: "/Users/me/project",
         prompt: prompt,
-        model: model
+        model: model,
+        reasoningEffort: reasoningEffort
     )
 }
 
@@ -195,6 +197,18 @@ func jobPinsTheModelOnlyWhenOneIsChosen() throws {
     let withoutModelScript = try #require(withoutModel["ProgramArguments"] as? [String])[2]
     // No model pinned: Grok's own default is used.
     #expect(!withoutModelScript.contains("--model"))
+}
+
+@Test
+func jobPassesTheReasoningEffortOnlyWhenOneIsChosen() throws {
+    let withEffort = try definition(sampleAutomation(reasoningEffort: .high))
+    let withEffortScript = try #require(withEffort["ProgramArguments"] as? [String])[2]
+    #expect(withEffortScript.contains("--reasoning-effort 'high'"))
+
+    let withoutEffort = try definition(sampleAutomation(reasoningEffort: nil))
+    let withoutEffortScript = try #require(withoutEffort["ProgramArguments"] as? [String])[2]
+    // No effort chosen: the model's own default applies.
+    #expect(!withoutEffortScript.contains("--reasoning-effort"))
 }
 
 @Test

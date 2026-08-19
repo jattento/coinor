@@ -20,6 +20,10 @@ struct Automation: Identifiable, Equatable, Sendable, Codable {
     /// default, so an automation created before the field existed keeps
     /// working unchanged.
     var model: String?
+    /// How hard the model is asked to think. `nil` leaves Grok's own default
+    /// for the model, which is what every automation used before the field
+    /// existed.
+    var reasoningEffort: AutomationReasoningEffort?
     /// A paused automation keeps its configuration but its launchd job is
     /// unloaded, so it neither fires on schedule nor catches up on wake.
     var isPaused: Bool
@@ -31,6 +35,7 @@ struct Automation: Identifiable, Equatable, Sendable, Codable {
         workingDirectory: String = "",
         prompt: String = "",
         model: String? = nil,
+        reasoningEffort: AutomationReasoningEffort? = nil,
         isPaused: Bool = false
     ) {
         self.id = id
@@ -39,7 +44,36 @@ struct Automation: Identifiable, Equatable, Sendable, Codable {
         self.workingDirectory = workingDirectory
         self.prompt = prompt
         self.model = model
+        self.reasoningEffort = reasoningEffort
         self.isPaused = isPaused
+    }
+}
+
+/// The reasoning effort levels `grok --reasoning-effort` accepts.
+///
+/// Grok owns which levels a given model honours; Conan Code only offers the
+/// documented set and passes the choice through unchanged.
+enum AutomationReasoningEffort: String, CaseIterable, Codable, Equatable, Sendable, Identifiable {
+    case none
+    case minimal
+    case low
+    case medium
+    case high
+    case xhigh
+    case max
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .minimal: "Minimal"
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xhigh: "Extra high"
+        case .max: "Maximum"
+        }
     }
 }
 

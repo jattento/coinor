@@ -97,6 +97,63 @@ func installWritesThePlistAndBootstrapsIt() throws {
     #expect(harness.recorder.recorded.last?.contains(plistURL.path) == true)
 }
 
+/// Reinstalling an unchanged job would `bootout` it, and launchd kills
+/// whatever that job is running, so an in-flight automation run would be
+/// aborted by nothing more than a UI refresh.
+@Test
+func reinstallingAnUnchangedLoadedJobLeavesLaunchdAlone() throws {
+    let harness = try Harness()
+    defer { harness.cleanUp() }
+
+    try harness.installer.install(automation: automation(), systemPrompt: "policy")
+    try harness.installer.install(automation: automation(), systemPrompt: "policy")
+
+    // Only the first install touched launchd; the second merely checked that
+    // the job is still loaded.
+    #expect(harness.recorder.operations == ["bootout", "bootstrap", "print"])
+}
+
+@Test
+func installingAChangedDefinitionReloadsTheJob() throws {
+    let harness = try Harness()
+    defer { harness.cleanUp() }
+
+    try harness.installer.install(automation: automation(), systemPrompt: "policy")
+    try harness.installer.install(
+        automation: automation(prompt: "do something else"),
+        systemPrompt: "policy"
+    )
+
+    #expect(harness.recorder.operations == [
+        "bootout", "bootstrap", "bootout", "bootstrap",
+    ])
+}
+
+/// An unchanged plist that launchd does not know about still has to be
+/// bootstrapped, otherwise the automation would never fire again.
+@Test
+func anUnchangedButUnloadedJobIsBootstrapped() throws {
+    let harness = try Harness()
+    defer { harness.cleanUp() }
+
+    try harness.installer.install(automation: automation(), systemPrompt: "policy")
+
+    struct NotLoaded: Error {}
+    let recorder = LaunchctlRecorder()
+    let installer = AutomationJobInstaller(
+        launchAgentsDirectory: harness.launchAgents,
+        supportDirectory: harness.support,
+        grokExecutablePath: "/Users/me/bin/grok",
+        runLaunchctl: { arguments in
+            recorder.record(arguments)
+            if arguments.first == "print" { throw NotLoaded() }
+        }
+    )
+    try installer.install(automation: automation(), systemPrompt: "policy")
+
+    #expect(recorder.operations == ["print", "bootout", "bootstrap"])
+}
+
 @Test
 func installingAPausedAutomationUnloadsItInsteadOfScheduling() throws {
     let harness = try Harness()

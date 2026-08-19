@@ -383,6 +383,7 @@ struct AutomationEditorView: View {
     @State private var prompt = ""
     @State private var selectedProjectID: String?
     @State private var selectedModel: String?
+    @State private var selectedEffort: AutomationReasoningEffort?
     @State private var isPaused = false
 
     /// Why the current schedule cannot be used, or `nil` when it is valid.
@@ -628,6 +629,12 @@ struct AutomationEditorView: View {
                             .tag(Optional(option.id))
                     }
                 }
+                Picker("Effort", selection: $selectedEffort) {
+                    Text("Model default").tag(AutomationReasoningEffort?.none)
+                    ForEach(AutomationReasoningEffort.allCases) { effort in
+                        Text(effort.title).tag(Optional(effort))
+                    }
+                }
                 Toggle("Paused", isOn: $isPaused)
                 Text("Prompt")
                     .font(.callout)
@@ -685,6 +692,7 @@ struct AutomationEditorView: View {
             prompt = automation.prompt
             isPaused = automation.isPaused
             selectedModel = automation.model
+            selectedEffort = automation.reasoningEffort
             if !automation.workingDirectory.isEmpty {
                 selectedProjectID = model.projectSuggestions().first {
                     $0.workingDirectory == automation.workingDirectory
@@ -697,6 +705,7 @@ struct AutomationEditorView: View {
             isPaused = false
             selectedProjectID = model.projectSuggestions().first?.id
             selectedModel = nil
+            selectedEffort = nil
         }
     }
 
@@ -714,6 +723,7 @@ struct AutomationEditorView: View {
             workingDirectory: workingDirectory(from: selectedProjectID),
             prompt: prompt,
             model: selectedModel,
+            reasoningEffort: selectedEffort,
             isPaused: isPaused
         )
         model.saveAutomation(automation)

@@ -230,7 +230,25 @@ func automationWithoutAModelDecodes() throws {
         from: Data(json.utf8)
     )
     #expect(automation.model == nil)
+    #expect(automation.reasoningEffort == nil)
     #expect(automation.name == "Legacy")
+}
+
+@Test
+func reasoningEffortSurvivesEncoding() throws {
+    let automation = Automation(
+        id: "a1",
+        name: "Nightly",
+        schedule: "0 9 * * *",
+        workingDirectory: "/tmp",
+        prompt: "p",
+        reasoningEffort: .xhigh
+    )
+    let decoded = try JSONDecoder().decode(
+        Automation.self,
+        from: JSONEncoder().encode(automation)
+    )
+    #expect(decoded.reasoningEffort == .xhigh)
 }
 
 /// An empty automation slice must not be written, keeping the document sparse

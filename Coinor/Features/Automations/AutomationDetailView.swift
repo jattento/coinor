@@ -100,6 +100,10 @@ struct AutomationDetailView: View {
             detailRow("Next run", nextRunText)
             detailRow("Project", model.projectName(for: automation))
             detailRow("Model", automation.model ?? "Grok default")
+            detailRow(
+                "Effort",
+                automation.reasoningEffort?.title ?? "Model default"
+            )
             detailRow("Schedule", automation.schedule, monospaced: true)
         }
     }
