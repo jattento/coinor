@@ -1,0 +1,205 @@
+import Foundation
+
+/// Builds the launchd job that runs one automation.
+///
+/// There is no Conan Code helper process in this path. launchd fires the job
+/// at the scheduled time — and, unlike `cron`, runs a job that was missed
+/// while the machine was asleep or off, folding several missed occurrences
+/// into a single run, which is exactly Conan Code's catch-up contract. The job
+/// then runs `grok` directly in headless mode. `grok` persists the session
+/// itself, so the resulting conversation appears in Conan Code's sidebar
+/// through the ordinary session catalog.
+///
+/// The job appends a line to the run log before and after the run, which is
+/// what gives the Automations tab its run history and what lets the sidebar
+/// mark a conversation as an automation run.
+enum AutomationJob {
+    static let labelPrefix = "dev.coinor.Coinor.automation."
+
+    /// The run log every job appends to, alongside the metadata document.
+    static let runLogFileName = "automation-runs.ndjson"
+
+    static func label(for automationID: String) -> String {
+        labelPrefix + automationID
+    }
+
+    static func plistFileName(for automationID: String) -> String {
+        label(for: automationID) + ".plist"
+    }
+
+    /// One piece of the `grok` command line.
+    ///
+    /// Flags and values are distinguished structurally rather than by
+    /// inspecting the text, so a prompt that happens to start with `-` is
+    /// still quoted as a value and can never be read as a flag.
+    enum Token: Equatable, Sendable {
+        /// A literal flag Conan Code controls.
+        case flag(String)
+        /// User- or configuration-supplied text; always quoted.
+        case value(String)
+        /// The session UUID minted by the job at run time.
+        case sessionID
+    }
+
+    /// The `grok` invocation for one automation.
+    ///
+    /// `--rules` *appends* the shared automation instruction to Grok's own
+    /// system prompt instead of replacing it, so the agent keeps its tools and
+    /// behaviour. `--always-approve` is what keeps an unattended run from
+    /// blocking on a permission prompt. `-p` is headless mode: one user turn,
+    /// after which the agent runs its full loop — tools, subagents and all —
+    /// until it finishes, then exits.
+    static func grokTokens(
+        automation: Automation,
+        systemPrompt: String
+    ) -> [Token] {
+        var tokens: [Token] = [
+            .flag("--cwd"), .value(automation.workingDirectory),
+            .flag("--session-id"), .sessionID,
+            .flag("--rules"), .value(combinedRules(systemPrompt: systemPrompt)),
+        ]
+        if let model = automation.model, !model.isEmpty {
+            tokens += [.flag("--model"), .value(model)]
+        }
+        tokens += [.flag("--always-approve"), .flag("-p"), .value(automation.prompt)]
+        return tokens
+    }
+
+    /// The rendered shell command. Flags stay literal for readability, every
+    /// value is single-quoted, and the session ID is the shell variable the
+    /// job mints per run.
+    static func grokCommand(
+        automation: Automation,
+        systemPrompt: String,
+        grokExecutablePath: String
+    ) -> String {
+        let rendered = grokTokens(
+            automation: automation,
+            systemPrompt: systemPrompt
+        ).map { token -> String in
+            switch token {
+            case let .flag(flag): flag
+            case let .value(value): shellQuoted(value)
+            case .sessionID: "\"$session_id\""
+            }
+        }
+        return ([shellQuoted(grokExecutablePath)] + rendered).joined(separator: " ")
+    }
+
+    /// The shell program launchd runs.
+    ///
+    /// It mints a session UUID so the run can be tied back to its
+    /// conversation, records the run's start and outcome in the log, and
+    /// raises a native notification when it finishes.
+    static func script(
+        automation: Automation,
+        systemPrompt: String,
+        grokExecutablePath: String,
+        runLogPath: String
+    ) -> String {
+        let command = grokCommand(
+            automation: automation,
+            systemPrompt: systemPrompt,
+            grokExecutablePath: grokExecutablePath
+        )
+
+        // Only Conan Code-owned identifiers are interpolated into the JSON;
+        // they are UUIDs, so they cannot carry a quote or a backslash.
+        let automationID = automation.id
+        return """
+        #!/bin/sh
+        set -u
+        log=\(shellQuoted(runLogPath))
+        /bin/mkdir -p "$(/usr/bin/dirname "$log")"
+        session_id=$(/usr/bin/uuidgen | /usr/bin/tr 'A-Z' 'a-z')
+        run_id=$(/usr/bin/uuidgen)
+        started=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
+        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","startedAt":"%s","status":"running"}\\n' \\
+          "$run_id" \(shellQuoted(automationID)) "$session_id" "$started" >> "$log"
+        \(command)
+        status=$?
+        finished=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
+        if [ "$status" -eq 0 ]; then
+          state=succeeded
+          title='Automation finished'
+        else
+          state=failed
+          title='Automation failed'
+        fi
+        printf '{"runID":"%s","automationID":"%s","sessionID":"%s","finishedAt":"%s","status":"%s","exitCode":%s}\\n' \\
+          "$run_id" \(shellQuoted(automationID)) "$session_id" "$finished" "$state" "$status" >> "$log"
+        /usr/bin/osascript -e "display notification \\"$(printf '%s' \(shellQuoted(appleScriptSafe(automation.name))))\\" with title \\"$title\\"" >/dev/null 2>&1 || true
+        exit $status
+        """
+    }
+
+    /// The instruction appended to Grok's system prompt. Falls back to the
+    /// shipped default when the user cleared the shared prompt.
+    static func combinedRules(systemPrompt: String) -> String {
+        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AutomationSettings.default.systemPrompt : trimmed
+    }
+
+    /// The full launchd job definition for one automation.
+    static func definition(
+        automation: Automation,
+        systemPrompt: String,
+        grokExecutablePath: String,
+        runLogPath: String,
+        logPath: String
+    ) throws -> [String: Any] {
+        let schedule = try CronSchedule.parse(automation.schedule)
+        let intervals = try CronLaunchdCompiler.intervals(for: schedule)
+        let program = script(
+            automation: automation,
+            systemPrompt: systemPrompt,
+            grokExecutablePath: grokExecutablePath,
+            runLogPath: runLogPath
+        )
+        return [
+            "Label": label(for: automation.id),
+            "ProgramArguments": ["/bin/sh", "-c", program],
+            // No RunAtLoad: installing or editing an automation must not fire
+            // it immediately. launchd still runs a *missed* calendar interval
+            // once the machine wakes, which is the catch-up behaviour.
+            "RunAtLoad": false,
+            "StartCalendarInterval": intervals.map(\.plistValue),
+            "ProcessType": "Background",
+            "StandardOutPath": logPath,
+            "StandardErrorPath": logPath,
+        ]
+    }
+
+    static func plistData(
+        automation: Automation,
+        systemPrompt: String,
+        grokExecutablePath: String,
+        runLogPath: String,
+        logPath: String
+    ) throws -> Data {
+        try PropertyListSerialization.data(
+            fromPropertyList: definition(
+                automation: automation,
+                systemPrompt: systemPrompt,
+                grokExecutablePath: grokExecutablePath,
+                runLogPath: runLogPath,
+                logPath: logPath
+            ),
+            format: .xml,
+            options: 0
+        )
+    }
+
+    /// Single-quotes a value for `/bin/sh`, so a prompt containing quotes,
+    /// `$`, or backticks cannot break out of its argument.
+    static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Strips the characters that would terminate an AppleScript string.
+    private static func appleScriptSafe(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "")
+            .replacingOccurrences(of: "\"", with: "")
+    }
+}

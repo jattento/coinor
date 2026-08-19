@@ -1,0 +1,123 @@
+import Foundation
+
+/// A single configured automation: a cron schedule, a project, a model and a
+/// prompt that each firing turns into a brand-new Grok session.
+///
+/// Conan Code owns this configuration; launchd owns the schedule (one job per
+/// automation) and `grok` owns the execution and the resulting session.
+struct Automation: Identifiable, Equatable, Sendable, Codable {
+    /// Stable identity, also used as the suffix of the launchd job label.
+    var id: String
+    var name: String
+    /// Five-field cron expression (see `CronSchedule`), compiled into launchd
+    /// calendar intervals when the job is installed.
+    var schedule: String
+    /// The checkout the run executes in. Empty means the automation has not
+    /// picked a project yet and is therefore not scheduled.
+    var workingDirectory: String
+    var prompt: String
+    /// The Grok model this automation runs on. `nil` uses Grok's configured
+    /// default, so an automation created before the field existed keeps
+    /// working unchanged.
+    var model: String?
+    /// A paused automation keeps its configuration but its launchd job is
+    /// unloaded, so it neither fires on schedule nor catches up on wake.
+    var isPaused: Bool
+
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        schedule: String,
+        workingDirectory: String = "",
+        prompt: String = "",
+        model: String? = nil,
+        isPaused: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.schedule = schedule
+        self.workingDirectory = workingDirectory
+        self.prompt = prompt
+        self.model = model
+        self.isPaused = isPaused
+    }
+}
+
+/// The lifecycle outcome of one automation run.
+enum AutomationRunStatus: String, Codable, Equatable, Sendable {
+    case running
+    case succeeded
+    case failed
+}
+
+/// How a run was started, for display in the run list.
+enum AutomationTrigger: String, Codable, Equatable, Sendable {
+    case scheduled
+    case forced
+}
+
+/// One execution of an automation: an independent, brand-new Grok session.
+///
+/// The conversation itself lives in Grok. This record is the local bookkeeping
+/// that ties that session back to the automation which spawned it, and it is
+/// reconstructed from the append-only run log the launchd jobs write.
+struct AutomationRun: Identifiable, Equatable, Sendable, Codable {
+    var id: String
+    var automationID: String
+    /// The Grok session the run created, so the UI can open the conversation
+    /// and the sidebar can badge it as an automation run.
+    var sessionID: String?
+    var trigger: AutomationTrigger
+    var status: AutomationRunStatus
+    var startedAt: Date?
+    var finishedAt: Date?
+    var errorMessage: String?
+
+    init(
+        id: String = UUID().uuidString,
+        automationID: String,
+        sessionID: String? = nil,
+        trigger: AutomationTrigger = .scheduled,
+        status: AutomationRunStatus = .running,
+        startedAt: Date? = nil,
+        finishedAt: Date? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.automationID = automationID
+        self.sessionID = sessionID
+        self.trigger = trigger
+        self.status = status
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.errorMessage = errorMessage
+    }
+}
+
+/// The single instruction appended to every automation's prompt, so one
+/// editable preamble explains "you are part of an automation: do not ask the
+/// user for clarification".
+struct AutomationSettings: Equatable, Sendable, Codable {
+    var systemPrompt: String
+
+    static let `default` = AutomationSettings(
+        systemPrompt: """
+        You are running as part of an automated workflow managed by Conan Code.
+        Work autonomously: do not ask the user for clarification at any point.
+        Make reasonable assumptions and proceed. When you need to make a
+        choice, pick the safest default and note it. Run to completion and
+        report what you did concisely before finishing.
+        """
+    )
+}
+
+/// The automation slice of the metadata document.
+///
+/// Only configuration lives here. Run history is reconstructed from the run
+/// log the launchd jobs append to, and the schedule itself lives in launchd.
+struct AutomationState: Equatable, Sendable, Codable {
+    var settings: AutomationSettings?
+    var automations: [String: Automation]
+
+    static let empty = AutomationState(settings: nil, automations: [:])
+}

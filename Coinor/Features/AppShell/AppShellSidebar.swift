@@ -44,6 +44,7 @@ struct AppShellSidebar: View {
                     if isSearching && !agenticSearch.isPresented {
                         searchResultsSection
                     } else {
+                        automationsDestinationRow
                         pinnedSection
                         projectsSection
                     }
@@ -304,6 +305,43 @@ struct AppShellSidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppShellIdentifier.projectsSection)
+    }
+
+    /// The top-level Automations destination row: switches the detail pane to
+    /// the Automations tab.
+    @ViewBuilder
+    private var automationsDestinationRow: some View {
+        let isSelected = destination == .automations
+        Button {
+            destination = .automations
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12))
+                    .foregroundStyle(
+                        isSelected ? Color(nsColor: .labelColor) : Color(nsColor: .secondaryLabelColor)
+                    )
+                Text("Automations")
+                    .font(SidebarStyle.conversationFont)
+                    .foregroundStyle(
+                        isSelected ? Color(nsColor: .labelColor) : Color(nsColor: .secondaryLabelColor)
+                    )
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, SidebarStyle.rowPadding)
+            .frame(height: SidebarReorderMetrics.conversationHeight)
+            .background(
+                SidebarRowBackground(
+                    isSelected: isSelected,
+                    isHovered: false
+                )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, SidebarStyle.rowInset)
+        .accessibilityLabel("Automations")
+        .accessibilityIdentifier(AppShellIdentifier.automationsDestination)
     }
 
     private var sidebarFooterSeparator: some View {
@@ -831,6 +869,12 @@ struct AppShellSidebar: View {
                         )
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    if coordinator.isAutomationRun(conversation.id) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .help("Automation run")
+                    }
                     ConversationIndicatorView(
                         indicator: coordinator.indicator(for: conversation.id)
                     )

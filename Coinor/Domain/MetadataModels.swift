@@ -4,7 +4,7 @@ import Foundation
 /// `MetadataDocument`'s persisted shape changes in a way older decoders
 /// cannot already tolerate, and add the matching step to `MetadataMigrator`.
 enum MetadataSchema {
-    static let currentVersion = 6
+    static let currentVersion = 7
 }
 
 struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
@@ -332,6 +332,7 @@ struct MetadataDocument: Equatable, Sendable {
     var projectOrder: [String]
     var lastVisibleSessionID: String?
     var telegram: TelegramMetadata
+    var automation: AutomationState
 
     static let empty = MetadataDocument(
         schemaVersion: MetadataSchema.currentVersion,
@@ -342,7 +343,8 @@ struct MetadataDocument: Equatable, Sendable {
         pinnedSessionIDs: [],
         projectOrder: [],
         lastVisibleSessionID: nil,
-        telegram: .empty
+        telegram: .empty,
+        automation: .empty
     )
 }
 
@@ -622,6 +624,7 @@ extension MetadataDocument: Codable {
         case projectOrder
         case lastVisibleSessionID
         case telegram
+        case automation
     }
 
     /// Decodes leniently: every key is optional with a safe default, so a
@@ -655,6 +658,10 @@ extension MetadataDocument: Codable {
             TelegramMetadata.self,
             forKey: .telegram
         ) ?? .empty
+        automation = try container.decodeIfPresent(
+            AutomationState.self,
+            forKey: .automation
+        ) ?? .empty
     }
 
     func encode(to encoder: Encoder) throws {
@@ -669,6 +676,9 @@ extension MetadataDocument: Codable {
         try container.encodeIfPresent(lastVisibleSessionID, forKey: .lastVisibleSessionID)
         if telegram != .empty {
             try container.encode(telegram, forKey: .telegram)
+        }
+        if automation != .empty {
+            try container.encode(automation, forKey: .automation)
         }
     }
 }

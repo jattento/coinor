@@ -66,6 +66,31 @@ actor MetadataStore {
         return document
     }
 
+    /// Re-reads the document from disk, discarding the cached copy.
+    ///
+    /// The file has a second writer: the headless automation agent runs in its
+    /// own process and shares this file with the application. A reader that
+    /// wants the other process's latest state has to go back to disk.
+    @discardableResult
+    func reload() throws -> MetadataDocument {
+        document = try Self.loadDocument(at: fileURL, fileManager: fileManager)
+        return document
+    }
+
+    /// Re-reads from disk and then applies the change, so a writer never
+    /// clobbers an edit it has not seen.
+    ///
+    /// Actor isolation makes the read-modify-write atomic against every other
+    /// caller in this process, which is what keeps concurrent automation runs
+    /// from overwriting each other's results.
+    @discardableResult
+    func reloadAndUpdate(
+        _ transform: @Sendable (inout MetadataDocument) -> Void
+    ) throws -> MetadataDocument {
+        _ = try reload()
+        return try update(transform)
+    }
+
     private static func loadDocument(at url: URL, fileManager: FileManager) throws -> MetadataDocument {
         guard fileManager.fileExists(atPath: url.path) else {
             return .empty

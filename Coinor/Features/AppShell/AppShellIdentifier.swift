@@ -18,6 +18,7 @@ enum AppShellIdentifier {
     static let terminalRegion = "AppShellTerminalRegion"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
     static let refreshStartupChecks = "AppShellRefreshStartupChecks"
+    static let automationsDestination = "AppShellAutomationsDestination"
 
     static func startupCheckRow(_ kind: StartupCheck.Kind) -> String {
         "AppShellStartupCheck.\(kind.rawValue)"

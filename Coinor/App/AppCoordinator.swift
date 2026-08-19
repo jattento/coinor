@@ -98,6 +98,9 @@ final class AppCoordinator: ObservableObject {
     var hostAliasBySessionID: [String: RemoteHostAlias] = [:]
     private var localGrokVersion: GrokForkVersion?
     private var supportDirectory: URL?
+    /// Sessions created by automation runs, read from the launchd jobs' run
+    /// log. Published so the sidebar badge updates as runs land.
+    @Published private(set) var automationSessionIDs: Set<String> = []
     @Published private var pendingAttention:
         [String: ConversationAttentionReason] = [:]
     private var lastAggregateActivity: [String: RuntimeActivity] = [:]
@@ -158,6 +161,9 @@ final class AppCoordinator: ObservableObject {
             let store = try MetadataStore(directoryURL: supportDirectory)
             metadataStore = store
             metadata = await store.currentDocument
+            // Automation runs are executed by launchd, so their sessions are
+            // discovered from the run log rather than created here.
+            loadAutomationSessions()
             localMainCheckoutByProjectID = metadata.projects.compactMapValues {
                 $0.checkoutPath
             }
@@ -1762,6 +1768,34 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
+    /// Whether a conversation was spawned by an automation run, so the
+    /// sidebar can mark it with a clock badge.
+    ///
+    /// Automation runs are executed by launchd rather than by Conan Code, so
+    /// the mapping comes from the run log those jobs append to.
+    func isAutomationRun(_ sessionID: String) -> Bool {
+        automationSessionIDs.contains(sessionID)
+    }
+
+    /// Records which sessions belong to automation runs, from the run log.
+    func registerAutomationSessions(_ runs: [AutomationRun]) {
+        let identifiers = Set(runs.compactMap(\.sessionID))
+        guard identifiers != automationSessionIDs else { return }
+        automationSessionIDs = identifiers
+    }
+
+    /// Loads the automation run log so the sidebar can badge automation
+    /// conversations even before the Automations tab is opened.
+    func loadAutomationSessions() {
+        guard let supportDirectory else { return }
+        let runs = AutomationRunLog.runs(
+            at: supportDirectory.appendingPathComponent(
+                AutomationJob.runLogFileName
+            )
+        )
+        registerAutomationSessions(runs)
+    }
+
     func activity(for sessionID: String) -> RuntimeActivity {
         if let runtime = runtimeManager?.runtime(sessionID: sessionID) {
             return runtime.aggregateActivity
@@ -1931,8 +1965,35 @@ final class AppCoordinator: ObservableObject {
         ).rawValue
     }
 
-    func mainCheckout(for projectID: String) -> String {
-        mainCheckoutByProjectID[projectID]
+    /// Maps an automation's stored working directory back to the project that
+    /// owns it, so the Automations list can show a friendly project name.
+    ///
+    /// Picks the project whose main checkout matches the path exactly first,
+    /// then falls back to the metadata checkout, then treats the directory
+    /// itself as the project identity (mirroring how the rest of the app
+    /// resolves a standalone checkout).
+    func projectID(matchingWorkingDirectory path: String) -> String {
+        guard !path.isEmpty else { return "" }
+        if let projectID = mainCheckoutByProjectID.first(
+            where: { $0.value == path }
+        )?.key {
+            return projectID
+        }
+        if let projectID = metadata.projects.first(
+            where: { $0.value.checkoutPath == path }
+        )?.key {
+            return projectID
+        }
+        let normalized = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        if let projectID = mainCheckoutByProjectID.first(
+            where: { $0.value == normalized }
+        )?.key {
+            return projectID
+        }
+        return ProjectIdentity(rawValue: path).rawValue
+    }
+
+    func mainCheckout(for projectID: String) -> String {        mainCheckoutByProjectID[projectID]
             ?? metadata.projectCheckoutPath(projectID)
             ?? {
             // A remote project ID carries its host, so the fallback uses the

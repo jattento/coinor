@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppShellDestination: Equatable {
     case conversation
+    case automations
 }
 
 struct AppShellView: View {
@@ -9,6 +10,15 @@ struct AppShellView: View {
     @ObservedObject var coordinator: AppCoordinator
     @Environment(\.openURL) private var openURL
     @State private var destination: AppShellDestination = .conversation
+    @StateObject private var automationCenter: AutomationCenterModel
+
+    init(model: AppShellModel, coordinator: AppCoordinator) {
+        self.model = model
+        self.coordinator = coordinator
+        _automationCenter = StateObject(
+            wrappedValue: AutomationCenterModel(coordinator: coordinator)
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -18,22 +28,28 @@ struct AppShellView: View {
             )
             .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
         } detail: {
-            VStack(spacing: 0) {
-                ConversationContentView(
-                    model: model,
-                    coordinator: coordinator
-                )
-                if case .ready = coordinator.status,
-                   model.unresolvedStartupCheckCount > 0 {
-                    Divider()
-                    StartupDiagnosticsPanel(
-                        checks: model.startupChecks,
-                        isRunning: model.isRunningStartupChecks,
-                        rerun: { Task { await model.runStartupChecks() } }
+            switch destination {
+            case .conversation:
+                VStack(spacing: 0) {
+                    ConversationContentView(
+                        model: model,
+                        coordinator: coordinator
                     )
+                    if case .ready = coordinator.status,
+                       model.unresolvedStartupCheckCount > 0 {
+                        Divider()
+                        StartupDiagnosticsPanel(
+                            checks: model.startupChecks,
+                            isRunning: model.isRunningStartupChecks,
+                            rerun: { Task { await model.runStartupChecks() } }
+                        )
+                    }
                 }
+                .frame(minWidth: 560, minHeight: 380)
+            case .automations:
+                AutomationsView(model: automationCenter)
+                    .frame(minWidth: 560, minHeight: 380)
             }
-            .frame(minWidth: 560, minHeight: 380)
         }
         .frame(minWidth: 840, minHeight: 520)
         .task {
