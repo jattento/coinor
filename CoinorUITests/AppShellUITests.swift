@@ -8,6 +8,13 @@ private enum Identifier {
     static let conversationSearch = "AppShellConversationSearch"
     static let terminalRegion = "AppShellTerminalRegion"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
+    static let settingsButton = "AppShellSettings"
+    static let settingsPanel = "AppShellSettingsPanel"
+    static let settingsClose = "AppShellSettingsClose"
+    static let agentsTab = "AppShellSettingsTab.grokAgents"
+    static let routerTab = "AppShellSettingsTab.subagentRouter"
+    static let agentsTerminal = "AppShellSettingsTerminal.grokAgents"
+    static let routerTerminal = "AppShellSettingsTerminal.subagentRouter"
 }
 
 @MainActor
@@ -211,5 +218,52 @@ final class AppShellUITests: XCTestCase {
             app.menuButtons["Remote Computers"].waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.buttons["Archived Items"].waitForExistence(timeout: 5))
+    }
+
+    private func attachScreenshot(of app: XCUIApplication, named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testSettingsGearOpensTabbedConfigurationEditors() {
+        let app = launchApp()
+        XCTAssertTrue(
+            element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 30)
+        )
+
+        let gear = element(Identifier.settingsButton, in: app)
+        XCTAssertTrue(gear.waitForExistence(timeout: 15))
+        gear.click()
+
+        XCTAssertTrue(
+            element(Identifier.settingsPanel, in: app).waitForExistence(timeout: 15)
+        )
+        let agentsTab = element(Identifier.agentsTab, in: app)
+        let routerTab = element(Identifier.routerTab, in: app)
+        XCTAssertTrue(agentsTab.waitForExistence(timeout: 10))
+        XCTAssertTrue(routerTab.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            element(Identifier.agentsTerminal, in: app).waitForExistence(timeout: 15)
+        )
+
+        attachScreenshot(of: app, named: "SettingsGrokAgentsTab")
+
+        routerTab.click()
+        XCTAssertTrue(
+            element(Identifier.routerTerminal, in: app).waitForExistence(timeout: 15)
+        )
+        attachScreenshot(of: app, named: "SettingsSubagentRouterTab")
+
+        agentsTab.click()
+        XCTAssertTrue(
+            element(Identifier.agentsTerminal, in: app).waitForExistence(timeout: 15)
+        )
+
+        element(Identifier.settingsClose, in: app).click()
+        XCTAssertTrue(
+            element(Identifier.settingsPanel, in: app).waitForNonExistence(timeout: 10)
+        )
     }
 }

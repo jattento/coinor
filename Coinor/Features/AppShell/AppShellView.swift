@@ -10,6 +10,7 @@ struct AppShellView: View {
     @ObservedObject var coordinator: AppCoordinator
     @Environment(\.openURL) private var openURL
     @State private var destination: AppShellDestination = .conversation
+    @State private var showsSettings = false
     @StateObject private var automationCenter: AutomationCenterModel
 
     init(model: AppShellModel, coordinator: AppCoordinator) {
@@ -79,6 +80,23 @@ struct AppShellView: View {
                     )
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showsSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .help("Settings")
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier(AppShellIdentifier.settingsButton)
+            }
+        }
+        .sheet(isPresented: $showsSettings) {
+            if let runtime = coordinator.runtimeManager?.ghosttyRuntime {
+                SettingsWindowHost(runtime: runtime)
+            } else {
+                SettingsUnavailableView()
+            }
         }
         .sheet(isPresented: $coordinator.showsArchivedItems) {
             ArchivedItemsView(coordinator: coordinator)
@@ -95,6 +113,25 @@ struct AppShellView: View {
             TerminalTabShortcutMonitor(coordinator: coordinator)
                 .frame(width: 0, height: 0)
         }
+    }
+}
+
+/// Shown when the gear is opened before the Ghostty runtime exists, so the
+/// settings surface still appears instead of a blank sheet.
+private struct SettingsUnavailableView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Settings are unavailable until Conan Code finishes starting.")
+            Button("Close") {
+                dismiss()
+            }
+            .accessibilityIdentifier(AppShellIdentifier.settingsClose)
+        }
+        .padding(24)
+        .frame(minWidth: 420, minHeight: 160)
+        .accessibilityIdentifier(AppShellIdentifier.settingsPanel)
     }
 }
 

@@ -19,8 +19,19 @@ enum AppShellIdentifier {
     static let startupDiagnostics = "AppShellStartupDiagnostics"
     static let refreshStartupChecks = "AppShellRefreshStartupChecks"
     static let automationsDestination = "AppShellAutomationsDestination"
+    static let settingsButton = "AppShellSettings"
+    static let settingsPanel = "AppShellSettingsPanel"
+    static let settingsClose = "AppShellSettingsClose"
 
     static func startupCheckRow(_ kind: StartupCheck.Kind) -> String {
         "AppShellStartupCheck.\(kind.rawValue)"
+    }
+
+    static func settingsTab(_ tabID: String) -> String {
+        "AppShellSettingsTab.\(tabID)"
+    }
+
+    static func settingsTerminal(_ tabID: String) -> String {
+        "AppShellSettingsTerminal.\(tabID)"
     }
 }

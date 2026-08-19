@@ -260,6 +260,17 @@ final class AppFoundationTests: XCTestCase {
             AppShellIdentifier.grokUpdateButton,
             "AppShellGrokUpdate"
         )
+        XCTAssertEqual(AppShellIdentifier.settingsButton, "AppShellSettings")
+        XCTAssertEqual(AppShellIdentifier.settingsPanel, "AppShellSettingsPanel")
+        XCTAssertEqual(AppShellIdentifier.settingsClose, "AppShellSettingsClose")
+        XCTAssertEqual(
+            AppShellIdentifier.settingsTab("grokAgents"),
+            "AppShellSettingsTab.grokAgents"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.settingsTerminal("grokAgents"),
+            "AppShellSettingsTerminal.grokAgents"
+        )
         XCTAssertEqual(AppShellIdentifier.terminalRegion, "AppShellTerminalRegion")
         XCTAssertEqual(AppShellIdentifier.startupDiagnostics, "AppShellStartupDiagnostics")
         XCTAssertEqual(AppShellIdentifier.refreshStartupChecks, "AppShellRefreshStartupChecks")
