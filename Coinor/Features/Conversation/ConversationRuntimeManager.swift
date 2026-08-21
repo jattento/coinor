@@ -381,6 +381,13 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     /// Applies a close/finish signal to the tab for `(ownerSessionID,
     /// taskSpaceName)`, if one exists. No-op when the tab was never opened
     /// or already left this conversation (e.g. after an individual close).
+    /// Applies an ACP-observed close/finish signal for `(ownerSessionID,
+    /// taskSpaceName)`. `keepFrame: false` (`completeTaskSpace`/
+    /// `closeTaskSpace` without `keep: true`, or `closeTaskSpace`) removes
+    /// the tab from the strip immediately — Browser Mirror tabs are
+    /// ephemeral, the same as managed terminal tabs. `keepFrame: true`
+    /// leaves the tab in place showing its last frame in `.finished` state
+    /// until the user closes it by hand.
     func closeBrowserMirrorTab(
         ownerSessionID: String,
         taskSpaceName: String,
@@ -393,6 +400,9 @@ final class ConversationRuntime: ObservableObject, Identifiable {
             return
         }
         tab.markClosed(keepFrame: keepFrame)
+        if !keepFrame {
+            closeBrowserMirrorTab(tabID: tab.id)
+        }
     }
 
     /// Removes a Browser Mirror tab from the strip entirely — the user
