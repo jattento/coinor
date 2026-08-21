@@ -286,6 +286,34 @@ specific service running. A tab closed manually by the user remains gone.
 Archiving a loaded runtime closes main, IDE, ordinary shell, and managed
 terminal surfaces immediately.
 
+## Browser preview
+
+When a root or subagent session inside Conan Code drives the third-party
+`ego-browser` CLI (the automation runtime the `ego lite` browser ships), a
+Browser Mirror tab opens automatically in that conversation showing a
+read-only, periodically refreshed preview of the exact Task Space the agent
+is using. The user never asks for this and the agent never requests it
+through any tool of its own — Conan Code recognizes the activity passively
+and manages the tab's whole lifecycle by itself.
+
+The tab appears without changing the current selection, refreshes fastest
+while it is the selected tab, more slowly while merely open, and slows
+further once the agent has been inactive on that Task Space for a while. It
+reflects the agent finishing the task and leaving the page open for review,
+and disappears once the Task Space closes. The user can close it manually at
+any time like any other closable tab; Conan Code never recreates a tab the
+user closed.
+
+The Browser Mirror tab is read-only: it shows what the agent is doing, not a
+way to control it. Taking over the browsing session still happens in ego
+lite itself. If `ego-browser` or ego lite is not installed on this machine,
+the tab reports that plainly instead of hanging or failing silently, and
+nothing else about the agent's task is affected — the agent's own web tools
+keep working normally either way.
+
+This is a local-only feature, the same carve-out as managed terminal tabs:
+remote-host conversations never show a Browser Mirror tab.
+
 ## Terminal configuration
 
 Every terminal pane loads the user's standard Ghostty configuration, including

@@ -23,6 +23,59 @@ func skillInstallerShipsEveryConanCodeSkill() {
     #expect(directories.contains("conan-code-long-running"))
     #expect(directories.contains("sidechat"))
     #expect(directories.contains("provider-health"))
+    #expect(directories.contains("conan-code-browser"))
+}
+
+/// The browser skill steers agents toward `ego-browser` and away from other
+/// browser tools, documents the one pre-existing exception, and never
+/// touches the third-party `ego-browser` skill directory itself.
+@Test
+func installedBrowserSkillPrefersEgoBrowserAndDocumentsTheException() throws {
+    let home = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    try GrokSkillInstaller(skills: [.browser]).install(homeDirectory: home)
+
+    let skillDirectory = home.appendingPathComponent(
+        ".grok/skills/conan-code-browser"
+    )
+    let skill = try String(
+        contentsOf: skillDirectory.appendingPathComponent("SKILL.md"),
+        encoding: .utf8
+    )
+
+    #expect(skill.contains("ego-browser"))
+    #expect(skill.contains("chrome-devtools"))
+    #expect(skill.contains("provider-health"))
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: home
+                .appendingPathComponent(".grok/skills/ego-browser")
+                .path
+        )
+    )
+}
+
+/// Re-running the installer is idempotent, matching the update-detection
+/// behavior already proven for the other bundled skills.
+@Test
+func reinstallingTheBrowserSkillIsANoOp() throws {
+    let home = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let installer = GrokSkillInstaller(skills: [.browser])
+
+    try installer.install(homeDirectory: home)
+    let skillPath = home
+        .appendingPathComponent(".grok/skills/conan-code-browser/SKILL.md")
+        .path
+    let firstModified = try FileManager.default
+        .attributesOfItem(atPath: skillPath)[.modificationDate] as? Date
+
+    try installer.install(homeDirectory: home)
+    let secondModified = try FileManager.default
+        .attributesOfItem(atPath: skillPath)[.modificationDate] as? Date
+
+    #expect(firstModified == secondModified)
 }
 
 /// The script is shipped, not compiled, so nothing else would catch a syntax

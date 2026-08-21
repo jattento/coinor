@@ -82,10 +82,23 @@ struct GrokSkillDescriptor: Sendable {
         ]
     )
 
+    static let browser = GrokSkillDescriptor(
+        directoryName: "conan-code-browser",
+        files: [
+            File(
+                resource: "conan-code-browser-SKILL",
+                resourceExtension: "md",
+                installedName: "SKILL.md",
+                permissions: 0o600
+            ),
+        ]
+    )
+
     static let all: [GrokSkillDescriptor] = [
         longRunningTerminals,
         sidechat,
         providerHealth,
+        browser,
     ]
 }
 

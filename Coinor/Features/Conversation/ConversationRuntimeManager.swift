@@ -7,6 +7,7 @@ struct ConversationTerminalTab: Equatable, Identifiable, Sendable {
         case ide
         case shell
         case managed
+        case browserMirror
     }
 
     let id: String
@@ -33,6 +34,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     @Published private(set) var ideLazygit: TerminalSession
     @Published private(set) var shellTabs: [TerminalSession] = []
     @Published private(set) var managedTabs: [ManagedTerminalTab] = []
+    @Published private(set) var browserMirrorTabs: [BrowserMirrorTab] = []
     @Published private(set) var tabMetadata: ConversationTabMetadata
     @Published private(set) var pendingRenameRequest:
         ConversationTabRenameRequest?
@@ -46,6 +48,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private var ideWorkingDirectory: String?
     private var shellBaseWorkingDirectory: String?
     @Published private var selectedManagedTabID: String?
+    @Published private var selectedBrowserMirrorTabID: String?
     let execution: ConversationExecution
 
     init(
@@ -114,11 +117,19 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 name: $0.name,
                 kind: .managed
             )
+        } + browserMirrorTabs.map {
+            ConversationTerminalTab(
+                id: $0.id,
+                name: $0.name,
+                kind: .browserMirror
+            )
         }
     }
 
     var selectedTabID: String {
-        selectedManagedTabID ?? tabMetadata.selectedTabID
+        selectedBrowserMirrorTabID
+            ?? selectedManagedTabID
+            ?? tabMetadata.selectedTabID
     }
 
     var isMainTabSelected: Bool {
@@ -292,7 +303,9 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     }
 
     func closeSelectedShellTab() {
-        if selectedManagedTabID != nil {
+        if selectedBrowserMirrorTabID != nil {
+            closeBrowserMirrorTab(tabID: selectedTabID)
+        } else if selectedManagedTabID != nil {
             closeManagedTab(tabID: selectedTabID)
         } else {
             closeShellTab(tabID: selectedTabID)
@@ -330,10 +343,91 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         }
     }
 
+    /// Creates a new Browser Mirror tab for `(ownerSessionID, taskSpaceName)`
+    /// key, or reuses and reactivates the existing one for that key. Starts
+    /// (or restarts) live polling immediately either way.
+    @discardableResult
+    func openBrowserMirrorTab(
+        ownerSessionID: String,
+        taskSpaceName: String,
+        locator: EgoBrowserLocator,
+        isVisible: @escaping @MainActor (String) -> Bool
+    ) -> BrowserMirrorTab {
+        if let existing = browserMirrorTabs.first(where: {
+            $0.ownerSessionID == ownerSessionID
+                && $0.taskSpaceName == taskSpaceName
+        }) {
+            existing.markOpened()
+            BrowserMirrorPoller.start(
+                for: existing,
+                locator: locator,
+                isVisible: { isVisible(existing.id) }
+            )
+            return existing
+        }
+        let tab = BrowserMirrorTab(
+            ownerSessionID: ownerSessionID,
+            taskSpaceName: taskSpaceName
+        )
+        browserMirrorTabs.append(tab)
+        BrowserMirrorPoller.start(
+            for: tab,
+            locator: locator,
+            isVisible: { isVisible(tab.id) }
+        )
+        return tab
+    }
+
+    /// Applies a close/finish signal to the tab for `(ownerSessionID,
+    /// taskSpaceName)`, if one exists. No-op when the tab was never opened
+    /// or already left this conversation (e.g. after an individual close).
+    func closeBrowserMirrorTab(
+        ownerSessionID: String,
+        taskSpaceName: String,
+        keepFrame: Bool
+    ) {
+        guard let tab = browserMirrorTabs.first(where: {
+            $0.ownerSessionID == ownerSessionID
+                && $0.taskSpaceName == taskSpaceName
+        }) else {
+            return
+        }
+        tab.markClosed(keepFrame: keepFrame)
+    }
+
+    /// Removes a Browser Mirror tab from the strip entirely — the user
+    /// closing it by hand, regardless of its current lifecycle state.
+    func closeBrowserMirrorTab(tabID: String) {
+        guard let index = browserMirrorTabs.firstIndex(where: {
+            $0.id == tabID
+        }) else {
+            return
+        }
+        browserMirrorTabs[index].cancelPolling()
+        browserMirrorTabs.remove(at: index)
+        if selectedBrowserMirrorTabID == tabID {
+            selectedBrowserMirrorTabID = nil
+            focusSelectedTab()
+        }
+    }
+
     func selectTab(tabID: String) {
+        if browserMirrorTabs.contains(where: { $0.id == tabID }) {
+            if selectedBrowserMirrorTabID != tabID {
+                selectedBrowserMirrorTabID = tabID
+            }
+            if selectedManagedTabID != nil {
+                selectedManagedTabID = nil
+            }
+            focusSelectedTab()
+            return
+        }
         if managedTabs.contains(where: { $0.id == tabID }) {
             if selectedManagedTabID != tabID {
                 selectedManagedTabID = tabID
+            }
+            if selectedBrowserMirrorTabID != nil {
+                selectedBrowserMirrorTabID = nil
             }
             focusSelectedTab()
             return
@@ -341,6 +435,9 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         guard tabMetadata.contains(tabID: tabID) else { return }
         if selectedManagedTabID != nil {
             selectedManagedTabID = nil
+        }
+        if selectedBrowserMirrorTabID != nil {
+            selectedBrowserMirrorTabID = nil
         }
         if selectedTabID != tabID {
             var updated = tabMetadata
@@ -445,6 +542,11 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 self.focusMainPane()
             } else if selectedID == ConversationTabMetadata.ideID {
                 self.focusIDEPane()
+            } else if self.browserMirrorTabs.contains(
+                where: { $0.id == selectedID }
+            ) {
+                // No PTY surface to focus; the mirror view has no keyboard
+                // input to receive in this scope.
             } else {
                 if let managed = self.managedTabs.first(
                     where: { $0.id == selectedID }
@@ -471,6 +573,8 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         shellTabs.removeAll()
         managedTabs.forEach { $0.session.shutdown() }
         managedTabs.removeAll()
+        browserMirrorTabs.forEach { $0.cancelPolling() }
+        browserMirrorTabs.removeAll()
         descendants.forEach { $0.shutdown() }
         descendants.removeAll()
         root.shutdown()
@@ -825,6 +929,46 @@ final class ConversationRuntimeManager: ObservableObject {
 
     func closeSelectedShellTab() {
         selectedRuntime?.closeSelectedShellTab()
+    }
+
+    /// Opens or reuses a Browser Mirror tab in the conversation rooted at
+    /// `rootSessionID`, driven by an `ego-browser` Task Space signal
+    /// observed for `ownerSessionID` (the root or subagent session that
+    /// actually issued the command). Returns `nil` when that conversation
+    /// is not currently loaded.
+    @discardableResult
+    func openBrowserMirrorTab(
+        rootSessionID: String,
+        ownerSessionID: String,
+        taskSpaceName: String,
+        locator: EgoBrowserLocator
+    ) -> BrowserMirrorTab? {
+        guard let runtime = runtime(sessionID: rootSessionID) else {
+            return nil
+        }
+        return runtime.openBrowserMirrorTab(
+            ownerSessionID: ownerSessionID,
+            taskSpaceName: taskSpaceName,
+            locator: locator,
+            isVisible: { [weak self, weak runtime] tabID in
+                guard let self, let runtime else { return false }
+                return self.selectedSessionID == runtime.id
+                    && runtime.selectedTabID == tabID
+            }
+        )
+    }
+
+    func closeBrowserMirrorTab(
+        rootSessionID: String,
+        ownerSessionID: String,
+        taskSpaceName: String,
+        keepFrame: Bool
+    ) {
+        runtime(sessionID: rootSessionID)?.closeBrowserMirrorTab(
+            ownerSessionID: ownerSessionID,
+            taskSpaceName: taskSpaceName,
+            keepFrame: keepFrame
+        )
     }
 
     func selectTab(at oneBasedIndex: Int) {

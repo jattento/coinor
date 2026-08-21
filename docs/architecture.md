@@ -268,6 +268,61 @@ restart, or abrupt parent death. The lifecycle reconciler therefore also:
 - immediately restores the descendant tree when a pane opens
 - periodically replays lifecycle state while descendants remain active
 
+### Browser Mirror tabs
+
+Coinor passively recognizes when a root or subagent session drives the
+third-party `ego-browser` CLI (the automation runtime the `ego lite` browser
+ships, https://lite.ego.app) and opens a read-only preview tab of the exact
+Task Space it is using — no agent-visible protocol, no cooperation required
+beyond the agent calling the already-public `ego-browser` skill the way its
+own documentation already mandates.
+
+Detection reads the same generic ACP `tool_call` notification stream Coinor
+already consumes for the terminal-control nonce (`GrokTerminalToolInvocation`):
+`GrokBrowserToolInvocation` matches `run_terminal_command` invocations whose
+command text drives `ego-browser`, and extracts every
+`useOrCreateTaskSpace`/`takeOverTaskSpace` (opened) and
+`completeTaskSpace`/`closeTaskSpace` (closed, carrying its `keep` flag) call
+found in that command's text, in the order they appear. A close call with no
+literal Task Space name (a common pattern: `completeTaskSpace(task.name, ...)`)
+attributes to the most recently opened literal name earlier in the *same*
+command; a close call in a later, separate command still requires a literal
+name, since there is no shared command text to fall back to.
+
+Each signal resolves to a conversation the same way a `run_terminal_command`
+nonce or a `subagent_spawned` update does: the owning session ID (root or
+subagent) maps to its root conversation runtime. A `BrowserMirrorTab` is
+keyed by `(ownerSessionID, taskSpaceName)`, so parallel agents or subagents
+never collide even if they reuse the same free-text Task Space name.
+
+Once open, `BrowserMirrorPoller` drives the tab by shelling out to the
+user's installed `ego-browser` CLI (`EgoBrowserLocator` resolves it, checking
+the documented default install location and then `PATH`; a missing binary is
+a soft, reportable `.unavailable` state, never a blocker) and running one
+`Page.captureScreenshot` through the Chrome DevTools Protocol per poll. Every
+poll is an independent, stateless subprocess invocation — `ego-browser`
+carries no state of its own between calls, so each one re-attaches to the
+Task Space by name via `useOrCreateTaskSpace`, exactly like driving it by
+hand. Cadence adapts to visibility: about 1s while the tab is selected, 6s
+while open but not selected, and 20s once idle, so a background mirror still
+notices activity resuming without burning CPU on a tab nobody is looking at.
+Three consecutive poll failures flip the tab to `.unavailable` instead of
+retrying forever at full speed.
+
+The Browser Mirror tab kind renders a plain SwiftUI view (`BrowserMirrorView`,
+the latest decoded screenshot plus a status bar), not a Ghostty surface —
+`ConversationTabbedView`'s tab-content `ZStack` already proved arbitrary
+SwiftUI content per tab kind before this feature existed. It is local-only,
+the same carve-out as managed terminal tabs: ego lite is a per-machine app, so
+this subscription is never wired for remote-host control connections.
+
+A Coinor-owned skill (`conan-code-browser`, installed the same generic way as
+the other three bundled skills) steers agents toward `ego-browser` over any
+other browser tool while running inside Coinor and explains that the preview
+is automatic, so an agent never needs to screenshot a page itself to show the
+user what it looks like. It does not modify the third-party `ego-browser`
+skill files, which ego lite refreshes on its own.
+
 ### Pane layout
 
 Each conversation runtime renders a compact tab strip and keeps all of its
@@ -543,6 +598,11 @@ Grok integration targets the user's custom local fork.
 9. A native subagent start can race the child's first persistence write.
 10. Persisted shell tabs all remount when a conversation activates, so a large
     number of tabs can increase process, memory, and GPU use immediately.
+11. Browser Mirror detection depends on the local Grok fork continuing to
+    report the full, unmodified command text (including multi-line heredoc
+    bodies) on `run_terminal_command` tool-call events; the third-party
+    `ego-browser` CLI and `ego lite` app are outside Coinor's control and may
+    be absent, outdated, or change their invocation shape.
 
 The implementation plan gates full product work behind prototypes for the
 highest integration and lifecycle risks above.

@@ -83,6 +83,16 @@ struct ConversationTabbedView: View {
                             "terminal.managed.\(tab.id)"
                         )
                 }
+
+                ForEach(runtime.browserMirrorTabs) { tab in
+                    BrowserMirrorView(tab: tab)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(runtime.selectedTabID == tab.id ? 1 : 0)
+                        .allowsHitTesting(runtime.selectedTabID == tab.id)
+                        .accessibilityHidden(
+                            runtime.selectedTabID != tab.id
+                        )
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -219,11 +229,14 @@ private struct TerminalTabStrip: View {
                     .frame(width: 14, height: 14)
             case .ide:
                 EmptyView()
-            case .shell, .managed:
+            case .shell, .managed, .browserMirror:
                 Button {
-                    if tab.kind == .managed {
+                    switch tab.kind {
+                    case .managed:
                         runtime.closeManagedTab(tabID: tab.id)
-                    } else {
+                    case .browserMirror:
+                        runtime.closeBrowserMirrorTab(tabID: tab.id)
+                    default:
                         runtime.closeShellTab(tabID: tab.id)
                     }
                 } label: {
@@ -319,7 +332,7 @@ private struct TerminalTabStrip: View {
 
     private func beginRename(tabID: String) {
         guard let tab = runtime.tabs.first(where: { $0.id == tabID }),
-              tab.kind != .ide else {
+              tab.kind != .ide, tab.kind != .browserMirror else {
             return
         }
         runtime.selectTab(tabID: tabID)

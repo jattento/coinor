@@ -126,6 +126,7 @@ final class AppCoordinator: ObservableObject {
     private let leaderProcessManager = GrokLeaderProcessManager()
     private let terminalControlAuthorizer =
         TerminalControlInvocationAuthorizer()
+    private let egoBrowserLocator = EgoBrowserLocator()
 
     func start() async {
         guard !started else { return }
@@ -2255,6 +2256,13 @@ final class AppCoordinator: ObservableObject {
                         ) {
                         self.terminalControlAuthorizer.observe(invocation)
                     }
+                    if let browserInvocation =
+                        GrokBrowserToolInvocation.parseNotification(
+                            method: method,
+                            params: params
+                        ) {
+                        self.handleBrowserToolInvocation(browserInvocation)
+                    }
                     if method == GrokMethod.leaderReconnected {
                         self.restoreSubscriptionsAfterLeaderReconnect()
                     }
@@ -3107,6 +3115,40 @@ final class AppCoordinator: ObservableObject {
         }
         return hookCoordinator?.rootSessionID(for: sessionID)
             ?? runtimeManager?.rootSessionID(containing: sessionID)
+    }
+
+    /// Passively opens/updates/closes a Browser Mirror tab for every
+    /// `ego-browser` Task Space signal observed on the local ACP stream.
+    /// Local-only by construction: this subscription is never wired for
+    /// remote-host control connections (see the remote roster loop, which
+    /// discards `.notification` entirely).
+    private func handleBrowserToolInvocation(
+        _ invocation: GrokBrowserToolInvocation
+    ) {
+        guard let runtimeManager,
+              let rootSessionID = terminalControlRootSessionID(
+                  for: invocation.sessionID
+              ) else {
+            return
+        }
+        for signal in invocation.signals {
+            switch signal.kind {
+            case .opened:
+                runtimeManager.openBrowserMirrorTab(
+                    rootSessionID: rootSessionID,
+                    ownerSessionID: invocation.sessionID,
+                    taskSpaceName: signal.name,
+                    locator: egoBrowserLocator
+                )
+            case .closed(let keepFrame):
+                runtimeManager.closeBrowserMirrorTab(
+                    rootSessionID: rootSessionID,
+                    ownerSessionID: invocation.sessionID,
+                    taskSpaceName: signal.name,
+                    keepFrame: keepFrame
+                )
+            }
+        }
     }
 
     private func archivedRuntimeUnloaded(

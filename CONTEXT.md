@@ -84,6 +84,15 @@ scrollback live only while Conan Code is running; its local name, order, and
 selection metadata survive relaunch.
 _Avoid_: Grok session, subagent pane
 
+**Browser Mirror Tab**:
+A closable terminal tab showing a read-only, periodically refreshed preview of
+an `ego-browser` Task Space that a root or subagent session is driving. Conan
+Code opens, updates, and closes it automatically by passively observing the
+same terminal-command activity every `ego-browser` invocation already
+produces; it is never created or controlled through an agent-facing protocol
+of its own, and it never appears for remote-host conversations.
+_Avoid_: Shell tab, managed terminal tab, browser tab
+
 **Subagent Pane**:
 A live, interactive pane backed by a child Grok session. It appears alongside
 its parent conversation while the subagent is available without becoming a
