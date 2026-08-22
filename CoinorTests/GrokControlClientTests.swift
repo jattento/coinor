@@ -1334,3 +1334,319 @@ func refusesToRunTwiceAndRefusesWorkAfterShutdown() async throws {
         _ = try await client.listRoster()
     }
 }
+
+/// A thread-safe single-value box, for capturing one request out of a
+/// `@Sendable` `FakeGrokTransport.Handler` closure without a data race.
+private final class Captured<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value?
+
+    init(_ value: Value? = nil) {
+        self.value = value
+    }
+
+    func set(_ newValue: Value) {
+        lock.withLock { value = newValue }
+    }
+
+    func get() -> Value? {
+        lock.withLock { value }
+    }
+}
+
+// MARK: - AppCoordinator integration (real entry points)
+
+/// Wires an `AppCoordinator` to a fake transport via
+/// `AppCoordinator.seedForTesting`, so the tests below drive the
+/// coordinator's real `renameConversation` / `runAutomationLive` entry
+/// points end to end — not the pure helpers they call into — against a
+/// scripted Grok control connection.
+@MainActor
+private func seededCoordinator(
+    metadata: MetadataDocument = .empty,
+    handler: @escaping FakeGrokTransport.Handler
+) async throws -> (
+    coordinator: AppCoordinator,
+    client: GrokControlClient,
+    transport: FakeGrokTransport,
+    supportDirectory: URL
+) {
+    let (client, transport, _) = try await connectedClient(handler: handler)
+    let supportDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "AppCoordinatorSeed-\(UUID().uuidString)",
+            isDirectory: true
+        )
+    try FileManager.default.createDirectory(
+        at: supportDirectory,
+        withIntermediateDirectories: true
+    )
+    let coordinator = AppCoordinator()
+    coordinator.seedForTesting(
+        controlClient: client,
+        metadata: metadata,
+        supportDirectory: supportDirectory
+    )
+    return (coordinator, client, transport, supportDirectory)
+}
+
+/// The session/list handler tracks `title` as a live value rather than a
+/// fixed string, so a test that lets a rename succeed can update it exactly
+/// when a real Grok backend would — synchronously, before its RPC responds —
+/// and a subsequent `refresh()` genuinely reflects the rename instead of
+/// artificially reverting it the way a static fixture would.
+private func oneSessionCatalogHandler(
+    sessionID: String,
+    title: Captured<String>,
+    cwd: String,
+    onRename: @escaping @Sendable (GrokJSONValue, FakeGrokTransport) -> Void
+) -> FakeGrokTransport.Handler {
+    { request, transport in
+        switch request["method"]?.stringValue {
+        case "_x.ai/session/list":
+            transport.emit(result(for: request, [
+                "sessions": [[
+                    "sessionId": .string(sessionID),
+                    "title": .string(title.get() ?? ""),
+                    "cwd": .string(cwd),
+                ]],
+                "nextCursor": .null,
+            ]))
+        case "_x.ai/sessions/list":
+            transport.emit(result(for: request, ["sessions": []]))
+        case "_x.ai/session/rename":
+            onRename(request, transport)
+        default:
+            transport.emit(result(for: request, .object([:])))
+        }
+    }
+}
+
+@Test
+@MainActor
+func renameConversationUpdatesTheSidebarBeforeTheRpcCompletes() async throws {
+    let sessionCwd = FileManager.default.temporaryDirectory.path
+    let renameRequestID = Captured<GrokJSONValue>()
+    let title = Captured<String>("Old title")
+    let seeded = try await seededCoordinator(
+        handler: oneSessionCatalogHandler(
+            sessionID: "session-a",
+            title: title,
+            cwd: sessionCwd
+        ) { request, _ in
+            // Deliberately withheld: the test controls exactly when this
+            // resolves, to prove the sidebar updates before it does.
+            renameRequestID.set(request["id"] ?? .null)
+        }
+    )
+    defer { try? FileManager.default.removeItem(at: seeded.supportDirectory) }
+
+    try await seeded.coordinator.refresh()
+    #expect(
+        seeded.coordinator.summaries.first { $0.id == "session-a" }?.title
+            == "Old title"
+    )
+
+    seeded.coordinator.renameConversation("session-a", title: "New title")
+
+    // `renameConversation` is synchronous up to the point it starts its
+    // background rename `Task`; the optimistic update must already be
+    // visible here, before the RPC this test is still withholding resolves.
+    #expect(
+        seeded.coordinator.summaries.first { $0.id == "session-a" }?.title
+            == "New title"
+    )
+    #expect(
+        seeded.coordinator.catalog.projects
+            .flatMap(\.conversations)
+            .first { $0.id == "session-a" }?
+            .session.title == "New title"
+    )
+
+    // The RPC itself runs on the background Task `renameConversation`
+    // starts; give it a chance to actually run and reach the (deliberately
+    // withheld) transport call.
+    for _ in 0 ..< 200 {
+        if renameRequestID.get() != nil { break }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    let requestID = try #require(
+        renameRequestID.get(),
+        "the rename RPC never reached the fake transport"
+    )
+    // A real Grok backend durably applies the rename before its RPC
+    // responds, so a session/list call issued afterward already reflects
+    // it; model that here instead of leaving the fixture stale.
+    title.set("New title")
+    seeded.transport.emit([
+        "jsonrpc": "2.0",
+        "id": requestID,
+        "result": ["success": true],
+    ])
+
+    // Let the background Task's remaining awaits settle; the title must
+    // still read "New title" once the RPC it was withholding completes.
+    for _ in 0 ..< 50 {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(
+        seeded.coordinator.summaries.first { $0.id == "session-a" }?.title
+            == "New title"
+    )
+    #expect(seeded.coordinator.warningMessage == nil)
+
+    await seeded.client.shutdown()
+}
+
+@Test
+@MainActor
+func aFailedRenameRpcRevertsTheOptimisticTitle() async throws {
+    let sessionCwd = FileManager.default.temporaryDirectory.path
+    let seeded = try await seededCoordinator(
+        handler: oneSessionCatalogHandler(
+            sessionID: "session-a",
+            title: Captured<String>("Old title"),
+            cwd: sessionCwd
+        ) { request, transport in
+            transport.emit(failure(for: request, code: -32000, message: "boom"))
+        }
+    )
+    defer { try? FileManager.default.removeItem(at: seeded.supportDirectory) }
+
+    try await seeded.coordinator.refresh()
+    seeded.coordinator.renameConversation("session-a", title: "New title")
+    #expect(
+        seeded.coordinator.summaries.first { $0.id == "session-a" }?.title
+            == "New title"
+    )
+
+    var reverted = false
+    for _ in 0 ..< 200 {
+        if seeded.coordinator.summaries.first(where: { $0.id == "session-a" })?
+            .title == "Old title" {
+            reverted = true
+            break
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(reverted, "the title must revert once the rename RPC fails")
+    #expect(seeded.coordinator.warningMessage != nil)
+
+    await seeded.client.shutdown()
+}
+
+@Test
+@MainActor
+func runAutomationLiveDrivesTheControlConnectionAndRecordsTheRun() async throws {
+    let newSessionRequest = Captured<GrokJSONValue>()
+    let promptRequest = Captured<GrokJSONValue>()
+    var metadata = MetadataDocument.empty
+    metadata.upsertAutomation(Automation(
+        id: "auto-1",
+        name: "Nightly review",
+        schedule: "0 9 * * *",
+        workingDirectory: FileManager.default.temporaryDirectory.path,
+        prompt: "review open PRs",
+        model: "claude-sonnet-5"
+    ))
+    let seeded = try await seededCoordinator(metadata: metadata) { request, transport in
+        switch request["method"]?.stringValue {
+        case "session/new":
+            newSessionRequest.set(request)
+            transport.emit(result(for: request, ["sessionId": "session-live"]))
+        case "session/prompt":
+            promptRequest.set(request)
+            transport.emit(result(for: request, ["stopReason": "end_turn"]))
+        case "_x.ai/session/list":
+            transport.emit(result(for: request, ["sessions": [], "nextCursor": .null]))
+        case "_x.ai/sessions/list":
+            transport.emit(result(for: request, ["sessions": []]))
+        default:
+            transport.emit(result(for: request, .object([:])))
+        }
+    }
+    defer { try? FileManager.default.removeItem(at: seeded.supportDirectory) }
+
+    let request = AutomationRunRequest(
+        automationID: "auto-1",
+        runID: "run-1",
+        sessionID: "session-live",
+        trigger: .scheduled
+    )
+    await seeded.coordinator.runAutomationLive(request)
+
+    let newSession = try #require(newSessionRequest.get())
+    #expect(
+        newSession["params"]?["_meta"]?["sessionId"]?.stringValue
+            == "session-live"
+    )
+    #expect(
+        newSession["params"]?["_meta"]?["modelId"]?.stringValue
+            == "claude-sonnet-5"
+    )
+    #expect(newSession["params"]?["_meta"]?["yoloMode"]?.boolValue == true)
+    #expect(
+        newSession["params"]?["_meta"]?["rules"]?.stringValue?.isEmpty == false
+    )
+
+    let prompt = try #require(promptRequest.get())
+    let promptText = prompt["params"]?["prompt"]?.arrayValue?.first?["text"]?.stringValue
+    #expect(promptText == "review open PRs")
+
+    let runLogURL = seeded.supportDirectory
+        .appendingPathComponent(AutomationJob.runLogFileName)
+    let runs = AutomationRunLog.runs(at: runLogURL)
+    let run = try #require(runs.first { $0.id == "run-1" })
+    #expect(run.status == .succeeded)
+    #expect(run.sessionID == "session-live")
+
+    #expect(seeded.coordinator.automationSessionIDs.contains("session-live"))
+
+    await seeded.client.shutdown()
+}
+
+@Test
+@MainActor
+func runAutomationLiveRecordsAFailureWhenThePromptRpcFails() async throws {
+    var metadata = MetadataDocument.empty
+    metadata.upsertAutomation(Automation(
+        id: "auto-2",
+        name: "Broken automation",
+        schedule: "0 9 * * *",
+        workingDirectory: FileManager.default.temporaryDirectory.path,
+        prompt: "do the thing"
+    ))
+    let seeded = try await seededCoordinator(metadata: metadata) { request, transport in
+        switch request["method"]?.stringValue {
+        case "session/new":
+            transport.emit(result(for: request, ["sessionId": "session-fail"]))
+        case "session/prompt":
+            transport.emit(failure(for: request, code: -32000, message: "boom"))
+        case "_x.ai/session/list":
+            transport.emit(result(for: request, ["sessions": [], "nextCursor": .null]))
+        case "_x.ai/sessions/list":
+            transport.emit(result(for: request, ["sessions": []]))
+        default:
+            transport.emit(result(for: request, .object([:])))
+        }
+    }
+    defer { try? FileManager.default.removeItem(at: seeded.supportDirectory) }
+
+    let request = AutomationRunRequest(
+        automationID: "auto-2",
+        runID: "run-2",
+        sessionID: "session-fail",
+        trigger: .forced
+    )
+    await seeded.coordinator.runAutomationLive(request)
+
+    let runLogURL = seeded.supportDirectory
+        .appendingPathComponent(AutomationJob.runLogFileName)
+    let run = try #require(
+        AutomationRunLog.runs(at: runLogURL).first { $0.id == "run-2" }
+    )
+    #expect(run.status == .failed)
+    #expect(run.trigger == .forced)
+
+    await seeded.client.shutdown()
+}

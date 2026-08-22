@@ -337,6 +337,24 @@ final class AppCoordinator: ObservableObject {
         )
     }
 
+    #if DEBUG
+    /// Seeds the state `start()` would otherwise derive from disk, the real
+    /// Grok executable, and a real leader socket/process, so a test can drive
+    /// a coordinator method against a fake `GrokControlClient` transport
+    /// without the real, environment-touching startup sequence. Test-only —
+    /// compiled only into Debug, so it never reaches a Release build;
+    /// production always goes through `start()`.
+    func seedForTesting(
+        controlClient: GrokControlClient,
+        metadata: MetadataDocument,
+        supportDirectory: URL
+    ) {
+        self.controlClient = controlClient
+        self.metadata = metadata
+        self.supportDirectory = supportDirectory
+    }
+    #endif
+
     private func refresh(
         using control: GrokControlClient,
         generation: Int
