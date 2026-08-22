@@ -46,7 +46,15 @@ Automated verification:
   `cargo build -p xai-grok-pager-bin` succeeded, and
   `overlay/scripts/overlay-diff.sh` passed its touchpoint and delta-budget
   gates. GitHub's compare API confirms `ahead_by: 0` against
-  `xai-org/grok-build`'s `main` after the push.
+  `xai-org/grok-build`'s `main` after the push. A second, later-rebased
+  commit called `SessionCommand::SetSessionModel` without the
+  `is_family_switch` field a concurrent upstream commit had added (no
+  textual conflict, so the rebase applied it silently); the fix was first
+  verified only against the working tree and left uncommitted by the initial
+  push. It is now commit `dffe84b`, with the delta budget updated via
+  `overlay-diff.sh --update-budget --allow-growth`, and re-verified by
+  cloning `origin/main` fresh and running `cargo check -p xai-grok-shell`
+  against that clone.
 - The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
   version `0.6.4 (42)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
   signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
