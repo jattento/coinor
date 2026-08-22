@@ -14,6 +14,57 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.4 Verification
+
+Version `0.6.4` build `42` ships two changes: an upstream-sync warning that
+compares `jattento/grok-build`'s `main` against `xai-org/grok-build` via
+GitHub's compare API and surfaces a small toolbar warning when the fork is
+missing upstream commits, and Conan Code's first original app icon (an
+illustration inspired by Jose's dog Conan, not a photo). See
+`docs/releases/0.6.4.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` ran repeatedly (597 tests in 45 suites). The new
+  `GrokUpstreamSyncCheckerTests` cases (behind-upstream, caught-up, and an
+  `AppShellModel` test driving the real checker end to end against synthetic
+  GitHub compare payloads) and the new `AppShellIdentifier` pin test in
+  `AppFoundationTests` passed on every run. The same pre-existing, load-
+  sensitive subprocess wall-clock timing flakes documented for 0.6.3
+  (`GrokSubprocessTransportShutdownTests.shutdownWaitsUntilTheChildProcessHasExited`,
+  `executableVersionProbeKillsACommandThatWouldOtherwiseHang`) intermittently
+  missed their bound only when run alongside the rest of the suite under this
+  session's own background load (load average 5-8); each passes in isolation,
+  and `git diff` against every one of those files is empty.
+- Grok fork (`jattento/grok-build`): resynced with `xai-org/grok-build`
+  (fetch, rebase, one real conflict resolved, push). `cargo check -p
+  overlay-core && cargo test -p overlay-core` passed (29 tests, 0 failures),
+  `cargo build -p xai-grok-pager-bin` succeeded, and
+  `overlay/scripts/overlay-diff.sh` passed its touchpoint and delta-budget
+  gates. GitHub's compare API confirms `ahead_by: 0` against
+  `xai-org/grok-build`'s `main` after the push.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.4 (42)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `AppIcon.appiconset` (10 standard macOS sizes) confirmed present in
+  `Assets.xcassets` and compiled to `Contents/Resources/AppIcon.icns` in the
+  built bundle, matching `CFBundleIconName`.
+- `git diff --check` passed; `scripts/release/security-scan.sh` passed over
+  the tracked snapshot and every file in the release bundle for `coinor`;
+  `gitleaks detect` over `grok-build` found only 8 pre-existing findings, all
+  from a single upstream commit predating this sync and all sanitizer/test
+  fixture strings (e.g. `xai-grok-secrets/src/sanitizer.rs`), none in files
+  this sync touched.
+- Installed `/Applications/Coinor.app` from the exact verified bundle after
+  removing every stale duplicate; the running process, LaunchServices, and
+  Spotlight all resolve to the canonical path, and its executable SHA-256
+  matches the built artifact and version `0.6.4 (42)`.
+
 ## Conan Code 0.6.3 Verification
 
 Version `0.6.3` build `41` ships four changes: native mouse routing in the
