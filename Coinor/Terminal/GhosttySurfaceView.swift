@@ -8,26 +8,45 @@ import SwiftUI
 struct GhosttyMouseInput: Equatable {
     let point: CGPoint
     let modifiers: NSEvent.ModifierFlags
+}
 
-    func forcingShift(_ present: Bool) -> Self {
-        var routedModifiers = modifiers
-        if present {
-            routedModifiers.insert(.shift)
-        } else {
-            routedModifiers.remove(.shift)
+/// Maps an `NSEvent` button number to the libghostty button, matching the
+/// order Ghostty's own AppKit surface uses so back and forward buttons report
+/// the codes applications expect.
+enum GhosttyMouseButtonMapper {
+    static func button(
+        forNSEventButtonNumber number: Int
+    ) -> ghostty_input_mouse_button_e {
+        switch number {
+        case 0: GHOSTTY_MOUSE_LEFT
+        case 1: GHOSTTY_MOUSE_RIGHT
+        case 2: GHOSTTY_MOUSE_MIDDLE
+        case 3: GHOSTTY_MOUSE_EIGHT
+        case 4: GHOSTTY_MOUSE_NINE
+        case 5: GHOSTTY_MOUSE_SIX
+        case 6: GHOSTTY_MOUSE_SEVEN
+        case 7: GHOSTTY_MOUSE_FOUR
+        case 8: GHOSTTY_MOUSE_FIVE
+        case 9: GHOSTTY_MOUSE_TEN
+        case 10: GHOSTTY_MOUSE_ELEVEN
+        default: GHOSTTY_MOUSE_UNKNOWN
         }
-        return Self(point: point, modifiers: routedModifiers)
     }
 }
 
-enum GhosttyMouseButtonAction: Equatable {
-    case press
-    case release
-}
-
-enum GhosttyMouseRoutingCommand: Equatable {
-    case position(GhosttyMouseInput)
-    case leftButton(GhosttyMouseButtonAction, GhosttyMouseInput)
+/// Decides whether a left click only moves focus to a pane. Clicking an
+/// unfocused pane of an already active window transfers focus without the
+/// click reaching the terminal, the way Ghostty treats a click that only
+/// focuses a split.
+enum GhosttyFocusTransferPolicy {
+    static func isFocusTransferOnly(
+        isAlreadyFirstResponder: Bool,
+        isApplicationActive: Bool,
+        isKeyWindow: Bool
+    ) -> Bool {
+        guard !isAlreadyFirstResponder else { return false }
+        return isApplicationActive && isKeyWindow
+    }
 }
 
 enum GhosttySecondaryClickOwner: Equatable {
@@ -94,165 +113,17 @@ enum GhosttyHostContextMenuPolicy {
 }
 
 enum GhosttyMouseBoundaryRouting {
-    static func exitCommands(
+    static func exitPositions(
         modifiers: NSEvent.ModifierFlags,
         hasPressedMouseButtons: Bool
-    ) -> [GhosttyMouseRoutingCommand] {
+    ) -> [GhosttyMouseInput] {
         guard !hasPressedMouseButtons else { return [] }
         return [
-            .position(
-                GhosttyMouseInput(
-                    point: CGPoint(x: -1, y: -1),
-                    modifiers: modifiers
-                )
+            GhosttyMouseInput(
+                point: CGPoint(x: -1, y: -1),
+                modifiers: modifiers
             ),
         ]
-    }
-}
-
-struct GhosttyMouseRouter {
-    /// Pointer travel, in points, that separates a click from a drag while a
-    /// captured gesture is deferred. A promoted gesture is routed with Shift
-    /// forced on so it selects text, and Ghostty never lets the terminal
-    /// capture Shift, so promoting on the hand jitter of an ordinary click
-    /// loses the click entirely instead of reporting it to the application.
-    /// The threshold stays below one cell so a deliberate drag still promotes
-    /// as soon as it crosses into a neighbouring cell.
-    static let dragThreshold: CGFloat = 5
-
-    private struct ActiveGesture {
-        let shiftPresent: Bool
-        var lastRoutedInput: GhosttyMouseInput
-
-        mutating func route(_ input: GhosttyMouseInput) -> GhosttyMouseInput {
-            let routed = input.forcingShift(shiftPresent)
-            lastRoutedInput = routed
-            return routed
-        }
-    }
-
-    private enum State {
-        case idle
-        case immediate(ActiveGesture)
-        case deferred(ActiveGesture)
-        case selecting(ActiveGesture)
-    }
-
-    private var state: State = .idle
-
-    mutating func mouseDown(
-        _ input: GhosttyMouseInput,
-        mouseCaptured: Bool
-    ) -> [GhosttyMouseRoutingCommand] {
-        let shiftPresent = input.modifiers.contains(.shift)
-        let routed = input.forcingShift(shiftPresent)
-        let gesture = ActiveGesture(
-            shiftPresent: shiftPresent,
-            lastRoutedInput: routed
-        )
-
-        if !mouseCaptured || shiftPresent {
-            state = .immediate(gesture)
-            return [
-                .position(routed),
-                .leftButton(.press, routed),
-            ]
-        }
-
-        state = .deferred(gesture)
-        return []
-    }
-
-    mutating func mouseDragged(
-        _ input: GhosttyMouseInput
-    ) -> [GhosttyMouseRoutingCommand] {
-        switch state {
-        case .deferred(let gesture):
-            let origin = gesture.lastRoutedInput.point
-            let travel = hypot(
-                input.point.x - origin.x,
-                input.point.y - origin.y
-            )
-            guard travel > Self.dragThreshold else { return [] }
-
-            let shiftedOriginal = gesture.lastRoutedInput.forcingShift(true)
-            let shiftedCurrent = input.forcingShift(true)
-            state = .selecting(
-                ActiveGesture(
-                    shiftPresent: true,
-                    lastRoutedInput: shiftedCurrent
-                )
-            )
-            return [
-                .position(shiftedOriginal),
-                .leftButton(.press, shiftedOriginal),
-                .position(shiftedCurrent),
-            ]
-
-        case .selecting(var gesture):
-            let routed = gesture.route(input)
-            state = .selecting(gesture)
-            return [.position(routed)]
-
-        case .immediate(var gesture):
-            let routed = gesture.route(input)
-            state = .immediate(gesture)
-            return [.position(routed)]
-
-        case .idle:
-            return [.position(input)]
-        }
-    }
-
-    mutating func mouseUp(
-        _ input: GhosttyMouseInput
-    ) -> [GhosttyMouseRoutingCommand] {
-        defer { state = .idle }
-
-        switch state {
-        case .deferred(let gesture):
-            let original = gesture.lastRoutedInput.forcingShift(false)
-            let routed = input.forcingShift(false)
-            return [
-                .position(original),
-                .leftButton(.press, original),
-                .position(routed),
-                .leftButton(.release, routed),
-            ]
-
-        case .selecting(var gesture):
-            let routed = gesture.route(input)
-            return [
-                .position(routed),
-                .leftButton(.release, routed),
-            ]
-
-        case .immediate(var gesture):
-            let routed = gesture.route(input)
-            return [
-                .position(routed),
-                .leftButton(.release, routed),
-            ]
-
-        case .idle:
-            return []
-        }
-    }
-
-    mutating func cancel() -> [GhosttyMouseRoutingCommand] {
-        defer { state = .idle }
-
-        switch state {
-        case .immediate(let gesture), .selecting(let gesture):
-            let last = gesture.lastRoutedInput
-            return [
-                .position(last),
-                .leftButton(.release, last),
-            ]
-
-        case .deferred, .idle:
-            return []
-        }
     }
 }
 
@@ -296,9 +167,11 @@ enum GhosttyScrollEventMapper {
     ) -> GhosttyScrollEvent {
         let precisionBit: Int32 = hasPreciseScrollingDeltas ? 1 : 0
         let momentumBits = momentum(for: momentumPhase).rawValue << 1
+        // Ghostty doubles precise deltas before handing them to the core.
+        let scale: Double = hasPreciseScrollingDeltas ? 2 : 1
         return GhosttyScrollEvent(
-            deltaX: deltaX,
-            deltaY: deltaY,
+            deltaX: deltaX * scale,
+            deltaY: deltaY * scale,
             modifiers: precisionBit | momentumBits
         )
     }
@@ -423,8 +296,10 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var observers: [NSObjectProtocol] = []
     private var resizePolicy = GhosttySurfaceResizePolicy()
     private var isShuttingDown = false
-    private var mouseRouter = GhosttyMouseRouter()
     private var secondaryClickRouter = GhosttySecondaryClickRouter()
+    private var pressedLeftButtonInput: GhosttyMouseInput?
+    private var suppressesNextLeftMouseUp = false
+    private var previousPressureStage: Int = 0
     private var hostVisible = true
     private var focusesWhenAttached = false
     private let search = TerminalSearchState()
@@ -677,20 +552,81 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let isFocusTransfer = GhosttyFocusTransferPolicy.isFocusTransferOnly(
+            isAlreadyFirstResponder: window?.firstResponder === self,
+            isApplicationActive: NSApp.isActive,
+            isKeyWindow: window?.isKeyWindow ?? false
+        )
         window?.makeFirstResponder(self)
-        let captured = surfaceHandle.withHandle(
-            ghostty_surface_mouse_captured
-        ) ?? false
-        dispatchMouseCommands(
-            mouseRouter.mouseDown(
-                mouseInput(event),
-                mouseCaptured: captured
-            )
+        guard !isFocusTransfer else {
+            suppressesNextLeftMouseUp = true
+            return
+        }
+
+        suppressesNextLeftMouseUp = false
+        let input = mouseInput(event)
+        pressedLeftButtonInput = input
+        _ = sendMouseButton(
+            input,
+            state: GHOSTTY_MOUSE_PRESS,
+            button: GHOSTTY_MOUSE_LEFT
         )
     }
 
     override func mouseUp(with event: NSEvent) {
-        dispatchMouseCommands(mouseRouter.mouseUp(mouseInput(event)))
+        guard !suppressesNextLeftMouseUp else {
+            suppressesNextLeftMouseUp = false
+            return
+        }
+
+        previousPressureStage = 0
+        pressedLeftButtonInput = nil
+        _ = sendMouseButton(
+            event,
+            state: GHOSTTY_MOUSE_RELEASE,
+            button: GHOSTTY_MOUSE_LEFT
+        )
+        surfaceHandle.withHandle { ghostty_surface_mouse_pressure($0, 0, 0) }
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        _ = sendMouseButton(
+            event,
+            state: GHOSTTY_MOUSE_PRESS,
+            button: GhosttyMouseButtonMapper.button(
+                forNSEventButtonNumber: event.buttonNumber
+            )
+        )
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        _ = sendMouseButton(
+            event,
+            state: GHOSTTY_MOUSE_RELEASE,
+            button: GhosttyMouseButtonMapper.button(
+                forNSEventButtonNumber: event.buttonNumber
+            )
+        )
+    }
+
+    override func pressureChange(with event: NSEvent) {
+        surfaceHandle.withHandle {
+            ghostty_surface_mouse_pressure(
+                $0,
+                UInt32(event.stage),
+                Double(event.pressure)
+            )
+        }
+
+        // Stage 2 is a force click, and only its first event starts Quick Look.
+        guard previousPressureStage < 2 else { return }
+        previousPressureStage = event.stage
+        guard event.stage == 2,
+              UserDefaults.standard.bool(
+                  forKey: "com.apple.trackpad.forceClick"
+              )
+        else { return }
+        quickLook(with: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -734,12 +670,12 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         let hasPressedMouseButtons = NSEvent.pressedMouseButtons != 0
         if !hasPressedMouseButtons {
             cancelMouseInteraction()
-            dispatchMouseCommands(
-                GhosttyMouseBoundaryRouting.exitCommands(
-                    modifiers: event.modifierFlags,
-                    hasPressedMouseButtons: false
-                )
-            )
+            for input in GhosttyMouseBoundaryRouting.exitPositions(
+                modifiers: event.modifierFlags,
+                hasPressedMouseButtons: false
+            ) {
+                sendMousePosition(input)
+            }
         }
     }
 
@@ -748,7 +684,11 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        dispatchMouseCommands(mouseRouter.mouseDragged(mouseInput(event)))
+        let input = mouseInput(event)
+        if pressedLeftButtonInput != nil {
+            pressedLeftButtonInput = input
+        }
+        sendMousePosition(input)
     }
 
     override func rightMouseDragged(with event: NSEvent) {
@@ -1196,8 +1136,20 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
     }
 
+    /// Releases any button the surface still believes is held. AppKit stops
+    /// delivering the matching mouse-up when a pane is hidden or leaves its
+    /// window mid-gesture, so without this the terminal keeps dragging.
     private func cancelMouseInteraction() {
-        dispatchMouseCommands(mouseRouter.cancel())
+        suppressesNextLeftMouseUp = false
+        previousPressureStage = 0
+        if let input = pressedLeftButtonInput {
+            pressedLeftButtonInput = nil
+            _ = sendMouseButton(
+                input,
+                state: GHOSTTY_MOUSE_RELEASE,
+                button: GHOSTTY_MOUSE_LEFT
+            )
+        }
         if let input = secondaryClickRouter.cancel() {
             _ = sendMouseButton(
                 input,
@@ -1452,7 +1404,6 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         button: ghostty_input_mouse_button_e
     ) -> Bool {
         guard surfaceHandle.isValid else { return false }
-        sendMousePosition(input)
         return surfaceHandle.withHandle {
             ghostty_surface_mouse_button(
                 $0,
@@ -1488,35 +1439,6 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             ),
             modifiers: event.modifierFlags
         )
-    }
-
-    private func dispatchMouseCommands(
-        _ commands: [GhosttyMouseRoutingCommand]
-    ) {
-        guard surfaceHandle.isValid else { return }
-
-        for command in commands {
-            switch command {
-            case .position(let input):
-                sendMousePosition(input)
-
-            case .leftButton(let action, let input):
-                let state: ghostty_input_mouse_state_e = switch action {
-                case .press:
-                    GHOSTTY_MOUSE_PRESS
-                case .release:
-                    GHOSTTY_MOUSE_RELEASE
-                }
-                surfaceHandle.withHandle {
-                    ghostty_surface_mouse_button(
-                        $0,
-                        state,
-                        GHOSTTY_MOUSE_LEFT,
-                        Self.modifiers(input.modifiers)
-                    )
-                }
-            }
-        }
     }
 
     private var hasSelection: Bool {

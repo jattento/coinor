@@ -54,7 +54,12 @@ func liveLaunchdJobRunsAnAutomationAndRecordsIt() async throws {
     let installer = AutomationJobInstaller(
         launchAgentsDirectory: launchAgents,
         supportDirectory: support,
-        grokExecutablePath: stub.path
+        grokExecutablePath: stub.path,
+        // Pinned "never live": this test proves the plain-launchd path, not
+        // the GUI hand-off, and must not depend on whether a real Coinor
+        // process happens to be running on the machine.
+        pgrepPath: "/usr/bin/false",
+        openPath: "/usr/bin/false"
     )
     // A schedule far in the future: the run must come from "Run Now", never
     // from the calendar, so the test cannot pass by accident.

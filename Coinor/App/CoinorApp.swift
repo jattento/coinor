@@ -36,6 +36,12 @@ struct CoinorApp: App {
                 .onAppear {
                     applicationDelegate.coordinator = coordinator
                 }
+                .onOpenURL { url in
+                    guard let request = AutomationRunRequestRouting.parse(url) else {
+                        return
+                    }
+                    Task { await coordinator.runAutomationLive(request) }
+                }
         }
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)

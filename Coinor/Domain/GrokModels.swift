@@ -85,6 +85,94 @@ struct GrokPersistedSession: Sendable, Equatable, Identifiable {
         lastActiveAt = GrokTimestamp.date(from: raw["lastActiveAt"])
         self.raw = raw
     }
+
+    private init(
+        id: GrokSessionID,
+        title: String?,
+        cwd: String?,
+        sessionKind: String?,
+        listKind: String?,
+        source: String?,
+        modelID: String?,
+        branch: String?,
+        repositoryName: String?,
+        worktreeLabel: String?,
+        gitRootDirectory: String?,
+        sourceWorkspaceDirectory: String?,
+        gitRemotes: [String],
+        messageCount: Int?,
+        createdAt: Date?,
+        updatedAt: Date?,
+        lastActiveAt: Date?,
+        raw: GrokJSONValue
+    ) {
+        self.id = id
+        self.title = title
+        self.cwd = cwd
+        self.sessionKind = sessionKind
+        self.listKind = listKind
+        self.source = source
+        self.modelID = modelID
+        self.branch = branch
+        self.repositoryName = repositoryName
+        self.worktreeLabel = worktreeLabel
+        self.gitRootDirectory = gitRootDirectory
+        self.sourceWorkspaceDirectory = sourceWorkspaceDirectory
+        self.gitRemotes = gitRemotes
+        self.messageCount = messageCount
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastActiveAt = lastActiveAt
+        self.raw = raw
+    }
+
+    /// Returns a copy with `title` replaced, keeping every other field as is.
+    /// Used to reflect a rename in the local catalog before Grok's RPC
+    /// confirms it and the next real refresh lands.
+    func withTitle(_ newTitle: String) -> GrokPersistedSession {
+        GrokPersistedSession(
+            id: id,
+            title: newTitle,
+            cwd: cwd,
+            sessionKind: sessionKind,
+            listKind: listKind,
+            source: source,
+            modelID: modelID,
+            branch: branch,
+            repositoryName: repositoryName,
+            worktreeLabel: worktreeLabel,
+            gitRootDirectory: gitRootDirectory,
+            sourceWorkspaceDirectory: sourceWorkspaceDirectory,
+            gitRemotes: gitRemotes,
+            messageCount: messageCount,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            lastActiveAt: lastActiveAt,
+            raw: raw
+        )
+    }
+}
+
+/// Applies a rename to a session array before Grok's RPC confirms it, so the
+/// sidebar shows the new title immediately instead of waiting for a full
+/// catalog refresh. Pure and side-effect free so it is independently
+/// testable; the caller decides which array (local or a remote host's) to
+/// apply it to and how to rebuild the catalog afterward.
+enum OptimisticTitleUpdate {
+    /// Returns `sessions` unchanged, plus `nil`, when no session matches.
+    static func apply(
+        to sessions: [GrokPersistedSession],
+        sessionID: String,
+        title: String
+    ) -> (sessions: [GrokPersistedSession], previous: GrokPersistedSession?) {
+        guard let index = sessions.firstIndex(where: { $0.id.rawValue == sessionID }) else {
+            return (sessions, nil)
+        }
+        var updated = sessions
+        let previous = updated[index]
+        updated[index] = previous.withTitle(title)
+        return (updated, previous)
+    }
 }
 
 /// Coarse activity of a session, as Grok's roster reports it.

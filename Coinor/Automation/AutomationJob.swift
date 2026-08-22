@@ -98,7 +98,9 @@ enum AutomationJob {
         automation: Automation,
         systemPrompt: String,
         grokExecutablePath: String,
-        runLogPath: String
+        runLogPath: String,
+        pgrepPath: String = "/usr/bin/pgrep",
+        openPath: String = "/usr/bin/open"
     ) -> String {
         let command = grokCommand(
             automation: automation,
@@ -133,6 +135,10 @@ enum AutomationJob {
         started=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
         printf '{"runID":"%s","automationID":"%s","sessionID":"%s","startedAt":"%s","status":"running","trigger":"%s"}\\n' \\
           "$run_id" \(shellQuoted(automationID)) "$session_id" "$started" "$trigger" >> "$log"
+        if \(shellQuoted(pgrepPath)) -f \(shellQuoted(liveGUIProcessPattern)) >/dev/null 2>&1; then
+          \(shellQuoted(openPath)) \(shellQuoted(liveHandoffURLPrefix(automationID: automationID)))"&runID=$run_id&sessionID=$session_id&trigger=$trigger" >/dev/null 2>&1
+          exit 0
+        fi
         \(command)
         status=$?
         finished=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -150,6 +156,29 @@ enum AutomationJob {
         """
     }
 
+    /// Matches the compiled app's process regardless of where it is
+    /// installed (`/Applications`, a dev build under `DerivedData`, etc.),
+    /// so the job can tell whether to hand the run off to a live GUI
+    /// instance instead of running `grok` itself.
+    static let liveGUIProcessPattern = "/Coinor.app/Contents/MacOS/Coinor"
+
+    /// The static part of the `coinor://run-automation` URL the script hands
+    /// a run off to, ending right before `&runID=...`. `runID`, `sessionID`
+    /// and `trigger` are only known at run time (see `script`), so the
+    /// script appends them itself as shell variables instead of this
+    /// function taking them as parameters.
+    static func liveHandoffURLPrefix(automationID: String) -> String {
+        var components = URLComponents()
+        components.scheme = AutomationRunRequest.scheme
+        components.host = AutomationRunRequest.host
+        components.queryItems = [
+            URLQueryItem(name: "automationID", value: automationID),
+        ]
+        // A fixed scheme/host plus one percent-encoded query item always
+        // produces a URL.
+        return components.url!.absoluteString
+    }
+
     /// The instruction appended to Grok's system prompt. Falls back to the
     /// shipped default when the user cleared the shared prompt.
     static func combinedRules(systemPrompt: String) -> String {
@@ -163,7 +192,9 @@ enum AutomationJob {
         systemPrompt: String,
         grokExecutablePath: String,
         runLogPath: String,
-        logPath: String
+        logPath: String,
+        pgrepPath: String = "/usr/bin/pgrep",
+        openPath: String = "/usr/bin/open"
     ) throws -> [String: Any] {
         let schedule = try CronSchedule.parse(automation.schedule)
         let intervals = try CronLaunchdCompiler.intervals(for: schedule)
@@ -171,7 +202,9 @@ enum AutomationJob {
             automation: automation,
             systemPrompt: systemPrompt,
             grokExecutablePath: grokExecutablePath,
-            runLogPath: runLogPath
+            runLogPath: runLogPath,
+            pgrepPath: pgrepPath,
+            openPath: openPath
         )
         return [
             "Label": label(for: automation.id),
@@ -192,7 +225,9 @@ enum AutomationJob {
         systemPrompt: String,
         grokExecutablePath: String,
         runLogPath: String,
-        logPath: String
+        logPath: String,
+        pgrepPath: String = "/usr/bin/pgrep",
+        openPath: String = "/usr/bin/open"
     ) throws -> Data {
         try PropertyListSerialization.data(
             fromPropertyList: definition(
@@ -200,7 +235,9 @@ enum AutomationJob {
                 systemPrompt: systemPrompt,
                 grokExecutablePath: grokExecutablePath,
                 runLogPath: runLogPath,
-                logPath: logPath
+                logPath: logPath,
+                pgrepPath: pgrepPath,
+                openPath: openPath
             ),
             format: .xml,
             options: 0

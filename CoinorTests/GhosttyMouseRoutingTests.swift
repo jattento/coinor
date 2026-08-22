@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 import Testing
 
 @testable import Coinor
@@ -6,267 +7,80 @@ import Testing
 @Suite
 struct GhosttyMouseRoutingTests {
     @Test
-    func inactiveCaptureForwardsImmediatePressDragAndRelease() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command])
-        let drag = input(x: 30, y: 40, modifiers: [.command, .option])
-        let up = input(x: 35, y: 45, modifiers: [.option])
-
-        #expect(router.mouseDown(down, mouseCaptured: false) == [
-            .position(down),
-            .leftButton(.press, down),
-        ])
-        #expect(router.mouseDragged(drag) == [.position(drag)])
-        #expect(router.mouseUp(up) == [
-            .position(up),
-            .leftButton(.release, up),
-        ])
-    }
-
-    @Test
-    func heldShiftBypassesDeferralWhileMouseIsCaptured() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.shift, .control])
-
-        #expect(router.mouseDown(down, mouseCaptured: true) == [
-            .position(down),
-            .leftButton(.press, down),
-        ])
-    }
-
-    @Test
-    func shiftStartedCapturedGestureKeepsShiftAfterPhysicalRelease() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.shift, .control])
-        let drag = input(x: 20, y: 30, modifiers: [.command])
-        let up = input(x: 25, y: 35, modifiers: [.option])
-        let routedDrag = drag.forcingShift(true)
-        let routedUp = up.forcingShift(true)
-
-        #expect(router.mouseDown(down, mouseCaptured: true) == [
-            .position(down),
-            .leftButton(.press, down),
-        ])
-        #expect(router.mouseDragged(drag) == [.position(routedDrag)])
-        #expect(router.mouseUp(up) == [
-            .position(routedUp),
-            .leftButton(.release, routedUp),
-        ])
-    }
-
-    @Test
-    func inactiveCaptureLatchesShiftAbsentThroughGesture() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.control])
-        let drag = input(x: 20, y: 30, modifiers: [.shift, .command])
-        let up = input(x: 25, y: 35, modifiers: [.shift, .option])
-        let routedDrag = drag.forcingShift(false)
-        let routedUp = up.forcingShift(false)
-
-        #expect(router.mouseDown(down, mouseCaptured: false) == [
-            .position(down),
-            .leftButton(.press, down),
-        ])
-        #expect(router.mouseDragged(drag) == [.position(routedDrag)])
-        #expect(router.mouseUp(up) == [
-            .position(routedUp),
-            .leftButton(.release, routedUp),
-        ])
-    }
-
-    @Test
-    func capturedClickReplaysOrdinaryPressAndRelease() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command])
-        let up = input(x: 11, y: 21, modifiers: [.option])
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        #expect(router.mouseUp(up) == [
-            .position(down),
-            .leftButton(.press, down),
-            .position(up),
-            .leftButton(.release, up),
-        ])
-    }
-
-    @Test
-    func deferredCapturedClickKeepsShiftAbsentIfPressedBeforeRelease() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command])
-        let up = input(x: 11, y: 21, modifiers: [.shift, .option])
-        let routedUp = up.forcingShift(false)
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        #expect(router.mouseUp(up) == [
-            .position(down),
-            .leftButton(.press, down),
-            .position(routedUp),
-            .leftButton(.release, routedUp),
-        ])
-    }
-
-    @Test
-    func twoCapturedClicksReplayTwoCompleteUnshiftedGestures() {
-        var router = GhosttyMouseRouter()
-        let firstDown = input(x: 10, y: 20, modifiers: [.command])
-        let firstUp = input(x: 10, y: 20, modifiers: [.command])
-        let secondDown = input(x: 11, y: 20, modifiers: [.option])
-        let secondUp = input(x: 11, y: 20, modifiers: [.option])
-
-        var commands: [GhosttyMouseRoutingCommand] = []
-        commands += router.mouseDown(firstDown, mouseCaptured: true)
-        commands += router.mouseUp(firstUp)
-        commands += router.mouseDown(secondDown, mouseCaptured: true)
-        commands += router.mouseUp(secondUp)
-
-        #expect(commands == [
-            .position(firstDown),
-            .leftButton(.press, firstDown),
-            .position(firstUp),
-            .leftButton(.release, firstUp),
-            .position(secondDown),
-            .leftButton(.press, secondDown),
-            .position(secondUp),
-            .leftButton(.release, secondUp),
-        ])
-        #expect(commands.allSatisfy { command in
-            switch command {
-            case .position(let input), .leftButton(_, let input):
-                !input.modifiers.contains(.shift)
-            }
-        })
-    }
-
-    @Test
-    func capturedClickSurvivesJitterUnderTheDragThreshold() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command])
-        let jitter = input(x: 12, y: 23, modifiers: [.command])
-        let up = input(x: 12, y: 23, modifiers: [.command])
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        #expect(router.mouseDragged(jitter).isEmpty)
-        #expect(router.mouseUp(up) == [
-            .position(down),
-            .leftButton(.press, down),
-            .position(up),
-            .leftButton(.release, up),
-        ])
-    }
-
-    @Test
-    func capturedGesturePromotesOnceTravelPassesTheDragThreshold() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command])
-        let jitter = input(x: 13, y: 23, modifiers: [.command])
-        let drag = input(x: 10, y: 26, modifiers: [.command])
-        let shiftedDown = down.forcingShift(true)
-        let shiftedDrag = drag.forcingShift(true)
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        #expect(router.mouseDragged(jitter).isEmpty)
-        #expect(router.mouseDragged(drag) == [
-            .position(shiftedDown),
-            .leftButton(.press, shiftedDown),
-            .position(shiftedDrag),
-        ])
-    }
-
-    @Test
-    func capturedDragAddsShiftWithoutDroppingOriginalModifiers() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.command, .control])
-        let drag = input(x: 30, y: 40, modifiers: [.command, .option])
-        let laterDrag = input(x: 45, y: 55, modifiers: [.control])
-        let shiftedDown = down.forcingShift(true)
-        let shiftedDrag = drag.forcingShift(true)
-        let shiftedLaterDrag = laterDrag.forcingShift(true)
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        #expect(router.mouseDragged(drag) == [
-            .position(shiftedDown),
-            .leftButton(.press, shiftedDown),
-            .position(shiftedDrag),
-        ])
-        #expect(router.mouseDragged(laterDrag) == [
-            .position(shiftedLaterDrag),
-        ])
-        #expect(router.mouseUp(laterDrag) == [
-            .position(shiftedLaterDrag),
-            .leftButton(.release, shiftedLaterDrag),
-        ])
-    }
-
-    @Test
-    func cancellingImmediateGestureReleasesAtLastRoutedPosition() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.shift, .control])
-        let drag = input(x: 30, y: 40, modifiers: [.command])
-        let routedDrag = drag.forcingShift(true)
-
-        _ = router.mouseDown(down, mouseCaptured: false)
-        _ = router.mouseDragged(drag)
-
-        #expect(router.cancel() == [
-            .position(routedDrag),
-            .leftButton(.release, routedDrag),
-        ])
-        #expect(router.mouseUp(drag).isEmpty)
-    }
-
-    @Test
-    func cancellingSelectingGestureReleasesWithForcedShift() {
-        var router = GhosttyMouseRouter()
-        let down = input(x: 10, y: 20, modifiers: [.control])
-        let drag = input(x: 30, y: 40, modifiers: [.command])
-        let routedDrag = drag.forcingShift(true)
-
-        #expect(router.mouseDown(down, mouseCaptured: true).isEmpty)
-        _ = router.mouseDragged(drag)
-
-        #expect(router.cancel() == [
-            .position(routedDrag),
-            .leftButton(.release, routedDrag),
-        ])
-        #expect(router.mouseUp(drag).isEmpty)
-    }
-
-    @Test
-    func cancellingDeferredGestureEmitsNothing() {
-        var router = GhosttyMouseRouter()
-        let abandoned = input(x: 10, y: 20)
-
-        #expect(router.mouseDown(abandoned, mouseCaptured: true).isEmpty)
-        #expect(router.cancel().isEmpty)
-        #expect(router.mouseUp(abandoned).isEmpty)
-        #expect(router.cancel().isEmpty)
-    }
-
-    @Test
     func exitWithoutPressedButtonsSendsSentinelWithModifiers() {
-        let commands = GhosttyMouseBoundaryRouting.exitCommands(
+        let positions = GhosttyMouseBoundaryRouting.exitPositions(
             modifiers: [.command, .option],
             hasPressedMouseButtons: false
         )
 
-        #expect(commands == [
-            .position(
-                input(
-                    x: -1,
-                    y: -1,
-                    modifiers: [.command, .option]
-                )
-            ),
+        #expect(positions == [
+            input(x: -1, y: -1, modifiers: [.command, .option]),
         ])
     }
 
     @Test
     func exitDuringDragDoesNotInterruptMouseRouting() {
         #expect(
-            GhosttyMouseBoundaryRouting.exitCommands(
+            GhosttyMouseBoundaryRouting.exitPositions(
                 modifiers: [.shift],
                 hasPressedMouseButtons: true
             ).isEmpty
+        )
+    }
+
+    @Test
+    func buttonNumbersMapToGhosttysButtonOrder() {
+        #expect(button(0) == GHOSTTY_MOUSE_LEFT)
+        #expect(button(1) == GHOSTTY_MOUSE_RIGHT)
+        #expect(button(2) == GHOSTTY_MOUSE_MIDDLE)
+        #expect(button(3) == GHOSTTY_MOUSE_EIGHT)
+        #expect(button(4) == GHOSTTY_MOUSE_NINE)
+        #expect(button(5) == GHOSTTY_MOUSE_SIX)
+        #expect(button(6) == GHOSTTY_MOUSE_SEVEN)
+        #expect(button(7) == GHOSTTY_MOUSE_FOUR)
+        #expect(button(8) == GHOSTTY_MOUSE_FIVE)
+        #expect(button(9) == GHOSTTY_MOUSE_TEN)
+        #expect(button(10) == GHOSTTY_MOUSE_ELEVEN)
+        #expect(button(11) == GHOSTTY_MOUSE_UNKNOWN)
+    }
+
+    @Test
+    func clickOnUnfocusedPaneOfAnActiveWindowOnlyMovesFocus() {
+        #expect(
+            GhosttyFocusTransferPolicy.isFocusTransferOnly(
+                isAlreadyFirstResponder: false,
+                isApplicationActive: true,
+                isKeyWindow: true
+            )
+        )
+    }
+
+    @Test
+    func clickOnFocusedPaneReachesTheTerminal() {
+        #expect(
+            !GhosttyFocusTransferPolicy.isFocusTransferOnly(
+                isAlreadyFirstResponder: true,
+                isApplicationActive: true,
+                isKeyWindow: true
+            )
+        )
+    }
+
+    @Test
+    func clickThatAlsoActivatesTheWindowReachesTheTerminal() {
+        #expect(
+            !GhosttyFocusTransferPolicy.isFocusTransferOnly(
+                isAlreadyFirstResponder: false,
+                isApplicationActive: false,
+                isKeyWindow: true
+            )
+        )
+        #expect(
+            !GhosttyFocusTransferPolicy.isFocusTransferOnly(
+                isAlreadyFirstResponder: false,
+                isApplicationActive: true,
+                isKeyWindow: false
+            )
         )
     }
 
@@ -339,6 +153,12 @@ struct GhosttyMouseRoutingTests {
                 mouseCaptured: true
             )
         )
+    }
+
+    private func button(
+        _ number: Int
+    ) -> ghostty_input_mouse_button_e {
+        GhosttyMouseButtonMapper.button(forNSEventButtonNumber: number)
     }
 
     private func input(

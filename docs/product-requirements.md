@@ -76,7 +76,10 @@ section.
 
 Conan Code can rename conversations from the sidebar. Renaming updates the
 underlying Grok session through Grok's session administration API; Conan Code does
-not store a separate display-title alias.
+not store a separate display-title alias. The sidebar shows the new title the
+instant the user confirms it, rather than waiting for that request and the
+subsequent catalog refresh to complete; a rename that Grok rejects reverts the
+title once the failure is known.
 
 Projects, pinned conversations, and the conversations within each project can
 be dragged to user-defined orders. Until the user reorders a section, newly
@@ -323,16 +326,18 @@ Conan Code's isolated leader, plus the mouse-capture setting required for native
 text selection.
 
 Trackpad and Magic Mouse scrolling inside every embedded terminal preserves
-AppKit's high-precision and momentum metadata. Conan Code forwards the original
-unamplified deltas so Ghostty accumulates precise movement in pixels instead of
-treating each event as a discrete wheel tick. Sidebar scrolling remains native
-and unchanged.
+AppKit's high-precision and momentum metadata and travels the same distance as
+in Ghostty. Sidebar scrolling remains native and unchanged.
 
-Mouse coordinates, hover, clicks, double clicks, and drag selection remain
-fully interactive inside Grok. A normal drag selects terminal text even while
-Grok has mouse reporting enabled; normal clicks and double clicks continue to
-activate Grok rows and expandable task output. Selected text can be copied with
-the standard macOS command or the terminal context menu.
+Mouse behavior inside an embedded terminal is the behavior the same program
+has under Ghostty itself. Conan Code passes every press, release, drag, and
+auxiliary button straight through, so hover, clicks, double clicks, middle
+click, and force click work as they do natively. While Grok has mouse
+reporting enabled, Grok receives the drag and produces its own selection,
+which excludes the interface rules and gutters that a terminal-level selection
+would capture. Shift-drag selects terminal text instead, as in Ghostty.
+Selected terminal text can be copied with the standard macOS command or the
+terminal context menu.
 
 Voice uses Grok's native microphone capture. Conan Code declares the macOS
 microphone purpose string, and macOS requests access when the user starts
@@ -348,6 +353,19 @@ focuses the pane requesting input.
 
 Conan Code sends a native macOS notification when a conversation needs attention
 only while Conan Code is not the focused application.
+
+## Automations
+
+A scheduled automation fires through launchd, independent of whether Conan
+Code is running. When Conan Code's GUI is already running at fire time, the
+launchd job hands the run to that running instance instead of running Grok as
+a disconnected background process, so the automation's session is resident in
+the same control-plane connection every other conversation uses: its activity
+status is live in the sidebar immediately, and opening the conversation while
+it still runs attaches to that live session instead of a stale, disconnected
+snapshot. When Conan Code's GUI is not running, the launchd job runs Grok
+headlessly by itself, exactly as before. Either way the run is recorded
+identically in the automation run history.
 
 ## Grok compatibility updates
 

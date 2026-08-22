@@ -6,7 +6,7 @@ import Testing
 @Suite
 struct GhosttyScrollEventMapperTests {
     @Test
-    func preciseScrollPreservesUnamplifiedDeltas() {
+    func preciseScrollDoublesDeltasLikeGhostty() {
         let event = GhosttyScrollEventMapper.event(
             deltaX: -0.75,
             deltaY: 1.25,
@@ -14,9 +14,22 @@ struct GhosttyScrollEventMapperTests {
             momentumPhase: []
         )
 
-        #expect(event.deltaX == -0.75)
-        #expect(event.deltaY == 1.25)
+        #expect(event.deltaX == -1.5)
+        #expect(event.deltaY == 2.5)
         #expect(event.modifiers == 0b0000_0001)
+    }
+
+    @Test
+    func discreteScrollKeepsUnamplifiedDeltas() {
+        let event = GhosttyScrollEventMapper.event(
+            deltaX: -1,
+            deltaY: 3,
+            hasPreciseScrollingDeltas: false,
+            momentumPhase: []
+        )
+
+        #expect(event.deltaX == -1)
+        #expect(event.deltaY == 3)
     }
 
     @Test

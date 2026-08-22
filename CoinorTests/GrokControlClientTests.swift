@@ -1071,6 +1071,42 @@ func createsASessionThroughACP() async throws {
 }
 
 @Test
+func createsASessionWithRulesYoloModeAndAModelOverride() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, ["sessionId": "session-a"]))
+    }
+
+    try await client.createSession(
+        id: GrokSessionID("session-a"),
+        cwd: "/tmp/coinor",
+        modelID: "claude-sonnet-5",
+        rules: "you are an automation",
+        yoloMode: true
+    )
+
+    let meta = try #require(transport.request("session/new")?["params"]?["_meta"])
+    #expect(meta["modelId"]?.stringValue == "claude-sonnet-5")
+    #expect(meta["rules"]?.stringValue == "you are an automation")
+    #expect(meta["yoloMode"]?.boolValue == true)
+    await client.shutdown()
+}
+
+@Test
+func createSessionOmitsUnsetOptionalMetaFields() async throws {
+    let (client, transport, _) = try await connectedClient { request, transport in
+        transport.emit(result(for: request, ["sessionId": "session-a"]))
+    }
+
+    try await client.createSession(id: GrokSessionID("session-a"), cwd: "/tmp/coinor")
+
+    let meta = try #require(transport.request("session/new")?["params"]?["_meta"])
+    #expect(meta["modelId"] == nil)
+    #expect(meta["rules"] == nil)
+    #expect(meta["yoloMode"] == nil)
+    await client.shutdown()
+}
+
+@Test
 func loadsAnExistingSessionThroughACPWithCwd() async throws {
     let (client, transport, _) = try await connectedClient { request, transport in
         transport.emit(result(for: request, [:]))

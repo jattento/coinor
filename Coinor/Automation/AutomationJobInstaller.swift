@@ -30,12 +30,20 @@ struct AutomationJobInstaller: Sendable {
     /// Runs `launchctl`. Injectable so tests can assert the commands without
     /// registering anything with the real launchd.
     let runLaunchctl: @Sendable ([String]) throws -> Void
+    /// What the job's shell script uses to detect a live Coinor GUI and hand
+    /// the run off to it. Injectable, like `runLaunchctl`, so a test that
+    /// executes the generated script for real never depends on whether a
+    /// real Coinor process happens to be running on the test machine.
+    let pgrepPath: String
+    let openPath: String
 
     init(
         launchAgentsDirectory: URL,
         supportDirectory: URL,
         grokExecutablePath: String,
-        runLaunchctl: (@Sendable ([String]) throws -> Void)? = nil
+        runLaunchctl: (@Sendable ([String]) throws -> Void)? = nil,
+        pgrepPath: String = "/usr/bin/pgrep",
+        openPath: String = "/usr/bin/open"
     ) {
         self.launchAgentsDirectory = launchAgentsDirectory
         self.supportDirectory = supportDirectory
@@ -43,6 +51,8 @@ struct AutomationJobInstaller: Sendable {
         self.runLaunchctl = runLaunchctl ?? { arguments in
             try AutomationJobInstaller.launchctl(arguments)
         }
+        self.pgrepPath = pgrepPath
+        self.openPath = openPath
     }
 
     var runLogURL: URL {
@@ -93,7 +103,9 @@ struct AutomationJobInstaller: Sendable {
             systemPrompt: systemPrompt,
             grokExecutablePath: grokExecutablePath,
             runLogPath: runLogURL.path,
-            logPath: jobLogURL.path
+            logPath: jobLogURL.path,
+            pgrepPath: pgrepPath,
+            openPath: openPath
         )
         let url = plistURL(for: automation.id)
         // `bootout` kills whatever the job is running right now, so reloading

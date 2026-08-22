@@ -142,6 +142,66 @@ func readsALogWrittenByAppendingLikeTheJobDoes() throws {
     #expect(runs[0].sessionID == "s1")
 }
 
+/// Coinor's own live automation runner appends the "finished" event in
+/// Swift instead of the shell script when it drives the run itself; the
+/// written line must fold identically to one the shell script would write.
+@Test
+func appendWritesAnEventTheReaderFoldsCorrectly() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("runs-\(UUID().uuidString).ndjson")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    try AutomationRunLog.append(
+        .init(
+            runID: "r1",
+            automationID: "a1",
+            sessionID: "s1",
+            startedAt: Date(timeIntervalSince1970: 1_735_722_000),
+            status: "running",
+            trigger: "scheduled"
+        ),
+        to: url
+    )
+    try AutomationRunLog.append(
+        .init(
+            runID: "r1",
+            automationID: "a1",
+            sessionID: "s1",
+            finishedAt: Date(timeIntervalSince1970: 1_735_722_300),
+            status: "succeeded",
+            exitCode: 0,
+            trigger: "scheduled"
+        ),
+        to: url
+    )
+
+    let runs = AutomationRunLog.runs(at: url)
+    #expect(runs.count == 1)
+    #expect(runs[0].status == .succeeded)
+    #expect(runs[0].sessionID == "s1")
+    #expect(runs[0].trigger == .scheduled)
+}
+
+/// The shell script's fallback path and Coinor's own live-run path append to
+/// the same file; each `append` call must not clobber lines already there.
+@Test
+func appendIsAdditiveAlongsideExistingLines() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("runs-\(UUID().uuidString).ndjson")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let existing = #"{"runID":"r0","automationID":"a0","sessionID":"s0","startedAt":"2026-01-01T09:00:00Z","status":"running"}"#
+    try Data((existing + "\n").utf8).write(to: url)
+
+    try AutomationRunLog.append(
+        .init(runID: "r1", automationID: "a1", sessionID: "s1", status: "running"),
+        to: url
+    )
+
+    let runs = AutomationRunLog.runs(at: url)
+    #expect(Set(runs.map(\.id)) == ["r0", "r1"])
+}
+
 // MARK: - Model catalog parsing
 
 @Test

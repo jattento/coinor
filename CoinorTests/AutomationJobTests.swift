@@ -272,7 +272,13 @@ func aPromptWithShellMetacharactersCannotEscapeItsArgument() throws {
         automation: automation,
         systemPrompt: "policy",
         grokExecutablePath: stub.path,
-        runLogPath: sandbox.appendingPathComponent("runs.ndjson").path
+        runLogPath: sandbox.appendingPathComponent("runs.ndjson").path,
+        // This test is about grok's argument safety, not the live-GUI
+        // hand-off, so pin the liveness check to "never live" — otherwise a
+        // real Coinor process happening to run on the test machine would
+        // divert execution away from the grok stub this test depends on.
+        pgrepPath: "/usr/bin/false",
+        openPath: "/usr/bin/false"
     )
 
     let scriptURL = sandbox.appendingPathComponent("job.sh")
@@ -327,4 +333,173 @@ func jobSerialisesToAValidPlist() throws {
     let plist = try #require(decoded)
     #expect(plist["Label"] as? String == AutomationJob.label(for: automation.id))
     #expect((plist["StartCalendarInterval"] as? [[String: Int]])?.isEmpty == false)
+}
+
+// MARK: - Live GUI hand-off
+
+/// Runs the generated shell script for real, exactly like
+/// `injectionInThePromptCannotEscapeItsQuotedArgument` above, but exercises
+/// the branch that hands a run off to a live Coinor GUI instead of running
+/// `grok` directly. `pgrepPath`/`openPath` are pointed at stand-ins so the
+/// test never touches the real `/usr/bin/pgrep`/`open` or a real Coinor
+/// process.
+private func runScript(
+    _ program: String,
+    in sandbox: URL
+) throws {
+    let scriptURL = sandbox.appendingPathComponent("job.sh")
+    try program.write(to: scriptURL, atomically: true, encoding: .utf8)
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = [scriptURL.path]
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+}
+
+@Test
+func aLiveGuiHandsTheRunOffInsteadOfRunningGrokDirectly() throws {
+    let sandbox = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: sandbox) }
+
+    // A grok stub that would prove it ran, if invoked.
+    let grokRanMarker = sandbox.appendingPathComponent("grok-ran")
+    let grokStub = sandbox.appendingPathComponent("grok")
+    try "#!/bin/sh\ntouch \(grokRanMarker.path)\nexit 0\n"
+        .write(to: grokStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: grokStub.path)
+
+    // A stand-in for /usr/bin/pgrep that always reports the GUI as alive.
+    let pgrepStub = sandbox.appendingPathComponent("pgrep")
+    try "#!/bin/sh\nexit 0\n".write(to: pgrepStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pgrepStub.path)
+
+    // A stand-in for /usr/bin/open that records the URL it was asked to open.
+    let openArgsFile = sandbox.appendingPathComponent("open-args")
+    let openStub = sandbox.appendingPathComponent("open")
+    try "#!/bin/sh\nprintf '%s' \"$1\" > \(openArgsFile.path)\nexit 0\n"
+        .write(to: openStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: openStub.path)
+
+    let automation = sampleAutomation()
+    let program = AutomationJob.script(
+        automation: automation,
+        systemPrompt: "policy",
+        grokExecutablePath: grokStub.path,
+        runLogPath: sandbox.appendingPathComponent("runs.ndjson").path,
+        pgrepPath: pgrepStub.path,
+        openPath: openStub.path
+    )
+    try runScript(program, in: sandbox)
+
+    #expect(!FileManager.default.fileExists(atPath: grokRanMarker.path))
+    let openedURL = try String(contentsOf: openArgsFile, encoding: .utf8)
+    #expect(openedURL.hasPrefix("coinor://run-automation?automationID="))
+    #expect(openedURL.contains("automationID=\(automation.id)"))
+    #expect(openedURL.contains("&trigger=scheduled"))
+    let openedURLValue = try #require(URL(string: openedURL))
+    let request = try #require(AutomationRunRequestRouting.parse(openedURLValue))
+    #expect(request.automationID == automation.id)
+    #expect(request.trigger == .scheduled)
+    #expect(!request.runID.isEmpty)
+    #expect(!request.sessionID.isEmpty)
+
+    let log = try String(
+        contentsOf: sandbox.appendingPathComponent("runs.ndjson"),
+        encoding: .utf8
+    )
+    // The script always writes the "running" line itself, regardless of who
+    // ends up executing the automation.
+    #expect(log.contains("\"status\":\"running\""))
+    #expect(!log.contains("\"status\":\"succeeded\""))
+    #expect(!log.contains("\"status\":\"failed\""))
+}
+
+@Test
+func aRunFromTheForcedMarkerHandsOffWithTheForcedTrigger() throws {
+    let sandbox = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: sandbox) }
+
+    let pgrepStub = sandbox.appendingPathComponent("pgrep")
+    try "#!/bin/sh\nexit 0\n".write(to: pgrepStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pgrepStub.path)
+
+    let openArgsFile = sandbox.appendingPathComponent("open-args")
+    let openStub = sandbox.appendingPathComponent("open")
+    try "#!/bin/sh\nprintf '%s' \"$1\" > \(openArgsFile.path)\nexit 0\n"
+        .write(to: openStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: openStub.path)
+
+    let automation = sampleAutomation()
+    let runLogPath = sandbox.appendingPathComponent("runs.ndjson").path
+    let marker = AutomationJob.forcedMarkerPath(
+        runLogPath: runLogPath,
+        automationID: automation.id
+    )
+    FileManager.default.createFile(atPath: marker, contents: Data())
+
+    let program = AutomationJob.script(
+        automation: automation,
+        systemPrompt: "policy",
+        grokExecutablePath: "/does/not/matter",
+        runLogPath: runLogPath,
+        pgrepPath: pgrepStub.path,
+        openPath: openStub.path
+    )
+    try runScript(program, in: sandbox)
+
+    let openedURL = try String(contentsOf: openArgsFile, encoding: .utf8)
+    #expect(openedURL.contains("&trigger=forced"))
+    #expect(!FileManager.default.fileExists(atPath: marker))
+}
+
+@Test
+func aGuiNotRunningStillFallsBackToRunningGrokDirectly() throws {
+    let sandbox = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: sandbox) }
+
+    let grokRanMarker = sandbox.appendingPathComponent("grok-ran")
+    let grokStub = sandbox.appendingPathComponent("grok")
+    try "#!/bin/sh\ntouch \(grokRanMarker.path)\nexit 0\n"
+        .write(to: grokStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: grokStub.path)
+
+    // A stand-in for /usr/bin/pgrep that always reports no match, like the
+    // real one when Coinor's GUI is not running.
+    let pgrepStub = sandbox.appendingPathComponent("pgrep")
+    try "#!/bin/sh\nexit 1\n".write(to: pgrepStub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pgrepStub.path)
+
+    let automation = sampleAutomation()
+    let program = AutomationJob.script(
+        automation: automation,
+        systemPrompt: "policy",
+        grokExecutablePath: grokStub.path,
+        runLogPath: sandbox.appendingPathComponent("runs.ndjson").path,
+        pgrepPath: pgrepStub.path,
+        openPath: "/usr/bin/false"
+    )
+    try runScript(program, in: sandbox)
+
+    #expect(FileManager.default.fileExists(atPath: grokRanMarker.path))
+    let log = try String(
+        contentsOf: sandbox.appendingPathComponent("runs.ndjson"),
+        encoding: .utf8
+    )
+    #expect(log.contains("\"status\":\"succeeded\""))
+}
+
+@Test
+func liveHandoffURLPrefixEncodesTheAutomationID() {
+    let prefix = AutomationJob.liveHandoffURLPrefix(automationID: "with space & amp")
+    #expect(prefix.hasPrefix("coinor://run-automation?automationID="))
+    #expect(!prefix.contains(" "))
+    #expect(!prefix.contains("&amp"))
 }

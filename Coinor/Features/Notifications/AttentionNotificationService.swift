@@ -44,6 +44,22 @@ final class AttentionNotificationService {
         )
     }
 
+    /// Mirrors the `osascript display notification` the launchd job's own
+    /// shell script posts for a run it executed itself (see
+    /// `AutomationJob.script`), for a run Coinor executed live instead.
+    func notifyAutomationFinished(name: String, succeeded: Bool) async {
+        guard await ensureAuthorization() else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = succeeded ? "Automation finished" : "Automation failed"
+        content.body = name
+        content.sound = .default
+        await add(
+            identifier: "coinor.automation-finished.\(UUID().uuidString)",
+            content: content
+        )
+    }
+
     func notifyRemoteDisconnect(_ alias: RemoteHostAlias) async {
         guard await ensureAuthorization() else { return }
 

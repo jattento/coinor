@@ -1488,6 +1488,73 @@ final class AppCoordinator: ObservableObject {
         }
     }
 
+    /// Runs an automation through this app's own control-plane connection
+    /// instead of a standalone `grok -p` process.
+    ///
+    /// The launchd job's shell script (`AutomationJob.script`) hands a run
+    /// off here only after finding Coinor's GUI already alive; it has
+    /// already minted `runID`/`sessionID` and appended the "running" log
+    /// line itself, so both this path and the plain-`grok` fallback record
+    /// runs identically. Creating the session through `controlClient` makes
+    /// it resident in the same leader process Coinor already keeps running,
+    /// so — unlike a standalone process — its status is live in the sidebar
+    /// immediately, and opening it attaches to the same live session instead
+    /// of resuming a stale, disconnected snapshot.
+    ///
+    /// `--reasoning-effort` has no per-session ACP equivalent today, so an
+    /// automation's reasoning-effort override is not honored on this path;
+    /// everything else (`cwd`, `model`, `--rules`, `--always-approve`) is.
+    func runAutomationLive(_ request: AutomationRunRequest) async {
+        guard let automation = metadata.automation(request.automationID),
+              let controlClient,
+              let supportDirectory
+        else {
+            return
+        }
+        let runLogURL = supportDirectory
+            .appendingPathComponent(AutomationJob.runLogFileName)
+        let sessionID = GrokSessionID(request.sessionID)
+        let succeeded: Bool
+        do {
+            try await controlClient.createSession(
+                id: sessionID,
+                cwd: automation.workingDirectory,
+                modelID: automation.model,
+                rules: AutomationJob.combinedRules(
+                    systemPrompt: metadata.automationSystemPrompt
+                ),
+                yoloMode: true
+            )
+            _ = try await controlClient.prompt(
+                sessionID: sessionID,
+                text: automation.prompt
+            )
+            succeeded = true
+        } catch {
+            succeeded = false
+        }
+        try? AutomationRunLog.append(
+            .init(
+                runID: request.runID,
+                automationID: request.automationID,
+                sessionID: request.sessionID,
+                finishedAt: Date(),
+                status: (
+                    succeeded ? AutomationRunStatus.succeeded : .failed
+                ).rawValue,
+                exitCode: succeeded ? 0 : 1,
+                trigger: request.trigger.rawValue
+            ),
+            to: runLogURL
+        )
+        loadAutomationSessions()
+        try? await refresh()
+        await notifications.notifyAutomationFinished(
+            name: automation.name,
+            succeeded: succeeded
+        )
+    }
+
     /// Names an automation run's conversation after the automation that
     /// created it.
     ///
@@ -1535,6 +1602,11 @@ final class AppCoordinator: ObservableObject {
         }
         let directory = session(sessionID)?.cwd
         let generation = lifecycleGeneration
+        // Optimistic: the sidebar shows the new title the instant the user
+        // confirms, instead of waiting for the rename RPC plus the full
+        // session-list/roster refresh that used to gate the visible update.
+        // A failed rename rolls this back once the RPC replies.
+        let previous = applyOptimisticTitle(sessionID: sessionID, title: trimmed)
         renameConversationTask?.cancel()
         renameConversationTask = Task { [weak self] in
             do {
@@ -1551,8 +1623,11 @@ final class AppCoordinator: ObservableObject {
                       ) else {
                     return
                 }
-                try await self.refresh()
                 await self.telegram.syncTitle(trimmed, for: sessionID)
+                // Reconciles with Grok's canonical state (e.g. concurrent
+                // changes from another client) without blocking the title
+                // that already updated above.
+                try? await self.refresh()
             } catch {
                 guard let self,
                       CoordinatorMutationGate.allowsMutation(
@@ -1562,9 +1637,65 @@ final class AppCoordinator: ObservableObject {
                       ) else {
                     return
                 }
+                if let previous {
+                    self.revertOptimisticTitle(previous, sessionID: sessionID)
+                }
                 self.warningMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Applies `OptimisticTitleUpdate` to whichever session array owns
+    /// `sessionID` — the local catalog or a connected remote host's — and
+    /// rebuilds the published catalog from it. Returns the session's prior
+    /// state so a failed rename can be rolled back.
+    @discardableResult
+    private func applyOptimisticTitle(
+        sessionID: String,
+        title: String
+    ) -> GrokPersistedSession? {
+        let previous: GrokPersistedSession?
+        if let alias = hostAlias(forSession: sessionID),
+           let host = remoteHosts[alias] {
+            let result = OptimisticTitleUpdate.apply(
+                to: host.persistedSessions,
+                sessionID: sessionID,
+                title: title
+            )
+            host.persistedSessions = result.sessions
+            previous = result.previous
+        } else {
+            let result = OptimisticTitleUpdate.apply(
+                to: localPersistedSessions,
+                sessionID: sessionID,
+                title: title
+            )
+            localPersistedSessions = result.sessions
+            previous = result.previous
+        }
+        mergeCatalogState()
+        rebuildCatalog()
+        return previous
+    }
+
+    private func revertOptimisticTitle(
+        _ previous: GrokPersistedSession,
+        sessionID: String
+    ) {
+        if let alias = hostAlias(forSession: sessionID),
+           let host = remoteHosts[alias] {
+            if let index = host.persistedSessions.firstIndex(where: {
+                $0.id.rawValue == sessionID
+            }) {
+                host.persistedSessions[index] = previous
+            }
+        } else if let index = localPersistedSessions.firstIndex(where: {
+            $0.id.rawValue == sessionID
+        }) {
+            localPersistedSessions[index] = previous
+        }
+        mergeCatalogState()
+        rebuildCatalog()
     }
 
     func dismissWarning() {

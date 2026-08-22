@@ -14,6 +14,54 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.3 Verification
+
+Version `0.6.3` build `41` ships four changes: native mouse routing in the
+embedded terminal (verbatim event forwarding instead of a deferred-press,
+synthesized-Shift router), an optimistic sidebar rename, automations that run
+live through Conan Code's own control-plane connection when its GUI is
+already running, and — in the Grok fork — proactive image handling for
+no-vision ("NV") models. See `docs/releases/0.6.3.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` ran repeatedly. Every run of the 7 XCUITests and
+  the 589 non-timing-sensitive unit tests passed cleanly, including the new
+  cases for the mouse-routing rewrite (button mapping, focus-transfer,
+  pointer-exit sentinel, doubled precise scroll), the optimistic-rename
+  rollback, and both branches of the live-automation hand-off (executed for
+  real against a stub `grok` and stand-in `pgrep`/`open`, never the live
+  system binaries). A small, fixed set of pre-existing, unrelated subprocess
+  wall-clock timing tests
+  (`GrokSubprocessTransportShutdownTests.shutdownWaitsUntilTheChildProcessHasExited`,
+  `GitProcessRunnerDeadlineTests.oversizedOutputIsTruncatedThroughTheGitRunner`,
+  `executableVersionProbeKillsACommandThatWouldOtherwiseHang`,
+  `RemoteShellExecutionTests.stopCommandLeavesAProcessRunningFromAGrokDirectoryAlone`)
+  intermittently missed a ~2-second wall-clock bound only when run alongside
+  the rest of the suite; each was confirmed to pass in isolation in a
+  fraction of a second, repeatedly, and none touches code this release
+  changed (`git diff` against every one of those files is empty). This is the
+  same load-sensitive flake class documented for earlier releases, not a
+  regression.
+- Grok fork (`jattento/grok-build`): `cargo test -p overlay-core -p
+  overlay-conversation -p xai-grok-sampling-types -p xai-grok-sampler` passed
+  (347 unit tests across the touched packages, 0 failures), and
+  `overlay/scripts/overlay-diff.sh` passed its touchpoint and delta-budget
+  gates with zero new upstream touchpoints — the no-vision fix reuses the
+  fork's single existing conversation-preparation touchpoint in
+  `overlay-conversation`.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.3 (41)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` passed; `scripts/release/security-scan.sh` passed over
+  the tracked snapshot and every file in the release bundle, with no leaks
+  found, for both `coinor` and `grok-build`.
+
 ## Conan Code 0.6.2 Verification
 
 The ego lite Browser Mirror feature (ADR-0016) ships as version `0.6.2` build

@@ -115,6 +115,37 @@ Leader mode requires a Grok configuration that is eligible for leader
 operation. Coinor must surface a clear startup error if Grok refuses leader
 mode, including sandbox-policy failures.
 
+### Automations
+
+Each automation is one launchd job (`AutomationJob`), scheduled independently
+of whether Coinor is running. The job's generated shell script always mints
+the run's session and run IDs and appends the "running" line to the append-only
+run log before deciding how to execute:
+
+- If a process matching the compiled app (`pgrep -f
+  '/Coinor.app/Contents/MacOS/Coinor'`) is found, the script opens a
+  `coinor://run-automation` URL (`AutomationRunRequestRouting`) carrying the
+  automation, run, and session IDs plus the trigger, and exits. macOS's
+  single-instance URL routing (`LSMultipleInstancesProhibited`) delivers this
+  to the already-running instance; nothing else is spawned.
+- Otherwise it runs `grok --cwd ... --session-id ... --rules ... --always-approve
+  -p '<prompt>'` directly and appends the "finished" line itself, unchanged
+  from before this hand-off existed.
+
+The running app's `AppCoordinator.runAutomationLive(_:)` handles the URL by
+driving the automation through its own `GrokControlClient` — the same
+persistent `agent --leader stdio` connection every pane and the Telegram
+bridge share — via `session/new` (with `_meta.rules` and `_meta.yoloMode: true`
+standing in for `--rules`/`--always-approve`) and `session/prompt`. Because the
+session is created on that connection, it is resident in the leader process
+like any other Coinor-driven session, so its activity is live in the roster
+immediately instead of only becoming visible once something reads the run log
+or transcript from disk. `runAutomationLive` then appends the "finished" run
+log line itself and posts the completion notification, mirroring what the
+shell script would have done. `--reasoning-effort` has no per-session ACP
+equivalent today, so it is not honored on this path; every other automation
+setting is.
+
 ### Agent terminal control
 
 Conan Code hosts a second private Unix socket for long-running-command control.
@@ -188,31 +219,39 @@ Each surface inherits the user's normal font, colors, and terminal behavior.
 Coinor overrides the surface command, working directory, environment, and
 initial size required by the pane.
 
-The bundled override sets `mouse-shift-capture = never`. Grok uses terminal
-mouse reporting for its interactive rows, so `GhosttySurfaceView` distinguishes
-clicks from drags while capture is active:
+`GhosttySurfaceView` forwards mouse events to libghostty unchanged, exactly as
+Ghostty's own AppKit surface does. Presses, releases, drags, and auxiliary
+buttons arrive with the live modifier flags of the originating `NSEvent`;
+Coinor never defers a press, never synthesizes a modifier, and never decides
+locally whether a gesture is a selection. That arbitration belongs to Ghostty's
+core, which reports the gesture to an application that enabled mouse reporting
+and otherwise starts a terminal selection. Grok therefore owns dragging inside
+its own interface, and its selection matches the one Grok produces under
+Ghostty itself.
 
-- an ordinary click is replayed to Grok unchanged
-- two clicks remain two ordinary press/release pairs for Grok's double-click
-  detection
-- the first drag event replays the deferred press with Shift so Ghostty starts
-  native selection
-- subsequent drag and release events retain Shift only for that selection
+The bundled override still sets `mouse-shift-capture = never`, so Shift-drag
+always produces a terminal selection over Grok's own mouse handling, which is
+Ghostty's documented override and the only Coinor-side selection path.
 
 AppKit mouse locations are sent to Ghostty in logical points rather than
 Retina backing pixels. Enter, move, exit, right-drag, and auxiliary-drag events
 are forwarded so hover state does not remain stale across panes. Exiting sends
-Ghostty's `(-1, -1)` sentinel when no button is pressed. A right click with an
-active selection opens Coinor's standard Copy/Paste/Select All menu; otherwise
-the right click remains available to Grok.
+Ghostty's `(-1, -1)` sentinel when no button is pressed. Pressure events drive
+force-click Quick Look, and the release resets pressure the way Ghostty does. A
+click that only moves focus to an unfocused pane of an already active window
+transfers focus without reaching the terminal. Because a pane can be hidden or
+detached mid-gesture, where AppKit never delivers the matching mouse-up, Coinor
+releases a still-held button itself; that release is the only button event it
+originates. A right click with an active selection opens Coinor's standard
+Copy/Paste/Select All menu; otherwise the right click remains available to
+Grok.
 
 Scroll events preserve AppKit's high-precision flag and momentum phase in
-Ghostty's packed scroll-modifier bitmask. Precise deltas are forwarded without
-Ghostty.app's hardcoded 2x multiplier, allowing Ghostty to accumulate trackpad
-movement in pixels before advancing terminal rows. Discrete mouse-wheel events
-remain unmarked and continue to use Ghostty's wheel-tick behavior. This routing
-exists only in `GhosttySurfaceView`, so the SwiftUI sidebar retains native
-scroll behavior.
+Ghostty's packed scroll-modifier bitmask, and precise deltas carry Ghostty's 2x
+multiplier so trackpad scrolling travels the same distance as in Ghostty.
+Discrete mouse-wheel events remain unmarked and continue to use Ghostty's
+wheel-tick behavior. This routing exists only in `GhosttySurfaceView`, so the
+SwiftUI sidebar retains native scroll behavior.
 
 `GhosttyActionBridge` handles clipboard completion, close requests, cursor
 state, title and working-directory updates, URL opening, renderer health, and

@@ -332,13 +332,36 @@ actor GrokControlClient {
     }
 
     /// Creates a durable Grok session that this control client can drive.
-    func createSession(id: GrokSessionID, cwd: String) async throws {
+    ///
+    /// `rules` appends to the session's system prompt (Grok's `_meta.rules`,
+    /// the ACP equivalent of `grok --rules`) and `yoloMode` auto-approves
+    /// every tool permission for this session only (`_meta.yoloMode`, the
+    /// equivalent of `grok --always-approve`), which is what lets an
+    /// automation run through this same control connection instead of a
+    /// standalone headless process.
+    func createSession(
+        id: GrokSessionID,
+        cwd: String,
+        modelID: String? = nil,
+        rules: String? = nil,
+        yoloMode: Bool = false
+    ) async throws {
+        var meta: [String: GrokJSONValue] = ["sessionId": .string(id.rawValue)]
+        if let modelID, !modelID.isEmpty {
+            meta["modelId"] = .string(modelID)
+        }
+        if let rules, !rules.isEmpty {
+            meta["rules"] = .string(rules)
+        }
+        if yoloMode {
+            meta["yoloMode"] = .bool(true)
+        }
         _ = try await call(
             GrokMethod.sessionNew,
             params: [
                 "cwd": .string(cwd),
                 "mcpServers": .array([]),
-                "_meta": ["sessionId": .string(id.rawValue)],
+                "_meta": .object(meta),
             ]
         )
     }
