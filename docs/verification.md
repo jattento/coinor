@@ -14,6 +14,48 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.2 Verification
+
+The ego lite Browser Mirror feature (ADR-0016) ships as version `0.6.2` build
+`40`: live read-only preview tabs of ego-browser Task Spaces, an "Open in ego
+lite" action, automatic open/update/close driven by the passive ACP detector,
+and the bundled `conan-code-browser` skill. The mirrored image now fills the
+tab and crops (top-aligned) instead of letterboxing.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` passed end to end: 582 Swift Testing tests in 43
+  suites, 46 XCTest cases, and 5 application-shell XCUITests with 0 failures.
+  The opt-in live UI tests remained skipped because
+  `COINOR_RUN_LIVE_BROWSER_MIRROR_UI` and `COINOR_LIVE_REMOTE_HOST` were not
+  set.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.2 (40)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- The bundled Ghostty manifest is byte-identical to
+  `Vendor/Ghostty/manifest.txt`. The Release manifest resource had drifted
+  from the verified artifact at commit `689df7a` (the artifact was rebuilt on
+  Xcode 26 toolchains there); it is regenerated from the verified
+  `Vendor/Ghostty` artifact (tag v1.3.1, commit `332b2aef`), whose
+  `library_sha256`/`xcframework_sha256`/`resources_sha256`/`header_sha256`
+  match the pinned values, and `scripts/ghostty/verify.sh --artifact-root
+  Vendor/Ghostty` passes.
+- `git diff --check` passed; `scripts/release/security-scan.sh` passed over 92
+  commits, the tracked snapshot, and every file in the release bundle, with no
+  leaks found.
+- The published archive checksum (`Artifacts/SHA256SUMS`) is
+  `755fbde8afa35eda3377775bb10d71c08fa0f595366339e8003a96d053aa972f`.
+
+The Browser Mirror is covered by 1,434 lines of new and updated tests across
+the passive detector, poller cadence, screenshot-client parsing, runtime tab
+lifecycle (reuse, close, orphan, same-owner reopen), and a gated live E2E UI
+test that drives the real `ego-browser` CLI when enabled.
+
 ## Conan Code 0.6.0 Verification
 
 Scheduled automations, backed by launchd and run by `grok` itself, ship as

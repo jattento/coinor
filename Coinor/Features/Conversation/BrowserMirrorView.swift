@@ -14,14 +14,19 @@ struct BrowserMirrorView: View {
         ZStack {
             Color(nsColor: .textBackgroundColor)
             if let image = tab.image {
-                // Top-aligned rather than centered: any letterbox gap from
-                // an aspect-ratio mismatch lands at the bottom, where the
-                // status bar's material already covers it, instead of as a
-                // bare gap above the page content.
+                // Fills the tab and crops rather than letterboxing: the
+                // captured screenshot's aspect ratio (ego lite's own window
+                // size) rarely matches this tab's, and a visible black
+                // letterbox band reads as "broken" even though it is only
+                // ever a display artifact — the agent never sees this view,
+                // it reads the real page through ego-browser's own tools.
+                // Top-aligned so a crop trims the bottom of the page, never
+                // its header/title.
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .clipped()
                     .accessibilityIdentifier("browser-mirror.image.\(tab.id)")
             } else {
                 VStack(spacing: 8) {
