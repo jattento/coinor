@@ -6,13 +6,16 @@ final class AppShellModel: ObservableObject {
     @Published private(set) var startupChecks: [StartupCheck] = StartupCheck.allPending
     @Published private(set) var isRunningStartupChecks = false
     @Published private(set) var availableGrokRelease: GrokRelease?
+    @Published private(set) var missingUpstreamGrokCommits: GrokUpstreamSyncStatus?
 
     private let diagnostics: any StartupDiagnosticsProviding
     private let grokUpdateChecker: any GrokUpdateChecking
+    private let grokUpstreamSyncChecker: any GrokUpstreamSyncChecking
 
     init(environment: AppEnvironment) {
         diagnostics = environment.startupDiagnostics
         grokUpdateChecker = environment.grokUpdateChecker
+        grokUpstreamSyncChecker = environment.grokUpstreamSyncChecker
     }
 
     var unresolvedStartupCheckCount: Int {
@@ -35,9 +38,19 @@ final class AppShellModel: ObservableObject {
         }
     }
 
+    func checkForMissingUpstreamGrokCommits() async {
+        do {
+            missingUpstreamGrokCommits = try await grokUpstreamSyncChecker
+                .missingUpstreamCommits()
+        } catch {
+            // Sync status is advisory. Keep the last successful state.
+        }
+    }
+
     func monitorGrokUpdates() async {
         while !Task.isCancelled {
             await checkForGrokUpdate()
+            await checkForMissingUpstreamGrokCommits()
             do {
                 try await Task.sleep(for: .seconds(21_600))
             } catch {

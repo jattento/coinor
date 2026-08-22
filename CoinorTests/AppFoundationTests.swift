@@ -260,6 +260,10 @@ final class AppFoundationTests: XCTestCase {
             AppShellIdentifier.grokUpdateButton,
             "AppShellGrokUpdate"
         )
+        XCTAssertEqual(
+            AppShellIdentifier.grokUpstreamSyncButton,
+            "AppShellGrokUpstreamSync"
+        )
         XCTAssertEqual(AppShellIdentifier.settingsButton, "AppShellSettings")
         XCTAssertEqual(AppShellIdentifier.settingsPanel, "AppShellSettingsPanel")
         XCTAssertEqual(AppShellIdentifier.settingsClose, "AppShellSettingsClose")

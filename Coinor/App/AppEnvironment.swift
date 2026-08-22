@@ -31,14 +31,18 @@ enum CoinorRuntimeEnvironment {
 struct AppEnvironment: Sendable {
     var startupDiagnostics: any StartupDiagnosticsProviding
     var grokUpdateChecker: any GrokUpdateChecking
+    var grokUpstreamSyncChecker: any GrokUpstreamSyncChecking
 
     init(
         startupDiagnostics: any StartupDiagnosticsProviding,
         grokUpdateChecker: any GrokUpdateChecking =
-            GitHubGrokUpdateChecker.live()
+            GitHubGrokUpdateChecker.live(),
+        grokUpstreamSyncChecker: any GrokUpstreamSyncChecking =
+            GitHubGrokUpstreamSyncChecker.live()
     ) {
         self.startupDiagnostics = startupDiagnostics
         self.grokUpdateChecker = grokUpdateChecker
+        self.grokUpstreamSyncChecker = grokUpstreamSyncChecker
     }
 
     static func live() -> AppEnvironment {
@@ -52,7 +56,8 @@ struct AppEnvironment: Sendable {
         )
         return AppEnvironment(
             startupDiagnostics: EnvironmentStartupDiagnostics(paths: paths),
-            grokUpdateChecker: GitHubGrokUpdateChecker.live()
+            grokUpdateChecker: GitHubGrokUpdateChecker.live(),
+            grokUpstreamSyncChecker: GitHubGrokUpstreamSyncChecker.live()
         )
     }
 }

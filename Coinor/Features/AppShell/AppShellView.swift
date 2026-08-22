@@ -64,6 +64,25 @@ struct AppShellView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                if let status = model.missingUpstreamGrokCommits {
+                    Button {
+                        openURL(status.url)
+                    } label: {
+                        Image(systemName: "arrow.trianglehead.branch")
+                            .foregroundStyle(.orange)
+                    }
+                    .help(
+                        "Grok is missing \(status.missingCommitCount) commit(s) from upstream xai-org/grok-build"
+                    )
+                    .accessibilityLabel(
+                        "Grok missing \(status.missingCommitCount) upstream commit(s)"
+                    )
+                    .accessibilityIdentifier(
+                        AppShellIdentifier.grokUpstreamSyncButton
+                    )
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
                 if let release = model.availableGrokRelease {
                     Button {
                         openURL(release.url)

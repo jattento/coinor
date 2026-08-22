@@ -15,6 +15,7 @@ enum AppShellIdentifier {
     static let agenticSearchClose = "AppShellAgenticSearchClose"
     static let searchEmptyState = "AppShellSearchEmptyState"
     static let grokUpdateButton = "AppShellGrokUpdate"
+    static let grokUpstreamSyncButton = "AppShellGrokUpstreamSync"
     static let terminalRegion = "AppShellTerminalRegion"
     static let startupDiagnostics = "AppShellStartupDiagnostics"
     static let refreshStartupChecks = "AppShellRefreshStartupChecks"
