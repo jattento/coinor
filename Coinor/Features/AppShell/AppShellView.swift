@@ -112,7 +112,10 @@ struct AppShellView: View {
         }
         .sheet(isPresented: $showsSettings) {
             if let runtime = coordinator.runtimeManager?.ghosttyRuntime {
-                SettingsWindowHost(runtime: runtime)
+                SettingsWindowHost(
+                    runtime: runtime,
+                    changelogLoader: model.changelogLoader
+                )
             } else {
                 SettingsUnavailableView()
             }

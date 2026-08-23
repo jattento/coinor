@@ -14,6 +14,36 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.5 Verification
+
+Version `0.6.5` build `43` ships a cooked Grok changelog tab inside Settings
+and a subagent-router config synced to the current `alibaba-*` model family.
+See `docs/releases/0.6.5.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on macOS 26.6.1 with Xcode 26.6 (17F113),
+  macOS SDK 26.5, Swift 6.3.3, Developer Tools security enabled,
+  `system.privilege.taskport` allowed, and automation mode requiring no
+  authentication.
+- `scripts/dev/run-tests.sh` ran the full suite; the new `GrokChangelogTests`
+  (classification, boilerplate filtering, upstream-summary extraction, bundle
+  loader, shell-model wiring) and the updated `SettingsFileCatalogTests`
+  passed. The same pre-existing, load-sensitive subprocess wall-clock timing
+  flakes documented for 0.6.3/0.6.4 intermittently missed their bound only
+  under full-suite background load and pass in isolation.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.5 (43)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `Coinor/Resources/GrokChangelog.json` is committed and bundled; the
+  Settings Changelog tab reads it from the bundle with no network access.
+- The user's `~/.grok/subagent-router.toml` was rewritten to the `alibaba-*`
+  slugs with provider `alibabatokenplan`; it parses as TOML and every
+  `[routes.*]` model resolves to a `[models.*]` entry.
+- `git diff --check` passed; `scripts/release/security-scan.sh` passed over
+  the tracked snapshot and every file in the release bundle.
+
 ## Conan Code 0.6.4 Verification
 
 Version `0.6.4` build `42` ships two changes: an upstream-sync warning that

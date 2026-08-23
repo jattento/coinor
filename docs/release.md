@@ -86,6 +86,22 @@ Checksums alone cannot catch an archiver that drops members: the archive stays
 well formed and matches its own manifest while exporting nothing. Do not mix
 files from different Ghostty builds.
 
+## Prepare the Grok changelog
+
+The Settings changelog tab reads a cooked snapshot of the Grok fork releases
+from the application bundle. Refresh it before a release so the shipped app
+documents the Grok version it was built against:
+
+```sh
+scripts/grok-changelog/cook.py
+```
+
+The script downloads the `jattento/grok-build` releases and their per-release
+commit ranges from the GitHub API, splits each release into fork changes and
+upstream (xAI) changes, strips validation and security boilerplate, and writes
+`Coinor/Resources/GrokChangelog.json`. The result is committed with the source;
+the application never calls the GitHub API for it.
+
 ## Build
 
 Run the required Debug build and full Debug test before producing Release:
@@ -249,6 +265,7 @@ The Release application contains:
 - `Contents/Resources/terminfo`
 - `Contents/Resources/GhosttyArtifactManifest.txt`
 - `Contents/Resources/ThirdPartyNotices.txt`
+- `Contents/Resources/GrokChangelog.json`
 - `Contents/Resources/coinorctl`
 - `Contents/Resources/conan-code-long-running-SKILL.md`
 - `Contents/Resources/conan-code-terminal.sh`

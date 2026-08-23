@@ -23,6 +23,7 @@ enum AppShellIdentifier {
     static let settingsButton = "AppShellSettings"
     static let settingsPanel = "AppShellSettingsPanel"
     static let settingsClose = "AppShellSettingsClose"
+    static let settingsChangelog = "AppShellSettingsChangelog"
 
     static func startupCheckRow(_ kind: StartupCheck.Kind) -> String {
         "AppShellStartupCheck.\(kind.rawValue)"

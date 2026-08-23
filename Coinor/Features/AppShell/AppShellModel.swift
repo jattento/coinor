@@ -11,11 +11,13 @@ final class AppShellModel: ObservableObject {
     private let diagnostics: any StartupDiagnosticsProviding
     private let grokUpdateChecker: any GrokUpdateChecking
     private let grokUpstreamSyncChecker: any GrokUpstreamSyncChecking
+    let changelogLoader: any GrokChangelogLoading
 
     init(environment: AppEnvironment) {
         diagnostics = environment.startupDiagnostics
         grokUpdateChecker = environment.grokUpdateChecker
         grokUpstreamSyncChecker = environment.grokUpstreamSyncChecker
+        changelogLoader = environment.grokChangelogLoader
     }
 
     var unresolvedStartupCheckCount: Int {

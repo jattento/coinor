@@ -9,8 +9,8 @@ private let home = "/Users/example user"
 func settingsCatalogExposesTheRequiredGlobalConfigurationFiles() {
     let tabs = SettingsFileCatalog.tabs(homeDirectory: home)
 
-    #expect(tabs.count >= 3)
-    let paths = tabs.map(\.path)
+    #expect(tabs.count >= 4)
+    let paths = tabs.compactMap(\.path)
     #expect(paths.contains("\(home)/.grok/AGENTS.md"))
     #expect(paths.contains("\(home)/.grok/subagent-router.toml"))
     // At least one further global configuration file beyond the two required.
@@ -30,9 +30,11 @@ func settingsCatalogPathsAreAbsoluteWithTildeExpanded() {
     let tabs = SettingsFileCatalog.tabs(homeDirectory: home)
 
     for tab in tabs {
-        #expect(tab.path.hasPrefix("/"))
-        #expect(!tab.path.contains("~"))
-        #expect(tab.path.hasPrefix(home + "/"))
+        if let path = tab.path {
+            #expect(path.hasPrefix("/"))
+            #expect(!path.contains("~"))
+            #expect(path.hasPrefix(home + "/"))
+        }
     }
 }
 
@@ -42,7 +44,7 @@ func settingsCatalogUsesTheRealHomeDirectoryByDefault() {
 
     #expect(!tabs.isEmpty)
     for tab in tabs {
-        #expect(tab.path.hasPrefix(NSHomeDirectory() + "/"))
+        #expect(tab.path == nil || tab.path!.hasPrefix(NSHomeDirectory() + "/"))
     }
 }
 
@@ -50,20 +52,20 @@ func settingsCatalogUsesTheRealHomeDirectoryByDefault() {
 func everySettingsTabEditsItsOwnFileWithFresh() {
     let tabs = SettingsFileCatalog.tabs(homeDirectory: home)
 
-    for tab in tabs {
+    for tab in tabs where tab.isTerminal {
         let launch = tab.launch
-        #expect(launch.mode == .command("fresh " + ShellQuoting.quote(tab.path)))
-        #expect(launch.shellCommand == "fresh '\(tab.path)'")
-        #expect(launch.shellCommand.hasPrefix("fresh '"))
-        #expect(launch.shellCommand.hasSuffix("'"))
+        #expect(launch?.mode == .command("fresh " + ShellQuoting.quote(tab.path!)))
+        #expect(launch?.shellCommand == "fresh '\(tab.path!)'")
+        #expect(launch?.shellCommand.hasPrefix("fresh '") ?? false)
+        #expect(launch?.shellCommand.hasSuffix("'") ?? false)
         // A single `fresh <file>` invocation: no directory-only fallback and no
         // second command chained onto it.
-        #expect(!launch.shellCommand.contains("fresh ."))
-        #expect(!launch.shellCommand.contains("&&"))
-        #expect(!launch.shellCommand.contains(";"))
-        #expect(launch.remote == nil)
-        #expect(launch.explicitCommand == launch.shellCommand)
-        #expect(launch.sessionID == "settings.\(tab.id)")
+        #expect(!(launch?.shellCommand.contains("fresh .") ?? true))
+        #expect(!(launch?.shellCommand.contains("&&") ?? true))
+        #expect(!(launch?.shellCommand.contains(";") ?? true))
+        #expect(launch?.remote == nil)
+        #expect(launch?.explicitCommand == launch?.shellCommand)
+        #expect(launch?.sessionID == "settings.\(tab.id)")
     }
 }
 
@@ -78,7 +80,7 @@ func settingsTabWorkingDirectoryIsAnExistingDirectory() {
             )
         )
         #expect(isDirectory.boolValue)
-        #expect(tab.launch.surfaceStartupFailure() == nil)
+        #expect(tab.launch?.surfaceStartupFailure() == nil)
     }
 }
 
@@ -102,8 +104,26 @@ func settingsTabQuotingSurvivesAHomeDirectoryWithASingleQuote() {
     let tabs = SettingsFileCatalog.tabs(homeDirectory: "/Users/o'brien")
 
     for tab in tabs {
-        #expect(tab.path.hasPrefix("/Users/o'brien/"))
-        #expect(tab.launch.shellCommand.contains("'\\''"))
-        #expect(tab.launch.shellCommand.hasPrefix("fresh '"))
+        #expect(tab.path?.hasPrefix("/Users/o'brien/") ?? true)
+        #expect(tab.launch?.shellCommand.contains("'\\''") ?? true)
+        #expect(tab.launch?.shellCommand.hasPrefix("fresh '") ?? true)
+    }
+}
+
+@Test
+func changelogTabIsFirstNonTerminalTabWithoutAFile() {
+    let tabs = SettingsFileCatalog.tabs(homeDirectory: home)
+
+    let changelog = tabs.first { $0.id == SettingsFileCatalog.changelogTabID }
+    #expect(changelog != nil)
+    #expect(changelog?.path == nil)
+    #expect(changelog?.launch == nil)
+    #expect(changelog?.isChangelog == true)
+
+    // Every other tab is a real terminal file tab.
+    for tab in tabs where tab.id != SettingsFileCatalog.changelogTabID {
+        #expect(tab.path?.hasPrefix(home + "/") == true)
+        #expect(tab.launch != nil)
+        #expect(tab.isTerminal == true)
     }
 }
