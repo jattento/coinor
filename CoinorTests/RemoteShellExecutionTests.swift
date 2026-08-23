@@ -219,16 +219,32 @@ struct RemoteShellExecutionTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         // Only the directory carries the name, so matching the whole argument
         // vector would signal a process that is not the leader at all.
+        //
+        // The decoy is compiled instead of copied from /bin/sleep: macOS
+        // SIGKILLs a copied platform binary the moment it spawns, which made
+        // the decoy die before the stop command ever looked at it.
         let decoy = directory
             .appendingPathComponent(".grok/bin/sleeper", isDirectory: false)
-        try FileManager.default.copyItem(
-            at: URL(fileURLWithPath: "/bin/sleep", isDirectory: false),
-            to: decoy
+        let source = directory.appendingPathComponent("sleeper.c", isDirectory: false)
+        try """
+        #include <unistd.h>
+        int main(void) { sleep(30); return 0; }
+        """.write(to: source, atomically: true, encoding: .utf8)
+        let compiler = Process()
+        compiler.executableURL = URL(fileURLWithPath: "/usr/bin/cc")
+        compiler.arguments = ["-o", decoy.path, source.path]
+        compiler.standardOutput = FileHandle.nullDevice
+        compiler.standardError = FileHandle.nullDevice
+        try compiler.run()
+        compiler.waitUntilExit()
+        try #require(
+            compiler.terminationStatus == 0,
+            "cc could not build the sleeper decoy"
         )
 
         let process = Process()
         process.executableURL = decoy
-        process.arguments = ["30"]
+        process.arguments = []
         try process.run()
         defer {
             process.terminate()

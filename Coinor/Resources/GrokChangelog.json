@@ -2,7 +2,7 @@
   "releases": [
     {
       "tag": "Unreleased",
-      "publishedAt": "2026-08-22T23:46:53Z",
+      "publishedAt": "2026-08-23T01:08:06Z",
       "forkSummary": [
         "overlay: fix missing is_family_switch after upstream sync"
       ],

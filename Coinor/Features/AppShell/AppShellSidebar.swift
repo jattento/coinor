@@ -923,11 +923,6 @@ struct AppShellSidebar: View {
                     renameText = conversation.session.title
                     renameSessionID = conversation.id
                 }
-                if coordinator.canShareOnTelegram(conversation.id) {
-                    Button("Share on Telegram") {
-                        coordinator.shareConversationOnTelegram(conversation.id)
-                    }
-                }
                 Divider()
                 Button("Archive") {
                     coordinator.archiveConversation(conversation.id)

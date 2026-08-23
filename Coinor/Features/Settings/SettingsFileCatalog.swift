@@ -101,11 +101,6 @@ enum SettingsFileCatalog {
             label: "Grok Memory",
             relativePath: ".grok/memory/MEMORY.md"
         ),
-        Entry(
-            id: "coinorTelegram",
-            label: "Coinor Telegram",
-            relativePath: ".coinor/telegram.toml"
-        ),
     ]
 
     static func tabs(

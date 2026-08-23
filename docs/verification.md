@@ -14,6 +14,35 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.6 Verification
+
+Version `0.6.6` build `44` removes the entire Telegram remote-work surface.
+See `docs/releases/0.6.6.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain (macOS 26.6.1,
+  Xcode 26.6 (17F113), macOS SDK 26.5, Swift 6.3.3).
+- `scripts/dev/run-tests.sh` ran the full suite (551 tests after deleting the
+  six Telegram test files) with only the pre-existing, load-sensitive
+  subprocess wall-clock timing flakes documented for 0.6.3/0.6.4/0.6.5
+  missing their bound under full-suite background load; the rewritten
+  ACP-wire prompt test and the trimmed bundle-identity test pass. The flakes
+  pass in isolation.
+- `RemoteShellExecutionTests.stopCommandLeavesAProcessRunningFromAGrokDirectoryAlone`
+  now compiles its decoy instead of copying `/bin/sleep`: macOS 26 SIGKILLs a
+  copied platform binary the moment it spawns, so the copied decoy died before
+  the stop command could be asserted to leave it alone. The assertion is
+  unchanged.
+- The arm64 Release build succeeded with no remaining Telegram references in
+  any source, test, plist, or project file.
+  `scripts/release/verify-app.sh` reported version `0.6.6 (44)`, arm64,
+  macOS 13.0 minimum, deep-strict ad-hoc signature, App Sandbox disabled,
+  `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- Security gate over the repository and the application bundle reported no
+  leaks.
+
 ## Conan Code 0.6.5 Verification
 
 Version `0.6.5` build `43` ships a cooked Grok changelog tab inside Settings

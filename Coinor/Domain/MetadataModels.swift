@@ -259,66 +259,6 @@ extension ProjectMetadata: Codable {
 /// activity -- so this document only ever carries organization and UI
 /// metadata, keyed by the stable session and project identities Grok and Git
 /// already provide.
-struct TelegramMetadata: Equatable, Sendable {
-    var pairedUserID: TelegramUserID?
-    var pairedChatID: TelegramChatID?
-    var threadIDBySessionID: [String: Int]
-    var pendingPairingCode: String?
-
-    static let empty = TelegramMetadata(
-        pairedUserID: nil,
-        pairedChatID: nil,
-        threadIDBySessionID: [:],
-        pendingPairingCode: nil
-    )
-
-    var sessionIDByThreadID: [Int: String] {
-        Dictionary(uniqueKeysWithValues: threadIDBySessionID.map { ($0.value, $0.key) })
-    }
-}
-
-extension TelegramMetadata: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case pairedUserID, pairedChatID, threadIDBySessionID, pendingPairingCode
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let raw = try container.decodeIfPresent(Int64.self, forKey: .pairedUserID) {
-            pairedUserID = TelegramUserID(raw)
-        } else {
-            pairedUserID = nil
-        }
-        if let raw = try container.decodeIfPresent(Int64.self, forKey: .pairedChatID) {
-            pairedChatID = TelegramChatID(raw)
-        } else {
-            pairedChatID = nil
-        }
-        threadIDBySessionID = try container.decodeIfPresent(
-            [String: Int].self,
-            forKey: .threadIDBySessionID
-        ) ?? [:]
-        pendingPairingCode = try container.decodeIfPresent(
-            String.self,
-            forKey: .pendingPairingCode
-        )
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(pairedUserID?.rawValue, forKey: .pairedUserID)
-        try container.encodeIfPresent(pairedChatID?.rawValue, forKey: .pairedChatID)
-        try container.encode(threadIDBySessionID, forKey: .threadIDBySessionID)
-        try container.encodeIfPresent(pendingPairingCode, forKey: .pendingPairingCode)
-    }
-}
-
-/// The single JSON document Coinor persists.
-///
-/// Grok owns everything else -- session identity, titles, transcripts, and
-/// activity -- so this document only ever carries organization and UI
-/// metadata, keyed by the stable session and project identities Grok and Git
-/// already provide.
 struct MetadataDocument: Equatable, Sendable {
     var schemaVersion: Int
     var sessions: [String: SessionMetadata]
@@ -331,7 +271,6 @@ struct MetadataDocument: Equatable, Sendable {
     var pinnedSessionIDs: [String]
     var projectOrder: [String]
     var lastVisibleSessionID: String?
-    var telegram: TelegramMetadata
     var automation: AutomationState
 
     static let empty = MetadataDocument(
@@ -343,7 +282,6 @@ struct MetadataDocument: Equatable, Sendable {
         pinnedSessionIDs: [],
         projectOrder: [],
         lastVisibleSessionID: nil,
-        telegram: .empty,
         automation: .empty
     )
 }
@@ -623,7 +561,6 @@ extension MetadataDocument: Codable {
         case pinnedSessionIDs
         case projectOrder
         case lastVisibleSessionID
-        case telegram
         case automation
     }
 
@@ -654,10 +591,6 @@ extension MetadataDocument: Codable {
         pinnedSessionIDs = try container.decodeIfPresent([String].self, forKey: .pinnedSessionIDs) ?? []
         projectOrder = try container.decodeIfPresent([String].self, forKey: .projectOrder) ?? []
         lastVisibleSessionID = try container.decodeIfPresent(String.self, forKey: .lastVisibleSessionID)
-        telegram = try container.decodeIfPresent(
-            TelegramMetadata.self,
-            forKey: .telegram
-        ) ?? .empty
         automation = try container.decodeIfPresent(
             AutomationState.self,
             forKey: .automation
@@ -674,9 +607,6 @@ extension MetadataDocument: Codable {
         try container.encode(pinnedSessionIDs, forKey: .pinnedSessionIDs)
         try container.encode(projectOrder, forKey: .projectOrder)
         try container.encodeIfPresent(lastVisibleSessionID, forKey: .lastVisibleSessionID)
-        if telegram != .empty {
-            try container.encode(telegram, forKey: .telegram)
-        }
         if automation != .empty {
             try container.encode(automation, forKey: .automation)
         }

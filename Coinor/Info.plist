@@ -30,10 +30,6 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Conan Code connects over SSH to the computers you registered as remote hosts, which are usually on your local network.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Conan Code uses the microphone only when you start Voice to transcribe speech into your Grok prompt.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Conan Code transcribes Telegram voice notes on this Mac so they can become Grok prompts.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticTermination</key>

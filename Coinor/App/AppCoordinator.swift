@@ -53,13 +53,8 @@ final class AppCoordinator: ObservableObject {
     /// presented, so a disconnect can interrupt only where it is relevant.
     @Published var isRemoteHostsInterfacePresented = false
 
-    func presentTelegramWarning(_ message: String) {
-        warningMessage = message
-    }
-
     private(set) var runtimeManager: ConversationRuntimeManager?
 
-    let telegram = TelegramBridge()
     var controlClient: GrokControlClient?
     private var terminalControlServer: TerminalControlServer?
     private var terminalControlConfiguration:
@@ -302,9 +297,6 @@ final class AppCoordinator: ObservableObject {
             if let lastVisible, isConversationVisible(lastVisible) {
                 selectConversation(lastVisible)
             }
-
-            telegram.attach(worker: self, metadata: metadata)
-            telegram.startPolling()
 
             await connectRegisteredRemoteHosts()
 
@@ -967,7 +959,6 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
-                    self.forwardSubagentToTelegram(observation)
                 case .notification:
                     continue
                 case .terminated(let error):
@@ -1459,9 +1450,6 @@ final class AppCoordinator: ObservableObject {
                 coordinator.runtimeManager?.archiveImmediately(
                     sessionID: sessionID
                 )
-                Task {
-                    await coordinator.telegram.closeTopic(for: sessionID)
-                }
             }
         }
     }
@@ -1471,7 +1459,6 @@ final class AppCoordinator: ObservableObject {
             _ = await coordinator.persist {
                 $0.setSessionArchived(sessionID, archived: false)
             }
-            await coordinator.telegram.reopenTopic(for: sessionID)
         }
     }
 
@@ -1641,7 +1628,6 @@ final class AppCoordinator: ObservableObject {
                       ) else {
                     return
                 }
-                await self.telegram.syncTitle(trimmed, for: sessionID)
                 // Reconciles with Grok's canonical state (e.g. concurrent
                 // changes from another client) without blocking the title
                 // that already updated above.
@@ -1806,7 +1792,6 @@ final class AppCoordinator: ObservableObject {
         controlClient = nil
         let leaderSocket = activeLeaderSocket
         activeLeaderSocket = nil
-        telegram.stopPolling()
         metadataStore = nil
         roster.removeAll()
         pendingAttention.removeAll()
@@ -2231,7 +2216,6 @@ final class AppCoordinator: ObservableObject {
                 sessions: summaries,
                 metadata: metadata
             )
-            telegram.scheduleCatalogSync()
             return
         }
         // Hiding is presentation only: the computers stay registered, their
@@ -2246,7 +2230,6 @@ final class AppCoordinator: ObservableObject {
             },
             metadata: visibleMetadata
         )
-        telegram.scheduleCatalogSync()
     }
 
     private var allKnownProjectIDs: [String] {
@@ -2389,7 +2372,6 @@ final class AppCoordinator: ObservableObject {
                     self.reconcileRuntimeActivity()
                 case .subagentLifecycle(let observation):
                     self.reconcileSubagentLifecycle(observation)
-                    self.forwardSubagentToTelegram(observation)
                 case .terminated(let error):
                     await self.controlTerminated(
                         control,
@@ -2844,22 +2826,6 @@ final class AppCoordinator: ObservableObject {
         for runtime in runtimeManager?.runtimes ?? [] {
             requestLifecycleCatchup(for: runtime.id)
         }
-    }
-
-    private func forwardSubagentToTelegram(
-        _ observation: GrokSubagentLifecycleObservation
-    ) {
-        let rootSessionID = hookCoordinator?.rootSessionID(
-            for: observation.childSessionID
-        )
-            ?? hookCoordinator?.rootSessionID(
-                for: observation.parentSessionID
-            )
-            ?? observation.parentSessionID
-        telegram.reportSubagent(
-            rootSessionID: rootSessionID,
-            observation: observation
-        )
     }
 
     private func reconcileSubagentLifecycle(

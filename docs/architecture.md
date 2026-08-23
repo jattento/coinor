@@ -28,8 +28,7 @@ Coinor deliberately does not provide:
 
 - cross-platform support
 - its own transcript or task persistence
-- a terminal or PTY server of its own, or any network listener; outbound
-  HTTPS long polling to Telegram (ADR-0015) is not a listener. A remote
+- a terminal or PTY server of its own, or any network listener. A remote
   computer's Grok leader does survive application exit (ADR-0014), but Coinor
   neither implements nor hosts it
 - compatibility with arbitrary Grok versions
@@ -134,8 +133,8 @@ run log before deciding how to execute:
 
 The running app's `AppCoordinator.runAutomationLive(_:)` handles the URL by
 driving the automation through its own `GrokControlClient` — the same
-persistent `agent --leader stdio` connection every pane and the Telegram
-bridge share — via `session/new` (with `_meta.rules` and `_meta.yoloMode: true`
+persistent `agent --leader stdio` connection every pane shares — via
+`session/new` (with `_meta.rules` and `_meta.yoloMode: true`
 standing in for `--rules`/`--always-approve`) and `session/prompt`. Because the
 session is created on that connection, it is resident in the leader process
 like any other Coinor-driven session, so its activity is live in the roster

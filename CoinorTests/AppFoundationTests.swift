@@ -151,12 +151,6 @@ final class AppFoundationTests: XCTestCase {
         )
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "LSMinimumSystemVersion") as? String, "13.0")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDevelopmentRegion") as? String, "en")
-        XCTAssertEqual(
-            Bundle.main.object(
-                forInfoDictionaryKey: "NSMicrophoneUsageDescription"
-            ) as? String,
-            "Conan Code uses the microphone only when you start Voice to transcribe speech into your Grok prompt."
-        )
     }
 
     func testApplicationBundleContainsTerminalControlResources() throws {
