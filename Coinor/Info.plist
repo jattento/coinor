@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Conan Code needs microphone access so Grok Voice can capture your speech.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Conan Code connects over SSH to the computers you registered as remote hosts, which are usually on your local network.</string>
 	<key>NSPrincipalClass</key>
