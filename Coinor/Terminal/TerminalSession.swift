@@ -347,8 +347,10 @@ private struct TerminalSurfaceHostingView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
+        let container = TerminalClippingContainer()
         if let failure = session.launch.surfaceStartupFailure() {
-            return TerminalErrorView(message: failure)
+            container.host(TerminalErrorView(message: failure))
+            return container
         }
         do {
             let view = try GhosttySurfaceView(
@@ -358,14 +360,19 @@ private struct TerminalSurfaceHostingView: NSViewRepresentable {
             view.setHostVisibility(isVisible)
             view.sizeDidChange(hostSize)
             session.attach(view)
-            return view
+            container.host(view)
+            return container
         } catch {
-            return TerminalErrorView(message: error.localizedDescription)
+            container.host(TerminalErrorView(message: error.localizedDescription))
+            return container
         }
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let surface = nsView as? GhosttySurfaceView else { return }
+        guard let surface = (nsView as? TerminalClippingContainer)?
+            .hostedView as? GhosttySurfaceView else {
+            return
+        }
         surface.setHostVisibility(isVisible)
         surface.sizeDidChange(hostSize)
     }
@@ -374,9 +381,43 @@ private struct TerminalSurfaceHostingView: NSViewRepresentable {
         _ nsView: NSView,
         coordinator: TerminalSession
     ) {
-        guard let surface = nsView as? GhosttySurfaceView else { return }
+        guard let surface = (nsView as? TerminalClippingContainer)?
+            .hostedView as? GhosttySurfaceView else {
+            return
+        }
         coordinator.detach(surface)
         surface.shutdown()
+    }
+}
+
+/// Clips its hosted view to its own bounds.
+///
+/// SwiftUI does not clip an `NSViewRepresentable`'s content by default, and
+/// Ghostty's renderer can briefly hold a frame sized for the surface's
+/// previous geometry while a resize is in flight — possibly under a layer it
+/// replaced outright, past whatever `GhosttySurfaceView` itself masks. This
+/// container sits between SwiftUI and the terminal so that content can never
+/// visually bleed into neighboring chrome (the tab strip above, the prompt
+/// input below), regardless of what layer Ghostty ends up owning.
+private final class TerminalClippingContainer: NSView {
+    private(set) var hostedView: NSView?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func host(_ view: NSView) {
+        hostedView?.removeFromSuperview()
+        view.frame = bounds
+        view.autoresizingMask = [.width, .height]
+        addSubview(view)
+        hostedView = view
     }
 }
 

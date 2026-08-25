@@ -14,6 +14,48 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.8 Verification
+
+Version `0.6.8` build `46` hardens the embedded terminal against the same
+sizing corruption 0.6.7 tried to fix and did not: the user reported it again,
+with a screenshot, immediately after the 0.6.7 release was installed. See
+`docs/releases/0.6.8.md`.
+
+0.6.7's verification never exercised the user's actual external monitor (a
+5120x1440 display at 1.0 backing scale) — only the built-in Retina display
+(2.0). Reproduced live on that external monitor against the installed 0.6.7
+build: the terminal pane painted over the native tab strip above it and the
+prompt input below it, with clipped and misaligned text. A discrete resize
+event always self-healed it immediately, which pointed at a missing-clip bug
+rather than a pure size-calculation bug: nothing clipped the terminal's
+rendering to its own pane bounds, so a transient stale/oversized frame from
+Ghostty's renderer could paint straight past its boundary into neighboring
+chrome.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain.
+- `scripts/dev/run-tests.sh` ran the full suite with only the same
+  pre-existing, load-sensitive subprocess wall-clock timing flakes documented
+  for earlier releases missing their bound under full-suite background load;
+  each passes individually in isolation and `git diff` against every one of
+  those files is empty. `GhosttySurfaceResizePolicyTests`,
+  `GhosttySurfaceHandleTests`, and `TerminalSessionFocusTests` all passed.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.8 (46)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- Security gate over the repository and the application bundle reported no
+  leaks; `git diff --check` passed.
+
+Manual verification, specifically on the external monitor where 0.6.7 failed:
+before this fix, a stress sequence (rapid randomized window resizes back to
+back, tab switching while a pane was hidden and mid-resize, sidebar toggling,
+window moves across the display boundary, all with a real Grok conversation
+streaming in the background) reproduced the corruption once. The identical
+sequence against the installed 0.6.8 build, repeated multiple times including
+immediately after a fresh launch on that monitor, did not reproduce it.
+
 ## Conan Code 0.6.7 Verification
 
 Version `0.6.7` build `45` fixes an intermittent embedded-terminal sizing bug

@@ -343,6 +343,14 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         wantsLayer = true
+        // Ghostty's renderer can briefly hold a frame sized for the
+        // surface's previous geometry while a resize is in flight. Without
+        // clipping, that stale content paints past this view's own bounds
+        // into whatever sits next to it (the tab strip above, the prompt
+        // input below). This view's own layer is masked as a first layer of
+        // defense; `TerminalSurfaceHostingView` also wraps it in a clipping
+        // container, since Ghostty may replace this layer outright.
+        layer?.masksToBounds = true
 
         search.onCommand = { [weak self] action in
             _ = self?.performBindingAction(action.bindingAction)
