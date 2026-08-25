@@ -14,6 +14,47 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.7 Verification
+
+Version `0.6.7` build `45` fixes an intermittent embedded-terminal sizing bug
+reported by the user (text cut off on both edges, or overlapping the tab strip
+or prompt input, especially right after a window/sidebar/split resize). See
+`docs/releases/0.6.7.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain (macOS 26.5.1,
+  Xcode 26.6 (17F113), macOS SDK 26.5, Swift 6.3.3).
+- `scripts/dev/run-tests.sh` ran the full suite with only the same
+  pre-existing, load-sensitive subprocess wall-clock timing flakes documented
+  for earlier releases
+  (`GrokSubprocessTransportShutdownTests.shutdownWaitsUntilTheChildProcessHasExited`,
+  `GitProcessRunnerDeadlineTests.oversizedOutputIsTruncatedThroughTheGitRunner`,
+  `executableVersionProbeRunsTheAbsoluteBinaryAndRecordsItsOutput`) missing
+  their bound under full-suite background load; each passes individually in
+  isolation and `git diff` against every one of those files is empty.
+  `GhosttySurfaceResizePolicyTests`, `GhosttySurfaceHandleTests`, and
+  `TerminalSessionFocusTests` all passed, including against the changed
+  resize path.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh` reported
+  version `0.6.7 (45)`, arm64, macOS 13.0 minimum, deep-strict ad-hoc
+  signature, App Sandbox disabled, `get-task-allow` absent, and Ghostty commit
+  `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- The bundled Ghostty manifest had drifted from the on-disk `Vendor/Ghostty`
+  artifact: same pinned tag/commit and header/resources hashes, but a
+  different `library_sha256`/`xcframework_sha256` from a later local rebuild
+  of that same pinned source. `scripts/ghostty/verify.sh --artifact-root
+  Vendor/Ghostty` confirmed the artifact is internally consistent and
+  correctly pinned; the committed manifest was regenerated from it.
+- Security gate over the repository and the application bundle reported no
+  leaks; `git diff --check` passed.
+
+Manual verification against a live Debug build (`GROK_AGENT` session, real
+Grok conversation transcripts rendering): the window was resized repeatedly,
+both as single discrete jumps and as rapid successive resizes, with the
+terminal text reflowing cleanly to the new width every time — no clipped text,
+no overlap with the tab strip above or the prompt input below.
+
 ## Conan Code 0.6.6 Verification
 
 Version `0.6.6` build `44` removes the entire Telegram remote-work surface.

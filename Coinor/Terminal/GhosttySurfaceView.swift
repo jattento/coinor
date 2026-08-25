@@ -301,6 +301,17 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var suppressesNextLeftMouseUp = false
     private var previousPressureStage: Int = 0
     private var hostVisible = true
+    /// The size SwiftUI's `GeometryReader` reports for this surface's slot.
+    ///
+    /// `self.bounds` is not used for sizing because AppKit can lag behind
+    /// SwiftUI's own layout during animated or fast-moving resizes (window
+    /// resize, sidebar drag, split resize): the view's frame is updated on
+    /// its own schedule, sometimes a frame or more after SwiftUI already
+    /// settled on a new size. Resizing Ghostty against a stale `bounds`
+    /// produces a grid that does not match the pane's real size until a
+    /// later, unrelated layout pass corrects it, which is what shows up as
+    /// text overflowing into neighboring chrome or clipped mid-column.
+    private var hostSize: CGSize?
     private var focusesWhenAttached = false
     private let search = TerminalSearchState()
     private var searchHost: NSView?
@@ -1292,17 +1303,24 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
     }
 
+    /// Applies the size SwiftUI's `GeometryReader` reports for this
+    /// surface's slot. Called on every `updateNSView`, so it always reflects
+    /// SwiftUI's current layout even when `self.bounds` has not caught up
+    /// yet (see `hostSize`).
+    func sizeDidChange(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        hostSize = size
+        updateSurfaceSize()
+    }
+
     private func updateSurfaceSize() {
-        guard window != nil,
-              surfaceHandle.isValid,
-              bounds.width > 0,
-              bounds.height > 0 else {
-            return
-        }
-        let pixelRect = convertToBacking(bounds)
+        guard window != nil, surfaceHandle.isValid else { return }
+        let pointSize = hostSize ?? bounds.size
+        guard pointSize.width > 0, pointSize.height > 0 else { return }
+        let pixelSize = convertToBacking(pointSize)
         let size = CGSize(
-            width: max(1, pixelRect.width.rounded()),
-            height: max(1, pixelRect.height.rounded())
+            width: max(1, pixelSize.width.rounded()),
+            height: max(1, pixelSize.height.rounded())
         )
         guard let requestedSize = resizePolicy.requestedSize(
             size,

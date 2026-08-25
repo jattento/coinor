@@ -306,8 +306,17 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
 }
 
+/// Hosts a terminal surface, resized from a `GeometryReader`-reported size
+/// rather than from the wrapped `NSView`'s own `bounds`.
+///
+/// AppKit can lag behind SwiftUI's layout during animated or fast-moving
+/// resizes (window resize, sidebar drag, split resize), leaving the view's
+/// `bounds` briefly stale relative to the size SwiftUI already committed to.
+/// Reading size from `GeometryReader` instead keeps the terminal's grid in
+/// sync with its actual on-screen slot, matching the approach Ghostty's own
+/// macOS app uses around `libghostty`.
 @MainActor
-struct TerminalSurfaceRepresentable: NSViewRepresentable {
+struct TerminalSurfaceRepresentable: View {
     @ObservedObject var session: TerminalSession
     let isVisible: Bool
 
@@ -315,6 +324,23 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
         self.session = session
         self.isVisible = isVisible
     }
+
+    var body: some View {
+        GeometryReader { proxy in
+            TerminalSurfaceHostingView(
+                session: session,
+                isVisible: isVisible,
+                hostSize: proxy.size
+            )
+        }
+    }
+}
+
+@MainActor
+private struct TerminalSurfaceHostingView: NSViewRepresentable {
+    @ObservedObject var session: TerminalSession
+    let isVisible: Bool
+    let hostSize: CGSize
 
     func makeCoordinator() -> TerminalSession {
         session
@@ -330,6 +356,7 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
                 launch: session.launch
             )
             view.setHostVisibility(isVisible)
+            view.sizeDidChange(hostSize)
             session.attach(view)
             return view
         } catch {
@@ -338,18 +365,9 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? GhosttySurfaceView)?
-            .setHostVisibility(isVisible)
-    }
-
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        nsView: NSView,
-        context: Context
-    ) -> CGSize? {
-        proposal.replacingUnspecifiedDimensions(
-            by: CGSize(width: 900, height: 600)
-        )
+        guard let surface = nsView as? GhosttySurfaceView else { return }
+        surface.setHostVisibility(isVisible)
+        surface.sizeDidChange(hostSize)
     }
 
     static func dismantleNSView(
