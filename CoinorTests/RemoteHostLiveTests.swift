@@ -125,9 +125,9 @@ struct RemoteHostLiveTests {
     }
 
     @Test
-    func theIDETabToolsExistOnTheRemoteComputer() throws {
-        // A remote IDE tab runs these through the remote login shell, so a
-        // missing tool is a real product failure rather than a warning.
+    func theIDEAndGitTabToolsExistOnTheRemoteComputer() throws {
+        // A remote IDE or Git tab runs these through the remote login shell,
+        // so a missing tool is a real product failure rather than a warning.
         let result = try SSHCommandRunner(ssh: try ssh()).run(
             remoteCommand: SSHCommand.remoteShellCommand(
                 command: "command -v fresh; command -v lazygit",

@@ -26,3 +26,7 @@ native Ghostty windows or tab chrome never escape the application shell.
 ADR 0013 supersedes this ADR's archive-retention and confirmation rules.
 Archiving a loaded runtime requires no confirmation and immediately closes main,
 IDE, ordinary shell, and managed terminal surfaces.
+
+ADR 0018 supersedes this ADR's IDE tab description: the second tab no longer
+splits `fresh .` and `lazygit` in one 60/40 layout. `fresh .` remains in IDE
+alone, and a new fixed third tab, Git, runs `lazygit` alone.

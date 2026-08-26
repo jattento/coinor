@@ -3,7 +3,7 @@ import Testing
 @testable import Coinor
 
 @Test
-func conversationStartsWithPermanentMainAndIDETabs() {
+func conversationStartsWithPermanentMainIDEAndGitTabs() {
     let tabs = ConversationTabMetadata.initial
 
     #expect(tabs.mainName == "main")
@@ -11,6 +11,7 @@ func conversationStartsWithPermanentMainAndIDETabs() {
         tabs.orderedTabIDs == [
             ConversationTabMetadata.mainID,
             ConversationTabMetadata.ideID,
+            ConversationTabMetadata.gitID,
         ]
     )
     #expect(tabs.selectedTabID == ConversationTabMetadata.mainID)
@@ -40,7 +41,7 @@ func closingTheSelectedTabMovesSelectionLeft() {
     #expect(tabs.selectedTabID == "first")
 
     tabs.closeShell(tabID: "first")
-    #expect(tabs.selectedTabID == ConversationTabMetadata.ideID)
+    #expect(tabs.selectedTabID == ConversationTabMetadata.gitID)
 }
 
 @Test
@@ -68,17 +69,29 @@ func ideNameIsFixed() {
 }
 
 @Test
+func gitNameIsFixed() {
+    var tabs = ConversationTabMetadata.initial
+    let original = tabs
+
+    tabs.rename(tabID: ConversationTabMetadata.gitID, to: "version control")
+
+    #expect(tabs == original)
+}
+
+@Test
 func permanentTabsIgnoreShellCloseRequests() {
     var tabs = ConversationTabMetadata.initial
     tabs.select(tabID: ConversationTabMetadata.ideID)
 
     tabs.closeShell(tabID: ConversationTabMetadata.mainID)
     tabs.closeShell(tabID: ConversationTabMetadata.ideID)
+    tabs.closeShell(tabID: ConversationTabMetadata.gitID)
 
     #expect(
         tabs.orderedTabIDs == [
             ConversationTabMetadata.mainID,
             ConversationTabMetadata.ideID,
+            ConversationTabMetadata.gitID,
         ]
     )
     #expect(tabs.selectedTabID == ConversationTabMetadata.ideID)
@@ -97,6 +110,7 @@ func permanentTabsRemainFirstWhileShellTabsReorder() {
         tabs.orderedTabIDs == [
             ConversationTabMetadata.mainID,
             ConversationTabMetadata.ideID,
+            ConversationTabMetadata.gitID,
             "third",
             "first",
             "second",
@@ -118,6 +132,10 @@ func normalizationDropsDuplicateOrReservedShellIDs() {
             ShellTabMetadata(
                 id: ConversationTabMetadata.ideID,
                 name: "also-reserved"
+            ),
+            ShellTabMetadata(
+                id: ConversationTabMetadata.gitID,
+                name: "also-reserved-too"
             ),
         ],
         selectedTabID: "missing",
@@ -142,4 +160,22 @@ func ideSelectionSurvivesNormalization() {
         tabs.normalized().selectedTabID
             == ConversationTabMetadata.ideID
     )
+}
+
+@Test
+func gitSelectionSurvivesNormalization() {
+    var tabs = ConversationTabMetadata.initial
+    tabs.select(tabID: ConversationTabMetadata.gitID)
+
+    #expect(
+        tabs.normalized().selectedTabID
+            == ConversationTabMetadata.gitID
+    )
+}
+
+@Test
+func gitTabIsRecognizedAsAPermanentTab() {
+    let tabs = ConversationTabMetadata.initial
+
+    #expect(tabs.contains(tabID: ConversationTabMetadata.gitID))
 }

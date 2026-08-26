@@ -173,7 +173,7 @@ struct SSHCommand: Sendable {
     }
 
     /// Runs an already-written command line, such as the IDE tab's `fresh .`
-    /// and `lazygit`, in the remote user's login shell.
+    /// or the Git tab's `lazygit`, in the remote user's login shell.
     static func remoteShellCommand(
         command: String,
         workingDirectory: String

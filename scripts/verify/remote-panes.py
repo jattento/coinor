@@ -98,12 +98,15 @@ def main():
         f"CWD={home}" in text and "HOST=" in text,
     ))
 
-    for key, label in (("ide_fresh", "fresh"), ("ide_lazygit", "lazygit")):
+    for key, tab, label in (
+        ("ide_fresh", "IDE", "fresh"),
+        ("git_lazygit", "Git", "lazygit"),
+    ):
         pane = Pane(commands[key])
         raw = pane.drive(marker=ALT_SCREEN, timeout=50)
         pane.kill()
         results.append(check(
-            f"IDE tab starts {label} on the remote computer",
+            f"{tab} tab starts {label} on the remote computer",
             ALT_SCREEN in raw and b"command not found" not in raw,
         ))
 

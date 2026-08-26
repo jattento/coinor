@@ -57,8 +57,8 @@ struct RemoteLaunchCommandDumpTests {
                 command: "fresh .",
                 remote: execution.remote
             ).shellCommand,
-            "ide_lazygit": TerminalLaunchRequest(
-                commandID: "ide.lazygit",
+            "git_lazygit": TerminalLaunchRequest(
+                commandID: "git.lazygit",
                 workingDirectory: workingDirectory,
                 command: "lazygit",
                 remote: execution.remote

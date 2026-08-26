@@ -249,7 +249,8 @@ Package:
 Implement:
 
 - a permanent, locally renameable `main` tab for every conversation
-- a permanent, fixed `IDE` tab with eager `fresh .` and `lazygit` surfaces
+- a permanent, fixed `IDE` tab with an eager `fresh .` surface
+- a permanent, fixed `Git` tab with an eager `lazygit` surface
 - independent Ghostty shell tabs rooted at the conversation's base checkout or
   worktree
 - persistent labels, ordering, selection, and monotonic numbering
@@ -258,20 +259,22 @@ Implement:
   presentation
 - Coinor and Ghostty action routing for creation, closure, navigation,
   movement, and explicit title changes
-- focus restoration between main, root/subagent panes, and shell tabs
+- focus restoration between main, root/subagent panes, IDE, Git, and shell tabs
 - transient agent-managed terminal tabs for long-running commands
 
 Acceptance criteria:
 
-- every new and existing conversation exposes main and IDE before any shell tab
-- IDE launches Fresh and Lazygit in the conversation checkout or worktree
-- IDE uses a non-draggable 60/40 split and restores its last focused pane
+- every new and existing conversation exposes main, IDE, and Git before any
+  shell tab
+- IDE launches Fresh full width; Git launches Lazygit full width, both in the
+  conversation checkout or worktree
 - `+` creates and focuses `Tab N` in the base checkout or worktree
-- selecting IDE or a shell hides the other surfaces without interrupting them
+- selecting main, IDE, Git, or a shell hides the other surfaces without
+  interrupting them
 - closing or exiting a shell selects its left neighbor and never closes main
 - rename preserves exact text, including empty and duplicate labels
-- IDE cannot close or rename through ordinary tab controls
-- drag reorder keeps main and IDE fixed and persists shell order
+- IDE and Git cannot close or rename through ordinary tab controls
+- drag reorder keeps main, IDE, and Git fixed and persists shell order
 - relaunch restores labels, order, selection, numbering, and new shell
   processes without restoring scrollback
 - `Command-T`, `Command-W`, `Command-1...8`, `Command-9`, and equivalent

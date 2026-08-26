@@ -451,26 +451,26 @@ terminal surfaces mounted:
 - main selected, root only: one full-width Grok terminal
 - main selected with descendants: a fixed 50/50 horizontal split
 - main right side: equal-height vertical tracks in subagent start order
-- IDE selected: a fixed 60/40 horizontal split, with `fresh .` on the left and
-  `lazygit` on the right
+- IDE selected: one full-width Ghostty terminal running `fresh .`
+- Git selected: one full-width Ghostty terminal running `lazygit`
 - shell selected: one full-width independent Ghostty shell
 - managed tab selected: one full-width reusable Ghostty zsh shell
 
-The main layout, IDE layout, and every ordinary or managed shell tab are
-layered in a `ZStack`;
-selection changes opacity, hit testing, accessibility visibility, and focus
-without destroying surfaces. Main remembers the last focused root or
-descendant pane. IDE remembers the last focused IDE pane and initially focuses
-Fresh. Attention can redirect focus only while main is selected.
+The main layout, IDE layout, Git layout, and every ordinary or managed shell
+tab are layered in a `ZStack`; selection changes opacity, hit testing,
+accessibility visibility, and focus without destroying surfaces. Main
+remembers the last focused root or descendant pane. Attention can redirect
+focus only while main is selected.
 
 All surfaces remain mounted while their conversation runtime is live, even
 when another conversation is selected. Hidden runtimes do not lose their PTY
 or in-flight work.
 
-The first two tabs have stable internal identities `main` and `ide`. Both are
-non-closable and remain ahead of every shell tab. IDE is also non-renameable.
-Its two command surfaces are created eagerly with the conversation runtime and
-run in the resolved Git root of the conversation's checkout or worktree.
+The first three tabs have stable internal identities `main`, `ide`, and `git`.
+All three are non-closable and remain ahead of every shell tab; IDE and Git are
+also non-renameable. Their command surfaces are created eagerly with the
+conversation runtime and run in the resolved Git root of the conversation's
+checkout or worktree.
 
 Shell tabs use local UUIDs and launch with no explicit command in the
 conversation's authoritative persisted working directory. New worktree

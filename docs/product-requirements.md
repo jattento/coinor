@@ -253,12 +253,13 @@ subagent panes. It cannot be closed, remains first when tabs are reordered, and
 can be renamed locally without changing the Grok conversation title.
 
 The permanent second tab is named `IDE`. It cannot be closed, renamed, or
-reordered. Activating a conversation immediately launches two embedded Ghostty
-surfaces at the Git root of its checkout or worktree: `fresh .` on the left
-and `lazygit` on the right. The IDE layout uses a fixed, responsive 60/40
-horizontal split with a one-point separator. It preserves Conan Code's
-existing minimum window size, so Lazygit may choose its compact layout when
-the window is narrow.
+reordered. Activating a conversation immediately launches an embedded Ghostty
+surface running `fresh .`, full width, at the Git root of its checkout or
+worktree.
+
+The permanent third tab is named `Git`. It has the same rules as IDE — it
+cannot be closed, renamed, or reordered — and immediately launches an embedded
+Ghostty surface running `lazygit`, full width, at the same Git root.
 
 The add button immediately after the last tab creates and selects an independent
 Ghostty shell in the conversation's original checkout or worktree directory.
@@ -266,21 +267,19 @@ Conan Code supplies no command for these surfaces, so Ghostty uses the user's no
 shell configuration. New shells receive monotonically increasing names such as
 `Tab 1` and `Tab 2`; closed numbers are not reused.
 
-Selecting IDE hides main and the shell tabs without stopping them. Returning to
-IDE restores focus to the last IDE pane used, defaulting to Fresh. Selecting a
-shell tab gives it the complete terminal content area. Main, IDE, and all shell
-surfaces remain mounted and continue running while hidden. Executing `exit`,
-pressing the close button, or using the close-tab shortcut terminates a shell
-immediately and selects the tab to its left.
+Selecting any tab hides every other tab without stopping it: main, IDE, Git,
+and every shell tab remain mounted and continue running while hidden.
+Executing `exit`, pressing the close button, or using the close-tab shortcut
+terminates a shell immediately and selects the tab to its left.
 
 Double-clicking main or a shell tab starts inline rename. Enter or losing focus
 stores the text exactly as entered; Escape cancels. Empty and duplicate labels
-are valid. Shell tabs can be reordered by dragging, but cannot move before IDE
+are valid. Shell tabs can be reordered by dragging, but cannot move before Git
 or between conversations. The strip scrolls horizontally rather than shrinking
 labels without limit.
 
 Conan Code stores each conversation's tab labels, order, selected tab, and next
-number in local metadata. On relaunch it recreates the IDE commands and all
+number in local metadata. On relaunch it recreates the IDE and Git commands and all
 persisted shell tabs as new processes in the base checkout or worktree;
 terminal processes and scrollback do not survive application exit. A missing
 base directory leaves the affected surfaces visible with an inline error

@@ -135,7 +135,8 @@ No path is ever typed by hand.
 
 Remote conversations behave like local ones:
 
-- the root pane, subagent panes, IDE tab, and shell tabs all execute remotely
+- the root pane, subagent panes, IDE tab, Git tab, and shell tabs all execute
+  remotely
 - subagent lifecycle arrives on the host's ACP stream and each pane opens its
   own SSH channel
 - `In New Worktree` runs the fetch, default-branch resolution, and worktree

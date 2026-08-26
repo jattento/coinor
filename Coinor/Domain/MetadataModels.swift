@@ -15,6 +15,7 @@ struct ShellTabMetadata: Codable, Equatable, Identifiable, Sendable {
 struct ConversationTabMetadata: Equatable, Sendable {
     static let mainID = "main"
     static let ideID = "ide"
+    static let gitID = "git"
 
     var mainName: String
     var shellTabs: [ShellTabMetadata]
@@ -29,12 +30,13 @@ struct ConversationTabMetadata: Equatable, Sendable {
     )
 
     var orderedTabIDs: [String] {
-        [Self.mainID, Self.ideID] + shellTabs.map(\.id)
+        [Self.mainID, Self.ideID, Self.gitID] + shellTabs.map(\.id)
     }
 
     func contains(tabID: String) -> Bool {
         tabID == Self.mainID
             || tabID == Self.ideID
+            || tabID == Self.gitID
             || shellTabs.contains { $0.id == tabID }
     }
 
@@ -59,7 +61,7 @@ struct ConversationTabMetadata: Equatable, Sendable {
             mainName = name
             return
         }
-        guard tabID != Self.ideID else { return }
+        guard tabID != Self.ideID, tabID != Self.gitID else { return }
         guard let index = shellTabs.firstIndex(where: { $0.id == tabID })
         else {
             return
@@ -73,7 +75,7 @@ struct ConversationTabMetadata: Equatable, Sendable {
         }) else {
             return
         }
-        let orderedIndex = shellIndex + 2
+        let orderedIndex = shellIndex + 3
         shellTabs.remove(at: shellIndex)
         if selectedTabID == tabID {
             selectedTabID = orderedTabIDs[
@@ -97,11 +99,13 @@ struct ConversationTabMetadata: Equatable, Sendable {
     }
 
     func normalized() -> ConversationTabMetadata {
-        var seen = Set([Self.mainID, Self.ideID])
+        var seen = Set([Self.mainID, Self.ideID, Self.gitID])
         let shells = shellTabs.filter {
             seen.insert($0.id).inserted
         }
-        let validIDs = Set([Self.mainID, Self.ideID] + shells.map(\.id))
+        let validIDs = Set(
+            [Self.mainID, Self.ideID, Self.gitID] + shells.map(\.id)
+        )
         return ConversationTabMetadata(
             mainName: mainName,
             shellTabs: shells,

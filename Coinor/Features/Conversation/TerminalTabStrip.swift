@@ -35,13 +35,21 @@ struct ConversationTabbedView: View {
 
                 IDEPaneView(
                     fresh: runtime.ideFresh,
-                    lazygit: runtime.ideLazygit,
                     isVisible: isConversationVisible
                         && runtime.isIDETabSelected
                 )
                 .opacity(runtime.isIDETabSelected ? 1 : 0)
                 .allowsHitTesting(runtime.isIDETabSelected)
                 .accessibilityHidden(!runtime.isIDETabSelected)
+
+                GitPaneView(
+                    lazygit: runtime.gitLazygit,
+                    isVisible: isConversationVisible
+                        && runtime.isGitTabSelected
+                )
+                .opacity(runtime.isGitTabSelected ? 1 : 0)
+                .allowsHitTesting(runtime.isGitTabSelected)
+                .accessibilityHidden(!runtime.isGitTabSelected)
 
                 ForEach(runtime.shellTabs) { session in
                     TerminalSurfaceRepresentable(
@@ -233,7 +241,7 @@ private struct TerminalTabStrip: View {
             case .main:
                 mainActivityIndicator
                     .frame(width: 14, height: 14)
-            case .ide:
+            case .ide, .git:
                 EmptyView()
             case .shell, .managed, .browserMirror:
                 Button {
@@ -338,7 +346,8 @@ private struct TerminalTabStrip: View {
 
     private func beginRename(tabID: String) {
         guard let tab = runtime.tabs.first(where: { $0.id == tabID }),
-              tab.kind != .ide, tab.kind != .browserMirror else {
+              tab.kind != .ide, tab.kind != .git,
+              tab.kind != .browserMirror else {
             return
         }
         runtime.selectTab(tabID: tabID)
