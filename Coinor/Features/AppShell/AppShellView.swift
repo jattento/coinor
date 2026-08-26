@@ -12,6 +12,13 @@ struct AppShellView: View {
     @Environment(\.openURL) private var openURL
     @State private var destination: AppShellDestination = .conversation
     @State private var showsSettings = false
+    /// Pinned open. Left to `.automatic`, SwiftUI is free to resolve the
+    /// split into a prominent-detail presentation where the sidebar floats
+    /// over a detail column that spans the whole window from x=0. That is
+    /// exactly what the "terminal is misaligned" reports were: the detail
+    /// pane (tab strip included) sitting under a translucent sidebar,
+    /// clipped on the left and overflowing the right window edge.
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
     @StateObject private var automationCenter: AutomationCenterModel
 
     init(
@@ -28,7 +35,7 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             // Both sidebars stay mounted, and only their visibility changes.
             // Swapping which view occupies this column (an `if/else` here)
             // changes the column's view identity, and NavigationSplitView
@@ -90,6 +97,10 @@ struct AppShellView: View {
                     .frame(minWidth: 560, minHeight: 380)
             }
         }
+        // `.balanced` keeps the sidebar beside the detail at every window
+        // size. `.automatic` may instead overlay it on top of a full-width
+        // detail, which is the misalignment this fixes.
+        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 840, minHeight: 520)
         .task {
             async let diagnostics: Void = model.runStartupChecks()

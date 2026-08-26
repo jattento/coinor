@@ -55,6 +55,41 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.14 Verification
+
+Version `0.6.14` build `52` fixes the split-view presentation that produced
+every "terminal is misaligned" report. See `docs/releases/0.6.14.md`.
+
+`AppShellView` used `NavigationSplitView` with neither an explicit
+`columnVisibility` nor an explicit style, so it resolved as `.automatic`,
+which on macOS may present the split as prominent detail: the detail
+column spans the whole window from x=0 and the sidebar floats over it.
+The sidebar's translucent material is why the conversation ghosted
+through it, and the hidden `main`/`IDE` tabs beside a visible `+` button
+proved the misplacement was the pane's, not Ghostty's.
+
+Fix: bind `columnVisibility` pinned to `.all` and apply
+`.navigationSplitViewStyle(.balanced)`.
+
+Automated verification:
+
+- `scripts/dev/run-tests.sh`: 563 tests in 45 suites; only the documented
+  load-sensitive `oversizedOutputIsTruncatedThroughTheGitRunner` flake
+  failed under full-suite load and passed in isolation, with an empty
+  `git diff` against its files.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.14 (52)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` and the security gate passed.
+
+Manual verification on the ultrawide (1x) display: six rounds of Activity
+Stack toggles interleaved with sidebar hide/show toggles, then a resize
+down to the 840pt minimum width — the classic trigger for the overlay
+presentation — and back up. The sidebar stayed beside the detail in every
+state, with the tab strip visible and nothing rendering under the sidebar
+or past the window edge.
+
 ## Conan Code 0.6.13 Verification
 
 Version `0.6.13` build `51` fixes the actual cause of the terminal
