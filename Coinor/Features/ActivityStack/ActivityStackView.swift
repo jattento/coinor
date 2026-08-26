@@ -1,41 +1,29 @@
 import SwiftUI
 
-/// The Activity Stack's content area: the focused conversation's real, live
-/// terminal, full width. The queue itself lives in `ActivityStackSidebarView`,
-/// which replaces the normal sidebar list while this is presented.
+/// The Activity Stack's chrome around the conversation content area: an
+/// overlay that stands in for the terminal while nothing is focused, and an
+/// action bar shown under it once something is.
 ///
-/// The focused pane is `RuntimeHostView`, the exact same component the normal
-/// conversation content area uses, with the same tab strip and the same
-/// always-mounted runtimes. Nothing here re-derives "is it loaded" or shows a
-/// second resuming spinner: if a conversation already has a live runtime
-/// (from earlier this run), selecting it here is exactly as instant as
-/// selecting it from the sidebar, because it is the same `ZStack` of already
-/// mounted panes just changing which one is visible. A conversation opened
-/// for the first time here goes through `AppCoordinator.selectConversation`,
-/// the identical lazy-resume path a sidebar click uses.
+/// Neither piece renders `RuntimeHostView` itself. `ConversationContentView`
+/// (and its `RuntimeHostView`) stays mounted at all times, in the same
+/// position in the view tree, regardless of whether the Activity Stack is
+/// open — see `AppShellView`. `RuntimeHostView`'s `ZStack` holds every loaded
+/// runtime's tabs, each backed by a real `ghostty_surface_t` and subprocess;
+/// if the Activity Stack instead swapped in its own separate copy of
+/// `RuntimeHostView` when opened, SwiftUI would treat that as a totally
+/// different view identity and tear down and relaunch every one of those
+/// surfaces and subprocesses on every single open/close, which is exactly
+/// what made heavy toggling between the two views freeze the app. Focusing a
+/// conversation from the Activity Stack still goes through the same
+/// `AppCoordinator.selectConversation` the sidebar uses (via
+/// `ActivityStackModel.selectFocus`), so the terminal underneath already
+/// shows the right conversation on its own; this file only adds chrome on
+/// top of it.
 @MainActor
-struct ActivityStackView: View {
+struct ActivityStackEmptyOverlay: View {
     @ObservedObject var model: ActivityStackModel
-    @ObservedObject var runtimeManager: ConversationRuntimeManager
 
     var body: some View {
-        Group {
-            if let display = model.focusedDisplay {
-                ActivityStackFocusPane(
-                    model: model,
-                    display: display,
-                    runtimeManager: runtimeManager
-                )
-            } else {
-                emptyState
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
-        .accessibilityIdentifier(AppShellIdentifier.activityStackFocus)
-    }
-
-    private var emptyState: some View {
         VStack(spacing: 14) {
             ConanASCIIView()
             Text("Waiting for the next agent…")
@@ -51,34 +39,27 @@ struct ActivityStackView: View {
             .frame(maxWidth: 380)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
         .accessibilityIdentifier(AppShellIdentifier.activityStackEmptyState)
     }
 }
 
-// MARK: - Focus pane
+// MARK: - Action bar
 
 @MainActor
-struct ActivityStackFocusPane: View {
+struct ActivityStackActionBar: View {
     @ObservedObject var model: ActivityStackModel
     let display: ActivityStackFocusDisplay
-    @ObservedObject var runtimeManager: ConversationRuntimeManager
 
     var body: some View {
-        VStack(spacing: 0) {
-            RuntimeHostView(manager: runtimeManager)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            actionBar
+        Group {
+            if display.reason != nil {
+                queuedActionBar
+            } else {
+                watchingActionBar
+            }
         }
-    }
-
-    @ViewBuilder
-    private var actionBar: some View {
-        if display.reason != nil {
-            queuedActionBar
-        } else {
-            watchingActionBar
-        }
+        .accessibilityIdentifier(AppShellIdentifier.activityStackFocus)
     }
 
     private var queuedActionBar: some View {

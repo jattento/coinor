@@ -55,6 +55,49 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.11 Verification
+
+Version `0.6.11` build `49` fixes a severe Activity Stack bug: heavy use
+(repeatedly opening and closing the panel) could freeze the app and force a
+quit. See `docs/releases/0.6.11.md`.
+
+Root cause: the Activity Stack mounted its own separate `RuntimeHostView`
+instance in place of `ConversationContentView` whenever it opened. SwiftUI
+treats that as a different view identity, so every open/close tore down and
+relaunched every tab's real `ghostty_surface_t` (subprocess + GPU surface)
+for every loaded conversation, not only the focused one — heavy toggling
+piled up teardown/relaunch cycles faster than they could complete. Fixed by
+keeping exactly one `ConversationContentView`/`RuntimeHostView` permanently
+mounted and turning the panel's own view into pure overlay/action-bar chrome
+around it (`ActivityStackEmptyOverlay`, `ActivityStackActionBar`).
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain.
+- `scripts/dev/run-tests.sh` ran the full suite; the same pre-existing,
+  load-sensitive subprocess wall-clock timing flakes documented for earlier
+  releases missed their bound only under heavy background load and passed
+  individually in isolation; `git diff` against every file behind those
+  tests is empty.
+- The arm64 Release build succeeded; `scripts/release/verify-app.sh`
+  reported version `0.6.11 (49)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent.
+  `scripts/release/security-scan.sh` reported no leaks.
+
+Manual verification (a Debug build against a real, already-resumed Grok
+conversation, not a synthetic one): recorded the OS PIDs of the
+conversation's live terminal processes (main session, `lazygit`, `fresh .`),
+toggled the Activity Stack open/closed 20 times in rapid succession
+(~4.4s wall time total) via accessibility-driven UI automation
+(`AppShellActivityStackButton`), and confirmed every PID was unchanged
+afterward — the definitive proof for this bug class, since a passing test
+suite alone cannot show that a subprocess was not silently killed and
+relaunched. Screenshots taken before, during (the empty-state overlay, which
+renders correctly since this conversation was not in the queue), and after
+toggling were pixel-identical for the terminal's scrollback, confirming no
+visual regression from moving `RuntimeHostView` to a fixed position in the
+tree.
+
 ## Conan Code 0.6.10 Verification
 
 Version `0.6.10` build `48` fixes three Activity Stack focus/ordering bugs

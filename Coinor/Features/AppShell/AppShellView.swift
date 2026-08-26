@@ -44,17 +44,32 @@ struct AppShellView: View {
             switch destination {
             case .conversation:
                 VStack(spacing: 0) {
-                    if activityStack.isPresented,
-                       case .ready = coordinator.status,
-                       let runtimeManager = coordinator.runtimeManager {
-                        ActivityStackView(
-                            model: activityStack,
-                            runtimeManager: runtimeManager
-                        )
-                    } else {
+                    // `ConversationContentView` (and the `RuntimeHostView`
+                    // inside it) stays mounted here at all times, whether or
+                    // not the Activity Stack is open: it owns every loaded
+                    // conversation's real Ghostty surfaces and subprocesses,
+                    // and tearing that whole tree down just to swap in a
+                    // second copy for the panel — then back again on close —
+                    // used to relaunch all of them on every single toggle.
+                    // The Activity Stack only ever adds chrome on top.
+                    ZStack {
                         ConversationContentView(
                             model: model,
                             coordinator: coordinator
+                        )
+                        if activityStack.isPresented,
+                           case .ready = coordinator.status,
+                           activityStack.focusedDisplay == nil {
+                            ActivityStackEmptyOverlay(model: activityStack)
+                        }
+                    }
+                    if activityStack.isPresented,
+                       case .ready = coordinator.status,
+                       let display = activityStack.focusedDisplay {
+                        Divider()
+                        ActivityStackActionBar(
+                            model: activityStack,
+                            display: display
                         )
                     }
                     if case .ready = coordinator.status,

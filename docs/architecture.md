@@ -142,12 +142,32 @@ committed.
 `ActivityStackSidebarView` replaces `AppShellSidebar` in the same
 `NavigationSplitView` column while presented, the same pattern the sidebar's
 own Agent Search panel already uses to take over that column; there is no
-second, parallel list. The detail area's `ActivityStackView` renders
-`RuntimeHostView`, the exact component the normal conversation content area
-uses, so the focused conversation's tab strip and always-mounted runtimes are
-identical to a sidebar selection — a conversation already loaded this run
-appears exactly as instantly here as it would from the sidebar, since no
-separate "is it loaded" check or resuming placeholder exists. Advancing to
+second, parallel list. The sidebar swap is cheap to repeat because it is
+ordinary SwiftUI list content with no native backing resources.
+
+The detail area is different: `AppShellView` keeps exactly one
+`ConversationContentView` (and the `RuntimeHostView` inside it) mounted at a
+fixed position in the view tree at all times, whether or not the Activity
+Stack is open. `RuntimeHostView`'s `ZStack` holds every loaded conversation's
+tabs, and every tab is a `TerminalSurfaceHostingView`
+(`NSViewRepresentable`) whose `makeNSView`/`dismantleNSView` create and free a
+real `ghostty_surface_t` — a real subprocess and a real GPU-backed rendering
+surface, not inert view state. `ActivityStackEmptyOverlay` and
+`ActivityStackActionBar` (`ActivityStackView.swift`) are pure chrome laid over
+and under that same always-mounted content area; neither renders a
+`RuntimeHostView` of its own. An earlier version had the Activity Stack swap
+in its own separate `RuntimeHostView` instance in place of
+`ConversationContentView`, the same way the sidebar swaps its list — but
+SwiftUI treats that as two different view identities in two different tree
+positions, so every open/close tore down and relaunched every tab's surface
+and subprocess for every loaded conversation, not only the focused one.
+Heavy toggling froze the app; this is why the detail area does not follow the
+sidebar's swap pattern. Focusing a conversation from the Activity Stack still
+goes through `AppCoordinator.selectConversation` via
+`ActivityStackModel.selectFocus`, exactly like a sidebar click, so the
+always-mounted terminal already shows the right conversation on its own —
+appearing exactly as instantly as a sidebar selection, since no separate "is
+it loaded" check or resuming placeholder exists. Advancing to
 the next item only happens when the currently focused item leaves the queue
 *and* another item is actually waiting (`ActivityStackModel.reconcileFocus`):
 otherwise the model stays "sticky" on the same `focusedID` even though it no
