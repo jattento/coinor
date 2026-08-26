@@ -289,14 +289,6 @@ final class AppFoundationTests: XCTestCase {
             "AppShellActivityStackPanel"
         )
         XCTAssertEqual(
-            AppShellIdentifier.activityStackClose,
-            "AppShellActivityStackClose"
-        )
-        XCTAssertEqual(
-            AppShellIdentifier.activityStackRail,
-            "AppShellActivityStackRail"
-        )
-        XCTAssertEqual(
             AppShellIdentifier.activityStackFocus,
             "AppShellActivityStackFocus"
         )
@@ -319,10 +311,6 @@ final class AppFoundationTests: XCTestCase {
         XCTAssertEqual(
             AppShellIdentifier.activityStackMute,
             "AppShellActivityStackMute"
-        )
-        XCTAssertEqual(
-            AppShellIdentifier.activityStackPauseToggle,
-            "AppShellActivityStackPauseToggle"
         )
         XCTAssertEqual(
             AppShellIdentifier.activityStackRow("abc"),

@@ -21,9 +21,9 @@ final class ActivityStackModel: ObservableObject {
     @Published private(set) var isPresented = false
     @Published private(set) var queue: [ActivityStackItem] = []
     @Published private(set) var away: [ActivityStackAwayItem] = []
-    @Published private(set) var workingCount = 0
+    @Published private(set) var working: [ActivityStackWorkingItem] = []
+    var workingCount: Int { working.count }
     @Published private(set) var focusedID: String?
-    @Published private(set) var isPaused = false
 
     private var previousActivity: [String: RuntimeActivity] = [:]
     private var pendingReason: [String: ActivityQueueReason] = [:]
@@ -69,11 +69,6 @@ final class ActivityStackModel: ObservableObject {
         return true
     }
 
-    func togglePause() {
-        isPaused.toggle()
-        reconcileFocus()
-    }
-
     // MARK: - Focus
 
     var focusedItem: ActivityStackItem? {
@@ -81,17 +76,42 @@ final class ActivityStackModel: ObservableObject {
         return queue.first { $0.id == focusedID }
     }
 
-    var focusedPosition: (index: Int, total: Int)? {
-        guard let focusedID,
-              let index = queue.firstIndex(where: { $0.id == focusedID }) else {
+    /// The header display for whatever is focused, whether or not it is
+    /// still a queue member. Falls back to `AppCoordinator`'s own catalog so
+    /// a conversation kept on screen only because nothing else is waiting
+    /// still shows a correct title and project.
+    var focusedDisplay: ActivityStackFocusDisplay? {
+        guard let focusedID else { return nil }
+        if let item = focusedItem {
+            return ActivityStackFocusDisplay(
+                title: item.title,
+                project: item.project,
+                reason: item.reason,
+                since: item.since
+            )
+        }
+        guard let summary = coordinator.summaries.first(where: {
+            $0.id == focusedID
+        }) else {
             return nil
         }
-        return (index + 1, queue.count)
+        return ActivityStackFocusDisplay(
+            title: summary.title,
+            project: coordinator.projectDisplayName(summary.projectID),
+            reason: nil,
+            since: nil
+        )
     }
 
-    /// Focuses a conversation directly, regardless of pause state. Used for
-    /// an explicit rail tap: browsing ahead is always allowed even while
-    /// automatic advancing is paused.
+    /// Explicitly stops watching a conversation that is no longer a queue
+    /// member (the "Close" action shown once nothing else is waiting).
+    func closeFocused() {
+        focusedID = nil
+        reconcileFocus()
+    }
+
+    /// Focuses a conversation directly. Used for an explicit rail tap:
+    /// browsing ahead is always allowed, independent of automatic advancing.
     func selectFocus(_ id: String) {
         focusedID = id
         coordinator.selectConversation(id)
@@ -99,9 +119,17 @@ final class ActivityStackModel: ObservableObject {
 
     // MARK: - Actions on the focused item
 
-    func dismissFocused() {
+    /// "Done, remove" while the focused item is still a queue member;
+    /// "Close" once it is only being watched because nothing else is
+    /// waiting. Both are the same physical action (⌘D / the action-bar
+    /// button), so this is the one entry point both call.
+    func dismissOrCloseFocused() {
         guard let focusedID else { return }
-        dismiss(focusedID)
+        if queue.contains(where: { $0.id == focusedID }) {
+            dismiss(focusedID)
+        } else {
+            closeFocused()
+        }
     }
 
     func pushFocusedToEnd() {
@@ -203,26 +231,27 @@ final class ActivityStackModel: ObservableObject {
         suppressions = result.suppressions
         queue = result.queue
         away = result.away
-        workingCount = result.workingCount
+        working = result.working
 
         if isPresented {
             reconcileFocus()
         }
     }
 
-    /// Keeps the focused item pointed at something that still needs the
-    /// user, unless the queue is paused: a paused queue stays on whatever the
-    /// user was looking at even after it resolves, instead of jumping ahead
-    /// on its own.
+    /// Advances the focused item only when something else actually needs the
+    /// user.
+    ///
+    /// A conversation that goes quiet (answered, or otherwise stopped
+    /// blocking) never gets yanked out from under the user just because it
+    /// left the queue: a run of clarifying questions would otherwise bounce
+    /// the panel to an empty state and back on every answer. It only moves
+    /// on once another conversation is actually waiting, or the user acts
+    /// explicitly (a rail tap, or "Close" once nothing else is left).
     private func reconcileFocus() {
         if let focusedID, queue.contains(where: { $0.id == focusedID }) {
             return
         }
-        guard !isPaused else { return }
-        guard let next = queue.first else {
-            focusedID = nil
-            return
-        }
+        guard let next = queue.first else { return }
         selectFocus(next.id)
     }
 

@@ -181,7 +181,7 @@ final class TerminalTabShortcutView: NSView {
         if activityStack.isPresented, let focusedID = activityStack.focusedID {
             switch characters {
             case "d":
-                activityStack.dismiss(focusedID)
+                activityStack.dismissOrCloseFocused()
                 return true
             case "s":
                 activityStack.pushToEnd(focusedID)

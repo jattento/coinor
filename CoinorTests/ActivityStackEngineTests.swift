@@ -49,7 +49,7 @@ func aSessionAlreadyNeedingInputOnFirstObservationEntersTheQueueImmediately() {
 }
 
 @Test
-func workingAndDormantAndIdleNeverEnterTheQueue() {
+func workingDormantAndIdleNeverEnterTheQueue() {
     let result = recompute([
         candidate("working", activity: .working),
         candidate("dormant", activity: .dormant),
@@ -57,30 +57,78 @@ func workingAndDormantAndIdleNeverEnterTheQueue() {
     ])
 
     #expect(result.queue.isEmpty)
-    #expect(result.workingCount == 1)
+    #expect(result.working.map(\.id) == ["working"])
 }
 
 @Test
-func failedAndCompletedAreLiveStatesNotEdgeTriggered() {
-    // Calling recompute repeatedly with the same failed/completed activity
-    // must keep surfacing the item every time, since these are live states
-    // Grok reports directly rather than one-shot transitions.
+func completedNeverEntersTheQueueEvenAfterATurnJustFinished() {
+    // `.completed` means "session closed" (the underlying Grok process
+    // ended), matching ConversationIndicator.propagatesToProject, which
+    // excludes it from attention aggregation everywhere else in Coinor. A
+    // session that reports `.completed` can sit there indefinitely even
+    // while the user is actively chatting again through a newly resumed
+    // process, so it must never be read as a live "finished" reason — doing
+    // so previously kept an already-answered conversation stuck in the queue
+    // forever.
+    var previousActivity: [String: RuntimeActivity] = ["a": .working]
+    var pendingReason: [String: ActivityQueueReason] = [:]
+
+    for _ in 0..<3 {
+        let result = recompute(
+            [candidate("a", activity: .completed)],
+            previousActivity: previousActivity,
+            pendingReason: pendingReason
+        )
+        #expect(result.queue.isEmpty)
+        previousActivity = result.previousActivity
+        pendingReason = result.pendingReason
+    }
+}
+
+@Test
+func failedIsALiveStateNotEdgeTriggered() {
+    // Calling recompute repeatedly with the same failed activity must keep
+    // surfacing the item every time, since it is a live state Grok reports
+    // directly rather than a one-shot transition.
     var previousActivity: [String: RuntimeActivity] = [:]
     var pendingReason: [String: ActivityQueueReason] = [:]
 
     for _ in 0..<3 {
         let result = recompute(
-            [
-                candidate("failed", activity: .failed),
-                candidate("done", activity: .completed),
-            ],
+            [candidate("failed", activity: .failed)],
             previousActivity: previousActivity,
             pendingReason: pendingReason
         )
-        #expect(Set(result.queue.map(\.id)) == ["failed", "done"])
+        #expect(result.queue.map(\.id) == ["failed"])
         previousActivity = result.previousActivity
         pendingReason = result.pendingReason
     }
+}
+
+@Test
+func respondingAgainAfterASessionReportsCompletedLeavesTheQueue() {
+    // Reproduces the reported bug: a conversation that already finished once
+    // (activity settled to `.completed`) must not stay in the queue once the
+    // user answers again and the session goes back to `.working`.
+    var previousActivity: [String: RuntimeActivity] = ["a": .working]
+    var pendingReason: [String: ActivityQueueReason] = [:]
+
+    let completed = recompute(
+        [candidate("a", activity: .completed)],
+        previousActivity: previousActivity,
+        pendingReason: pendingReason
+    )
+    #expect(completed.queue.isEmpty)
+    previousActivity = completed.previousActivity
+    pendingReason = completed.pendingReason
+
+    let workingAgain = recompute(
+        [candidate("a", activity: .working)],
+        previousActivity: previousActivity,
+        pendingReason: pendingReason
+    )
+    #expect(workingAgain.queue.isEmpty)
+    #expect(workingAgain.working.map(\.id) == ["a"])
 }
 
 @Test
@@ -131,12 +179,15 @@ func respondingLeavesTheQueueAutomaticallyWhenActivityReturnsToWorking() {
 @Test
 func orderingPutsBlockingReasonsFirstThenFailedThenFinishedOldestFirstWithinAGroup() {
     let now = Date()
-    let result = recompute([
-        candidate("finishedNew", activity: .completed, since: now),
-        candidate("failed", activity: .failed, since: now),
-        candidate("needsInputOld", activity: .needsInput, since: now.addingTimeInterval(-600)),
-        candidate("needsInputNew", activity: .needsInput, since: now.addingTimeInterval(-60)),
-    ])
+    let result = recompute(
+        [
+            candidate("finishedNew", activity: .idle, since: now),
+            candidate("failed", activity: .failed, since: now),
+            candidate("needsInputOld", activity: .needsInput, since: now.addingTimeInterval(-600)),
+            candidate("needsInputNew", activity: .needsInput, since: now.addingTimeInterval(-60)),
+        ],
+        previousActivity: ["finishedNew": .working]
+    )
 
     #expect(
         result.queue.map(\.id) == [
@@ -184,7 +235,8 @@ func mutedItemsAppearInAwayListAndReappearOnANewFailure() {
     let suppressions = ["a": ActivityStackSuppression.muted(fingerprint)]
 
     let muted = recompute(
-        [candidate("a", activity: .completed, since: now)],
+        [candidate("a", activity: .idle, since: now)],
+        previousActivity: ["a": .working],
         suppressions: suppressions
     )
     #expect(muted.queue.isEmpty)

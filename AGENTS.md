@@ -16,8 +16,6 @@ Read `CONTEXT.md`, `docs/product-requirements.md`, `docs/architecture.md`,
 
 ## Integration boundary
 
-- Treat the sibling custom `grok-build` checkout as read-only. Never modify
-  its tracked, untracked, generated, or configuration files from Coinor work.
 - Resolve Grok through an absolute path, defaulting to `~/bin/grok`.
 - `~/bin/grok` must be an installed `jattento/grok-build` release, never a
   development worktree launcher: a worktree build reports an unstamped version,

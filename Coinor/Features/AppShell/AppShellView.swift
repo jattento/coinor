@@ -29,10 +29,16 @@ struct AppShellView: View {
 
     var body: some View {
         NavigationSplitView {
-            AppShellSidebar(
-                coordinator: coordinator,
-                destination: $destination
-            )
+            Group {
+                if activityStack.isPresented {
+                    ActivityStackSidebarView(model: activityStack)
+                } else {
+                    AppShellSidebar(
+                        coordinator: coordinator,
+                        destination: $destination
+                    )
+                }
+            }
             .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
         } detail: {
             switch destination {

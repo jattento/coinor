@@ -142,7 +142,8 @@ private struct StartupExperienceView: View {
     }
 }
 
-private struct ConanASCIIView: View {
+/// The Conan mascot, also reused by `ActivityStackView`'s waiting screen.
+struct ConanASCIIView: View {
     private static let art = #"""
                             ..,,,,,,,,,..
                      .,;%%%%%%%%%%%%%%%%%%%%;,.

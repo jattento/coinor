@@ -14,6 +14,47 @@ The integration boundaries that still hold are enforced by the product and its
 release verification: an absolute Grok path, Coinor's private leader socket,
 and no writes into `grok-build` or `~/.grok/config.toml`.
 
+## Conan Code 0.6.9 Verification
+
+Version `0.6.9` build `47` adds the Activity Stack: a toolbar-opened
+attention queue for answering waiting conversations one after another. See
+`docs/releases/0.6.9.md`.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain (macOS 26.6.1,
+  Xcode 26.6 (17F113), macOS SDK 26.5, Swift 6.3.3).
+- `scripts/dev/run-tests.sh` ran the full suite; the same pre-existing,
+  load-sensitive subprocess wall-clock timing flakes documented for earlier
+  releases (`executableVersionProbeKillsACommandThatWouldOtherwiseHang`,
+  `GrokSubprocessTransportShutdownTests.shutdownWaitsUntilTheChildProcessHasExited`)
+  intermittently missed their 2-second bound only under heavy background
+  load from an unrelated concurrent build and passed individually in
+  isolation; `git diff` against every file behind those tests is empty.
+- New `ActivityStackEngineTests` (queue ordering, reason derivation,
+  dismiss/mute/snooze/push-to-end suppression and fingerprint-based expiry,
+  and that `.completed` never enters the queue) all passed.
+- `Vendor/Ghostty`'s static library hash differed from the committed
+  manifest on this rebuild (the recurring non-reproducible-build quirk also
+  hit in 0.6.7): tag, commit, header, and resources hashes were unchanged,
+  `scripts/ghostty/verify.sh` confirmed the artifact was internally
+  consistent, and `Coinor/Resources/GhosttyArtifactManifest.txt` was
+  resynced to this machine's `Vendor/Ghostty/manifest.txt` before rebuilding.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.9 (47)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- Security gate over the repository and the application bundle reported no
+  leaks; `git diff --check` passed.
+
+Manual verification: the feature was iterated on interactively against
+repeated Debug builds through this whole development session — opening and
+closing the Activity Stack from the toolbar and `⌘⇧A`, the sidebar swapping
+between the queue and the normal Pinned/Projects list, focusing already-
+loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
+their sidebar "Out of the queue" section, the sticky-focus behavior across a
+run of clarifying questions, and the empty-queue waiting screen.
+
 ## Conan Code 0.6.8 Verification
 
 Version `0.6.8` build `46` hardens the embedded terminal against the same

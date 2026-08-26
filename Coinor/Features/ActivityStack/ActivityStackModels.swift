@@ -83,6 +83,31 @@ struct ActivityStackFingerprint: Equatable, Sendable {
     let since: Date?
 }
 
+/// What the focus pane's header shows for the currently focused conversation.
+///
+/// `reason` is `nil` when the conversation is no longer a queue member (it
+/// went back to `working`, or otherwise stopped blocking) but is still being
+/// shown because nothing else is waiting — see
+/// `ActivityStackModel.reconcileFocus`. That distinction is what lets the
+/// header show a neutral "nothing else waiting" state instead of a stale
+/// colored badge, and lets the action bar drop actions that only make sense
+/// for an actual queue member.
+struct ActivityStackFocusDisplay: Equatable, Sendable {
+    let title: String
+    let project: String
+    let reason: ActivityQueueReason?
+    let since: Date?
+}
+
+/// One conversation Grok reports as actively working, shown in the sidebar's
+/// "N agents working" footer by name instead of only a count.
+struct ActivityStackWorkingItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let project: String
+    let since: Date?
+}
+
 /// A conversation removed from the queue by the user, and why.
 enum ActivityStackSuppression: Equatable, Sendable {
     /// Acknowledged once ("D"). Reappears only on a new fingerprint.
@@ -98,7 +123,7 @@ enum ActivityStackSuppression: Equatable, Sendable {
 struct ActivityStackEngineResult: Equatable, Sendable {
     var queue: [ActivityStackItem]
     var away: [ActivityStackAwayItem]
-    var workingCount: Int
+    var working: [ActivityStackWorkingItem]
     var previousActivity: [String: RuntimeActivity]
     var pendingReason: [String: ActivityQueueReason]
     var suppressions: [String: ActivityStackSuppression]
@@ -131,13 +156,21 @@ enum ActivityStackEngine {
         var nextSuppressions = suppressions
         var queueItems: [ActivityStackItem] = []
         var awayItems: [ActivityStackAwayItem] = []
-        var workingCount = 0
+        var workingItems: [ActivityStackWorkingItem] = []
         var seenIDs: Set<String> = []
 
         for candidate in candidates {
             seenIDs.insert(candidate.id)
-            if candidate.activity == .dormant { continue }
-            if candidate.activity == .working { workingCount += 1 }
+            if candidate.activity == .working {
+                workingItems.append(
+                    ActivityStackWorkingItem(
+                        id: candidate.id,
+                        title: candidate.title,
+                        project: candidate.project,
+                        since: candidate.since
+                    )
+                )
+            }
 
             let transition = ConversationAttention.transition(
                 from: nextPreviousActivity[candidate.id],
@@ -154,14 +187,26 @@ enum ActivityStackEngine {
                 break
             }
 
-            // `.failed` and `.completed` are live states Grok reports
-            // directly rather than edges, so they are read straight off
-            // current activity instead of the transition-tracked reason.
+            // `.dormant` and `.completed` ("session closed" — the underlying
+            // Grok process ended) never need the user, matching
+            // `ConversationIndicator.propagatesToProject`, which excludes
+            // both from attention aggregation everywhere else in Coinor.
+            // `.completed` must not be read as a live "finished" reason: a
+            // session that reports `completed` can sit there indefinitely
+            // even while the user is actively chatting again through a new
+            // resumed process, which previously kept an answered
+            // conversation stuck in the queue forever.
+            guard candidate.activity != .dormant,
+                  candidate.activity != .completed else {
+                continue
+            }
+
+            // `.failed` is a live state Grok reports directly rather than an
+            // edge, so it is read straight off current activity instead of
+            // the transition-tracked reason.
             let reason: ActivityQueueReason?
             if candidate.activity == .failed {
                 reason = .failed
-            } else if candidate.activity == .completed {
-                reason = .finished
             } else {
                 reason = nextPendingReason[candidate.id]
             }
@@ -226,7 +271,14 @@ enum ActivityStackEngine {
                 $0.title.localizedCaseInsensitiveCompare($1.title)
                     == .orderedAscending
             },
-            workingCount: workingCount,
+            working: workingItems.sorted {
+                let lhs = $0.since ?? .distantPast
+                let rhs = $1.since ?? .distantPast
+                return lhs != rhs
+                    ? lhs < rhs
+                    : $0.title.localizedCaseInsensitiveCompare($1.title)
+                        == .orderedAscending
+            },
             previousActivity: nextPreviousActivity,
             pendingReason: nextPendingReason,
             suppressions: nextSuppressions

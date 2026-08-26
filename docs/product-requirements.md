@@ -162,32 +162,45 @@ dormant or closed.
 
 ## Activity Stack
 
-The Activity Stack is a toolbar-opened panel that queues every non-dormant,
-non-archived conversation waiting on the user, so answering agents does not
-require manually switching between sidebar rows. It never opens itself; the
-toolbar button carries a badge with the current queue count, and `⌘⇧A` toggles
-the panel from anywhere, including while a terminal has keyboard focus.
+The Activity Stack is a toolbar-opened mode that queues every non-dormant,
+non-archived, non-closed conversation waiting on the user, so answering
+agents does not require manually switching between sidebar rows. It never
+opens itself; the toolbar button carries a badge with the current queue
+count, and `⌘⇧A` toggles it from anywhere, including while a terminal has
+keyboard focus. While open, it replaces the sidebar's own Pinned/Projects
+list with the queue (the same way the sidebar's Agent Search already takes
+over that column) and closing it restores the normal list; the content area
+shows the focused conversation's terminal directly, with no extra chrome
+duplicating what the terminal itself already shows.
 
-The queue orders conversations by how much they block the user: needing input
-or a tool permission first, then failed runs, then finished runs; within a
-group, the longest-waiting conversation leads. A conversation can appear here
-even if it was never opened this run, as long as Grok reports it needing
-input, failed, or finished and it is not dormant, archived, or manually
-excluded.
+The queue orders conversations by how much they block the user: needing
+input or a tool permission first, then failed runs, then finished runs;
+within a group, the longest-waiting conversation leads. A conversation can
+appear here even if it was never opened this run, as long as Grok reports it
+needing input, failed, or finished and it is not dormant, archived, session
+closed, or manually excluded.
 
-The focused item renders the conversation's real, live Ghostty surface, the
-same one the sidebar would show; the same terminal input already used for
-text, image, and audio submits a response. Submitting a response that returns
-the conversation to `working` removes it from the queue on its own. Explicit
-actions on the focused item: `⌘D` acknowledges it and removes it until it
-raises a new instance of attention; `⌘S` sends it to the end of the current
-pass; a snooze menu removes it for 15 minutes or 1 hour and returns it
-automatically; `⌘M` mutes it until it is restored by hand or raises a new
-instance of attention (a fresh failure always resurfaces a muted conversation
-once). Muted and snoozed conversations keep running and stay listed
-elsewhere; only their place in the queue changes. "Pause Queue" stops the
-panel from auto-advancing to the next item when the focused one resolves,
-without stopping the queue from tracking new arrivals.
+The focused item renders the conversation's real, live terminal exactly the
+way the sidebar would, tab strip included, so answering it is the same
+terminal input already used for text, image, and audio, and a conversation
+already loaded this run appears instantly. Submitting a response that
+returns the conversation to `working` removes it from the queue on its own,
+but only advances the panel to another conversation if one is actually
+waiting; if none is, the panel keeps showing the same conversation with a
+"nothing else waiting" action bar until the user closes it or a new
+conversation needs attention. When the queue is completely empty, the panel
+shows a waiting screen that updates itself as soon as an agent needs the
+user.
+
+Explicit actions on the focused item, while it is still a queue member: `⌘D`
+acknowledges it and removes it until it raises a new instance of attention;
+`⌘S` sends it to the end of the current pass; a snooze menu removes it for 15
+minutes or 1 hour and returns it automatically; `⌘M` mutes it until it is
+restored by hand or raises a new instance of attention (a fresh failure
+always resurfaces a muted conversation once). Muted and snoozed
+conversations keep running and stay listed in the sidebar's "Out of the
+queue" section; only their place in the queue changes. The sidebar also
+lists every conversation Grok reports as actively working, by name.
 
 Queue membership, ordering overrides, mutes, and snoozes are session-only:
 none of it survives a Conan Code relaunch.

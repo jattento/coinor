@@ -26,15 +26,12 @@ enum AppShellIdentifier {
     static let settingsChangelog = "AppShellSettingsChangelog"
     static let activityStackButton = "AppShellActivityStackButton"
     static let activityStackPanel = "AppShellActivityStackPanel"
-    static let activityStackClose = "AppShellActivityStackClose"
-    static let activityStackRail = "AppShellActivityStackRail"
     static let activityStackFocus = "AppShellActivityStackFocus"
     static let activityStackEmptyState = "AppShellActivityStackEmptyState"
     static let activityStackAwaySection = "AppShellActivityStackAwaySection"
     static let activityStackDismiss = "AppShellActivityStackDismiss"
     static let activityStackPushToEnd = "AppShellActivityStackPushToEnd"
     static let activityStackMute = "AppShellActivityStackMute"
-    static let activityStackPauseToggle = "AppShellActivityStackPauseToggle"
 
     static func activityStackRow(_ sessionID: String) -> String {
         "AppShellActivityStackRow.\(sessionID)"

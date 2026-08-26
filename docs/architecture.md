@@ -123,7 +123,12 @@ its own `ConversationAttention.transition` bookkeeping over every known,
 non-dormant, non-archived session, not only sessions with a loaded runtime.
 This is a deliberate difference from the sidebar, whose attention state is
 edge-triggered per loaded runtime: the Activity Stack must be able to surface
-a conversation the user never opened this run.
+a conversation the user never opened this run. `.completed` ("session
+closed": the underlying Grok process ended) is read as a live, non-edge
+state and excluded from the queue entirely, the same way
+`ConversationIndicator.propagatesToProject` excludes it from project-level
+attention — treating it as a one-shot "finished" edge kept an already
+re-answered conversation stuck in the queue.
 
 The pure ordering, reason-derivation, and suppression rules (dismiss, mute,
 snooze, push-to-end) live in `ActivityStackEngine`, a stateless function of
@@ -134,13 +139,25 @@ the owning view forwards to it, deferred to the next run-loop turn since
 `objectWillChange` fires before the underlying `@Published` value is
 committed.
 
-The focused item's terminal is not a separate surface: `ActivityStackView`
-looks up the conversation's existing `ConversationRuntime` from
-`ConversationRuntimeManager` (activating and resuming it exactly like a
-sidebar selection would, through `AppCoordinator.selectConversation`) and
-renders the same `ConversationPaneView` the normal conversation content area
-would show. Queue membership, mutes, snoozes, and pushed order are session-only
-state inside `ActivityStackModel`; none of it is persisted.
+`ActivityStackSidebarView` replaces `AppShellSidebar` in the same
+`NavigationSplitView` column while presented, the same pattern the sidebar's
+own Agent Search panel already uses to take over that column; there is no
+second, parallel list. The detail area's `ActivityStackView` renders
+`RuntimeHostView`, the exact component the normal conversation content area
+uses, so the focused conversation's tab strip and always-mounted runtimes are
+identical to a sidebar selection — a conversation already loaded this run
+appears exactly as instantly here as it would from the sidebar, since no
+separate "is it loaded" check or resuming placeholder exists. Advancing to
+the next item only happens when the currently focused item leaves the queue
+*and* another item is actually waiting (`ActivityStackModel.reconcileFocus`):
+otherwise the model stays "sticky" on the same `focusedID` even though it no
+longer has a queue entry, so a rapid back-and-forth (an agent asking several
+clarifying questions) never bounces the panel to an empty state and back.
+`ActivityStackModel.focusedDisplay` supplies the header data for both cases,
+falling back to `AppCoordinator.summaries` for title/project when the
+focused conversation is not currently a queue member. Queue membership,
+mutes, snoozes, and pushed order are session-only state inside
+`ActivityStackModel`; none of it is persisted.
 
 ### Automations
 
