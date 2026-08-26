@@ -55,6 +55,38 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.12 Verification
+
+Version `0.6.12` build `50` fixes the original embedded-terminal overflow
+that 0.6.7–0.6.11 did not: Ghostty painted past the pane into the tab strip,
+the prompt input, and the sidebar. See `docs/releases/0.6.12.md`.
+
+Reproduced live on the installed 0.6.11 build on the user's ultrawide
+display (1.0 backing scale) without quitting the app. Diagnostic logging
+showed SwiftUI's `GeometryReader` size disagreeing with the hosting
+NSView's `bounds` (GeometryReader larger, including ~50pt extra height
+and the sidebar's width). Ghostty was sized from the GeometryReader, so
+its Metal layer overflowed the view that was supposed to clip it.
+
+Fix: drop the GeometryReader path; `sizeThatFits` makes the clipping
+container fill the SwiftUI proposal; Ghostty is sized from that
+container's `bounds` in backing pixels; clipping is re-applied every
+layout because Ghostty may replace the inner layer.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain.
+- Focused terminal suites (`GhosttySurfaceResizePolicyTests`,
+  `GhosttySurfaceHandleTests`, `TerminalSessionFocusTests`) plus the full
+  `scripts/dev/run-tests.sh` suite; only the pre-existing load-sensitive
+  subprocess wall-clock flakes fail under full-suite load and pass in
+  isolation.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.12 (50)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- Security gate and `git diff --check` passed.
+
 ## Conan Code 0.6.11 Verification
 
 Version `0.6.11` build `49` fixes a severe Activity Stack bug: heavy use

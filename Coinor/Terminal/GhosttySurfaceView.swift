@@ -301,17 +301,6 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     private var suppressesNextLeftMouseUp = false
     private var previousPressureStage: Int = 0
     private var hostVisible = true
-    /// The size SwiftUI's `GeometryReader` reports for this surface's slot.
-    ///
-    /// `self.bounds` is not used for sizing because AppKit can lag behind
-    /// SwiftUI's own layout during animated or fast-moving resizes (window
-    /// resize, sidebar drag, split resize): the view's frame is updated on
-    /// its own schedule, sometimes a frame or more after SwiftUI already
-    /// settled on a new size. Resizing Ghostty against a stale `bounds`
-    /// produces a grid that does not match the pane's real size until a
-    /// later, unrelated layout pass corrects it, which is what shows up as
-    /// text overflowing into neighboring chrome or clipped mid-column.
-    private var hostSize: CGSize?
     private var focusesWhenAttached = false
     private let search = TerminalSearchState()
     private var searchHost: NSView?
@@ -336,21 +325,13 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
     init(runtime: GhosttyRuntime, launch: TerminalLaunchRequest) throws {
         self.runtime = runtime
         self.launch = launch
-        super.init(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+        super.init(frame: .zero)
 
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentHuggingPriority(.defaultLow, for: .vertical)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        wantsLayer = true
-        // Ghostty's renderer can briefly hold a frame sized for the
-        // surface's previous geometry while a resize is in flight. Without
-        // clipping, that stale content paints past this view's own bounds
-        // into whatever sits next to it (the tab strip above, the prompt
-        // input below). This view's own layer is masked as a first layer of
-        // defense; `TerminalSurfaceHostingView` also wraps it in a clipping
-        // container, since Ghostty may replace this layer outright.
-        layer?.masksToBounds = true
+        applyLayerClipping()
 
         search.onCommand = { [weak self] action in
             _ = self?.performBindingAction(action.bindingAction)
@@ -389,7 +370,9 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
                         .passUnretained(self)
                         .toOpaque()
                     configuration.scale_factor = Double(
-                        NSScreen.main?.backingScaleFactor ?? 2
+                        NSApp.mainWindow?.backingScaleFactor
+                            ?? NSScreen.main?.backingScaleFactor
+                            ?? 1
                     )
                     configuration.working_directory = workingDirectory
                     configuration.command = command
@@ -459,6 +442,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
 
     override func layout() {
         super.layout()
+        applyLayerClipping()
         updateSurfaceSize()
     }
 
@@ -965,6 +949,7 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
             updateDisplayProperties()
         }
         isHidden = !visible
+        layer?.isHidden = !visible
         updateOcclusion()
         updateFocus()
         if visible, focusesWhenAttached, let window {
@@ -1311,24 +1296,30 @@ final class GhosttySurfaceView: NSView, NSMenuItemValidation {
         }
     }
 
-    /// Applies the size SwiftUI's `GeometryReader` reports for this
-    /// surface's slot. Called on every `updateNSView`, so it always reflects
-    /// SwiftUI's current layout even when `self.bounds` has not caught up
-    /// yet (see `hostSize`).
-    func sizeDidChange(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        hostSize = size
-        updateSurfaceSize()
+    /// Ghostty's Metal layer can replace `self.layer` after creation, which
+    /// drops `masksToBounds`. Re-apply on every layout so a stale, oversized
+    /// frame cannot paint past this view into neighboring chrome.
+    private func applyLayerClipping() {
+        wantsLayer = true
+        layer?.masksToBounds = true
+        if #available(macOS 14.0, *) {
+            clipsToBounds = true
+        }
     }
 
+    /// Sizes Ghostty from this view's actual `bounds`, converted to backing
+    /// pixels with the window's own scale. A previous approach fed SwiftUI's
+    /// `GeometryReader` size in independently; that size was routinely
+    /// larger than the NSView that actually hosted the Metal layer (by ~50pt
+    /// vertically, and by the sidebar width horizontally), so Ghostty
+    /// painted past the tab strip, the prompt input, and into the sidebar.
     private func updateSurfaceSize() {
-        guard window != nil, surfaceHandle.isValid else { return }
-        let pointSize = hostSize ?? bounds.size
-        guard pointSize.width > 0, pointSize.height > 0 else { return }
-        let pixelSize = convertToBacking(pointSize)
+        guard let window, surfaceHandle.isValid else { return }
+        let scale = window.backingScaleFactor
+        guard bounds.width > 0, bounds.height > 0, scale > 0 else { return }
         let size = CGSize(
-            width: max(1, pixelSize.width.rounded()),
-            height: max(1, pixelSize.height.rounded())
+            width: max(1, (bounds.width * scale).rounded()),
+            height: max(1, (bounds.height * scale).rounded())
         )
         guard let requestedSize = resizePolicy.requestedSize(
             size,
