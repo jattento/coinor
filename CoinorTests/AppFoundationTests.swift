@@ -280,6 +280,58 @@ final class AppFoundationTests: XCTestCase {
                 "AppShellStartupCheck.leaderSocket",
             ]
         )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackButton,
+            "AppShellActivityStackButton"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackPanel,
+            "AppShellActivityStackPanel"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackClose,
+            "AppShellActivityStackClose"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackRail,
+            "AppShellActivityStackRail"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackFocus,
+            "AppShellActivityStackFocus"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackEmptyState,
+            "AppShellActivityStackEmptyState"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackAwaySection,
+            "AppShellActivityStackAwaySection"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackDismiss,
+            "AppShellActivityStackDismiss"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackPushToEnd,
+            "AppShellActivityStackPushToEnd"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackMute,
+            "AppShellActivityStackMute"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackPauseToggle,
+            "AppShellActivityStackPauseToggle"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackRow("abc"),
+            "AppShellActivityStackRow.abc"
+        )
+        XCTAssertEqual(
+            AppShellIdentifier.activityStackRestore("abc"),
+            "AppShellActivityStackRestore.abc"
+        )
     }
 
     func testProjectAppearanceCatalogIsCompleteAndRenderable() {

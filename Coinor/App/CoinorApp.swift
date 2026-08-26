@@ -28,11 +28,24 @@ struct CoinorApp: App {
     @NSApplicationDelegateAdaptor(CoinorApplicationDelegate.self)
     private var applicationDelegate
     @StateObject private var shell = AppShellModel(environment: .live())
-    @StateObject private var coordinator = AppCoordinator()
+    @StateObject private var coordinator: AppCoordinator
+    @StateObject private var activityStack: ActivityStackModel
+
+    init() {
+        let coordinator = AppCoordinator()
+        _coordinator = StateObject(wrappedValue: coordinator)
+        _activityStack = StateObject(
+            wrappedValue: ActivityStackModel(coordinator: coordinator)
+        )
+    }
 
     var body: some Scene {
         Window("Conan Code", id: "coinor.main") {
-            AppShellView(model: shell, coordinator: coordinator)
+            AppShellView(
+                model: shell,
+                coordinator: coordinator,
+                activityStack: activityStack
+            )
                 .onAppear {
                     applicationDelegate.coordinator = coordinator
                 }
@@ -46,7 +59,10 @@ struct CoinorApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
         .commands {
-            ConversationCommands(coordinator: coordinator)
+            ConversationCommands(
+                coordinator: coordinator,
+                activityStack: activityStack
+            )
             TerminalTabCommands(coordinator: coordinator)
         }
     }

@@ -8,14 +8,20 @@ enum AppShellDestination: Equatable {
 struct AppShellView: View {
     @ObservedObject var model: AppShellModel
     @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject var activityStack: ActivityStackModel
     @Environment(\.openURL) private var openURL
     @State private var destination: AppShellDestination = .conversation
     @State private var showsSettings = false
     @StateObject private var automationCenter: AutomationCenterModel
 
-    init(model: AppShellModel, coordinator: AppCoordinator) {
+    init(
+        model: AppShellModel,
+        coordinator: AppCoordinator,
+        activityStack: ActivityStackModel
+    ) {
         self.model = model
         self.coordinator = coordinator
+        self.activityStack = activityStack
         _automationCenter = StateObject(
             wrappedValue: AutomationCenterModel(coordinator: coordinator)
         )
@@ -32,10 +38,19 @@ struct AppShellView: View {
             switch destination {
             case .conversation:
                 VStack(spacing: 0) {
-                    ConversationContentView(
-                        model: model,
-                        coordinator: coordinator
-                    )
+                    if activityStack.isPresented,
+                       case .ready = coordinator.status,
+                       let runtimeManager = coordinator.runtimeManager {
+                        ActivityStackView(
+                            model: activityStack,
+                            runtimeManager: runtimeManager
+                        )
+                    } else {
+                        ConversationContentView(
+                            model: model,
+                            coordinator: coordinator
+                        )
+                    }
                     if case .ready = coordinator.status,
                        model.unresolvedStartupCheckCount > 0 {
                         Divider()
@@ -101,6 +116,32 @@ struct AppShellView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    activityStack.togglePresented()
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "tray.2")
+                        if activityStack.queue.count > 0 {
+                            Text("\(activityStack.queue.count)")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(3)
+                                .background(
+                                    Circle().fill(activityStackBadgeColor)
+                                )
+                                .foregroundStyle(.white)
+                                .offset(x: 9, y: -8)
+                        }
+                    }
+                }
+                .help("Activity Stack")
+                .accessibilityLabel(
+                    activityStack.queue.isEmpty
+                        ? "Activity Stack"
+                        : "Activity Stack, \(activityStack.queue.count) waiting"
+                )
+                .accessibilityIdentifier(AppShellIdentifier.activityStackButton)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     showsSettings = true
                 } label: {
                     Image(systemName: "gearshape")
@@ -132,9 +173,30 @@ struct AppShellView: View {
             }
         }
         .background {
-            TerminalTabShortcutMonitor(coordinator: coordinator)
+            TerminalTabShortcutMonitor(
+                coordinator: coordinator,
+                activityStack: activityStack
+            )
                 .frame(width: 0, height: 0)
         }
+        .onReceive(coordinator.objectWillChange) {
+            // `objectWillChange` fires before the new value is committed, so
+            // recomputing has to wait for the next turn of the run loop or it
+            // would read the state `coordinator` is about to replace.
+            DispatchQueue.main.async {
+                activityStack.recompute()
+            }
+        }
+    }
+
+    private var activityStackBadgeColor: Color {
+        if activityStack.queue.contains(where: { $0.reason == .failed }) {
+            return .red
+        }
+        if activityStack.queue.contains(where: { $0.reason == .needsInput }) {
+            return .orange
+        }
+        return .green
     }
 }
 

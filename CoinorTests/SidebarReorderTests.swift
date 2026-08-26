@@ -289,7 +289,10 @@ struct SidebarConversationNavigationTests {
     @Test
     func windowMonitorConsumesConversationNavigationIncludingRepeats() throws {
         let coordinator = AppCoordinator()
-        let view = TerminalTabShortcutView(coordinator: coordinator)
+        let view = TerminalTabShortcutView(
+            coordinator: coordinator,
+            activityStack: ActivityStackModel(coordinator: coordinator)
+        )
         let event = try #require(
             NSEvent.keyEvent(
                 with: .keyDown,

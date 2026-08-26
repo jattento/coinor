@@ -114,6 +114,34 @@ Leader mode requires a Grok configuration that is eligible for leader
 operation. Coinor must surface a clear startup error if Grok refuses leader
 mode, including sandbox-policy failures.
 
+### Activity Stack
+
+`ActivityStackModel` builds the queue independently of `AppCoordinator`'s own
+attention/notification tracking (`pendingAttention`, `AttentionNotificationService`):
+it reads `AppCoordinator.summaries`, `activity(for:)`, and `roster` and runs
+its own `ConversationAttention.transition` bookkeeping over every known,
+non-dormant, non-archived session, not only sessions with a loaded runtime.
+This is a deliberate difference from the sidebar, whose attention state is
+edge-triggered per loaded runtime: the Activity Stack must be able to surface
+a conversation the user never opened this run.
+
+The pure ordering, reason-derivation, and suppression rules (dismiss, mute,
+snooze, push-to-end) live in `ActivityStackEngine`, a stateless function of
+candidates and carried-forward tracking dictionaries, so they are unit
+testable without a live control connection. `ActivityStackModel` owns the
+carried-forward state and recomputes on every `AppCoordinator.objectWillChange`
+the owning view forwards to it, deferred to the next run-loop turn since
+`objectWillChange` fires before the underlying `@Published` value is
+committed.
+
+The focused item's terminal is not a separate surface: `ActivityStackView`
+looks up the conversation's existing `ConversationRuntime` from
+`ConversationRuntimeManager` (activating and resuming it exactly like a
+sidebar selection would, through `AppCoordinator.selectConversation`) and
+renders the same `ConversationPaneView` the normal conversation content area
+would show. Queue membership, mutes, snoozes, and pushed order are session-only
+state inside `ActivityStackModel`; none of it is persisted.
+
 ### Automations
 
 Each automation is one launchd job (`AutomationJob`), scheduled independently

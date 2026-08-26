@@ -160,6 +160,38 @@ doing work: failed, waiting, working, and finished. Per-conversation lifecycle
 states never reach it, because a project is a grouping and cannot itself be
 dormant or closed.
 
+## Activity Stack
+
+The Activity Stack is a toolbar-opened panel that queues every non-dormant,
+non-archived conversation waiting on the user, so answering agents does not
+require manually switching between sidebar rows. It never opens itself; the
+toolbar button carries a badge with the current queue count, and `⌘⇧A` toggles
+the panel from anywhere, including while a terminal has keyboard focus.
+
+The queue orders conversations by how much they block the user: needing input
+or a tool permission first, then failed runs, then finished runs; within a
+group, the longest-waiting conversation leads. A conversation can appear here
+even if it was never opened this run, as long as Grok reports it needing
+input, failed, or finished and it is not dormant, archived, or manually
+excluded.
+
+The focused item renders the conversation's real, live Ghostty surface, the
+same one the sidebar would show; the same terminal input already used for
+text, image, and audio submits a response. Submitting a response that returns
+the conversation to `working` removes it from the queue on its own. Explicit
+actions on the focused item: `⌘D` acknowledges it and removes it until it
+raises a new instance of attention; `⌘S` sends it to the end of the current
+pass; a snooze menu removes it for 15 minutes or 1 hour and returns it
+automatically; `⌘M` mutes it until it is restored by hand or raises a new
+instance of attention (a fresh failure always resurfaces a muted conversation
+once). Muted and snoozed conversations keep running and stay listed
+elsewhere; only their place in the queue changes. "Pause Queue" stops the
+panel from auto-advancing to the next item when the focused one resolves,
+without stopping the queue from tracking new arrivals.
+
+Queue membership, ordering overrides, mutes, and snoozes are session-only:
+none of it survives a Conan Code relaunch.
+
 ## Creating conversations
 
 The add button on a project opens a compact menu with two actions:

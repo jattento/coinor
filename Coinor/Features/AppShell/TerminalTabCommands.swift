@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ConversationCommands: Commands {
     @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject var activityStack: ActivityStackModel
 
     var body: some Commands {
         CommandMenu("Conversations") {
@@ -16,6 +17,17 @@ struct ConversationCommands: Commands {
                 coordinator.navigateConversation(.next)
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+
+            Divider()
+
+            Button(
+                activityStack.isPresented
+                    ? "Close Activity Stack"
+                    : "Open Activity Stack"
+            ) {
+                activityStack.togglePresented()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
         }
     }
 }
@@ -46,9 +58,13 @@ struct TerminalTabCommands: Commands {
 
 struct TerminalTabShortcutMonitor: NSViewRepresentable {
     let coordinator: AppCoordinator
+    let activityStack: ActivityStackModel
 
     func makeNSView(context: Context) -> TerminalTabShortcutView {
-        TerminalTabShortcutView(coordinator: coordinator)
+        TerminalTabShortcutView(
+            coordinator: coordinator,
+            activityStack: activityStack
+        )
     }
 
     func updateNSView(
@@ -56,6 +72,7 @@ struct TerminalTabShortcutMonitor: NSViewRepresentable {
         context: Context
     ) {
         nsView.coordinator = coordinator
+        nsView.activityStack = activityStack
     }
 
     static func dismantleNSView(
@@ -91,10 +108,12 @@ enum ConversationNavigationShortcut {
 @MainActor
 final class TerminalTabShortcutView: NSView {
     var coordinator: AppCoordinator
+    var activityStack: ActivityStackModel
     private var eventMonitor: Any?
 
-    init(coordinator: AppCoordinator) {
+    init(coordinator: AppCoordinator, activityStack: ActivityStackModel) {
         self.coordinator = coordinator
+        self.activityStack = activityStack
         super.init(frame: .zero)
     }
 
@@ -147,11 +166,34 @@ final class TerminalTabShortcutView: NSView {
             .deviceIndependentFlagsMask
         )
         modifiers.remove([.capsLock, .numericPad])
-        guard modifiers == .command,
-              let characters = event.charactersIgnoringModifiers?
-                  .lowercased() else {
+
+        guard let characters = event.charactersIgnoringModifiers?
+            .lowercased() else {
             return false
         }
+
+        if modifiers == [.command, .shift], characters == "a" {
+            return activityStack.togglePresented()
+        }
+
+        guard modifiers == .command else { return false }
+
+        if activityStack.isPresented, let focusedID = activityStack.focusedID {
+            switch characters {
+            case "d":
+                activityStack.dismiss(focusedID)
+                return true
+            case "s":
+                activityStack.pushToEnd(focusedID)
+                return true
+            case "m":
+                activityStack.mute(focusedID)
+                return true
+            default:
+                break
+            }
+        }
+
         switch characters {
         case "t":
             return coordinator.createTerminalTab()
