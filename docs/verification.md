@@ -55,6 +55,43 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.13 Verification
+
+Version `0.6.13` build `51` fixes the actual cause of the terminal
+misalignment reported repeatedly across 0.6.7–0.6.12. See
+`docs/releases/0.6.13.md`.
+
+The decisive evidence came from a screenshot of the broken 0.6.12 window:
+the `+` new-tab button was visible while the `main`/`IDE` tabs beside it
+were not. Those tabs are plain SwiftUI views, so the corruption could not
+be Ghostty's grid. The whole detail column was laid out at full window
+width from x=0, sliding under the sidebar and overflowing the right edge;
+the terminal was merely the largest thing inside it.
+
+Cause: `AppShellView` swapped the view occupying `NavigationSplitView`'s
+sidebar column between `AppShellSidebar` and `ActivityStackSidebarView`.
+Changing a split column's view identity lets NavigationSplitView recompute
+the split into that broken geometry — the same class of bug 0.6.11 fixed
+on the detail side.
+
+Fix: `AppShellSidebarHost` holds the sidebar column permanently with both
+lists mounted, toggling only opacity, hit testing, and accessibility.
+
+Automated verification:
+
+- `scripts/dev/run-tests.sh`: 563 tests in 45 suites, all passing,
+  including the subprocess timing tests that usually flake under load.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.13 (51)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` and the security gate passed.
+
+Manual verification on the ultrawide (1x) display: 10 rapid Activity Stack
+toggles interleaved with window resizes, checked in both panel states. The
+tab strip, terminal, and sidebar stayed correctly positioned; no content
+rendered under the sidebar or past the window edge.
+
 ## Conan Code 0.6.12 Verification
 
 Version `0.6.12` build `50` fixes the original embedded-terminal overflow

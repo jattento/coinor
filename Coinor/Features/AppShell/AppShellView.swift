@@ -29,16 +29,18 @@ struct AppShellView: View {
 
     var body: some View {
         NavigationSplitView {
-            Group {
-                if activityStack.isPresented {
-                    ActivityStackSidebarView(model: activityStack)
-                } else {
-                    AppShellSidebar(
-                        coordinator: coordinator,
-                        destination: $destination
-                    )
-                }
-            }
+            // Both sidebars stay mounted, and only their visibility changes.
+            // Swapping which view occupies this column (an `if/else` here)
+            // changes the column's view identity, and NavigationSplitView
+            // can recompute the split from that in a state where the detail
+            // column takes the whole window width at x=0 and slides under
+            // the sidebar — the tab strip and terminal then render behind
+            // it, clipped on the left and overflowing on the right.
+            AppShellSidebarHost(
+                coordinator: coordinator,
+                destination: $destination,
+                activityStack: activityStack
+            )
             .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
         } detail: {
             switch destination {
@@ -218,6 +220,36 @@ struct AppShellView: View {
             return .orange
         }
         return .green
+    }
+}
+
+/// Keeps one stable view in `NavigationSplitView`'s sidebar column.
+///
+/// The normal conversation list and the Activity Stack queue are both always
+/// mounted; only opacity and hit testing change. That keeps the column's
+/// identity — and therefore the split's own column geometry — fixed while
+/// the Activity Stack opens and closes.
+@MainActor
+private struct AppShellSidebarHost: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @Binding var destination: AppShellDestination
+    @ObservedObject var activityStack: ActivityStackModel
+
+    var body: some View {
+        ZStack {
+            AppShellSidebar(
+                coordinator: coordinator,
+                destination: $destination
+            )
+            .opacity(activityStack.isPresented ? 0 : 1)
+            .allowsHitTesting(!activityStack.isPresented)
+            .accessibilityHidden(activityStack.isPresented)
+
+            ActivityStackSidebarView(model: activityStack)
+                .opacity(activityStack.isPresented ? 1 : 0)
+                .allowsHitTesting(activityStack.isPresented)
+                .accessibilityHidden(!activityStack.isPresented)
+        }
     }
 }
 
