@@ -13,6 +13,9 @@ struct ConversationTabbedView: View {
     let isConversationVisible: Bool
 
     var body: some View {
+        // Same rule as `RuntimeHostView`: this inner ZStack keeps every tab
+        // mounted, so it must never take its size from a tab. It is pinned
+        // and clipped so one tab cannot widen the pane past the column.
         VStack(spacing: 0) {
             TerminalTabStrip(
                 runtime: runtime,
@@ -95,7 +98,10 @@ struct ConversationTabbedView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.tabs")
     }

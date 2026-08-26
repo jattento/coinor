@@ -357,14 +357,18 @@ struct TerminalSurfaceRepresentable: NSViewRepresentable {
             .setHostVisibility(isVisible)
     }
 
+    /// Never demands space. The pane's size comes from its container.
+    ///
+    /// Reporting an ideal size here (SwiftUI asks with unspecified
+    /// dimensions) makes an enclosing `ZStack` size itself to that ideal and
+    /// center every sibling, which pushes the whole conversation pane past
+    /// the detail column on both sides.
     func sizeThatFits(
         _ proposal: ProposedViewSize,
         nsView: NSView,
         context: Context
     ) -> CGSize? {
-        proposal.replacingUnspecifiedDimensions(
-            by: CGSize(width: 900, height: 600)
-        )
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 
     static func dismantleNSView(

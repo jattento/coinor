@@ -35,7 +35,13 @@ struct ConversationPaneView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(
+                width: proxy.size.width,
+                height: proxy.size.height,
+                alignment: .topLeading
+            )
             .background(Color(nsColor: .separatorColor))
+            .clipped()
         }
         .background(Color.black)
         .accessibilityIdentifier("conversation.panes")

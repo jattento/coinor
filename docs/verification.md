@@ -55,6 +55,44 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.15 Verification
+
+Version `0.6.15` build `53` fixes the conversation pane overflowing the
+detail column after several chats are opened. See
+`docs/releases/0.6.15.md`.
+
+The user's trigger — "it happens when I go into several chats" — pointed
+at `RuntimeHostView`'s `ZStack`, which keeps every loaded conversation
+mounted. A `ZStack` sizes to its largest child and centers all of them,
+and neither the stack nor its children were pinned to the available space.
+`TerminalSurfaceRepresentable.sizeThatFits` also reported a 900x600 ideal
+when SwiftUI asked with unspecified dimensions. One child asking for more
+than the column had grew the stack and centered it, so the pane overflowed
+symmetrically: left under the sidebar, right past the window edge, tab
+strip included. More chats meant more children and more chances to hit it.
+
+Fix: pin and clip both `ZStack`s (`RuntimeHostView`,
+`ConversationTabbedView`) and their children, pin `ConversationPaneView`'s
+split row to the reader size with `.topLeading` alignment, and make
+`sizeThatFits` demand nothing.
+
+Automated verification:
+
+- `scripts/dev/run-tests.sh`: 563 tests in 45 suites; only the documented
+  load-sensitive `oversizedOutputIsTruncatedThroughTheGitRunner` flake
+  failed under full-suite load and passes in isolation, with an empty
+  `git diff` against its files.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.15 (53)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` and the security gate passed.
+
+Manual verification reproducing the reported trigger: 14 conversations
+opened in sequence; 10 back, 8 forward, 6 more at a 1000pt window width;
+then five rounds interleaving chat switches with Activity Stack toggles, a
+resize to 860pt, and back to full width. Layout stayed correct throughout.
+
 ## Conan Code 0.6.14 Verification
 
 Version `0.6.14` build `52` fixes the split-view presentation that produced
