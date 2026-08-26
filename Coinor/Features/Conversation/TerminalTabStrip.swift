@@ -13,16 +13,17 @@ struct ConversationTabbedView: View {
     let isConversationVisible: Bool
 
     var body: some View {
-        // Same rule as `RuntimeHostView`: this inner ZStack keeps every tab
-        // mounted, so it must never take its size from a tab. It is pinned
-        // and clipped so one tab cannot widen the pane past the column.
+        // Same rule as `RuntimeHostView`: the inner stack keeps every tab
+        // mounted, so it must never take its size from a tab. A Browser
+        // Mirror tab is the concrete case — its screenshot scaled to fill
+        // reports `height × aspect`, which is far wider than the pane.
         VStack(spacing: 0) {
             TerminalTabStrip(
                 runtime: runtime,
                 ghosttyRuntime: runtime.root.runtime
             )
 
-            ZStack {
+            PinnedStack {
                 ConversationPaneView(
                     root: runtime.root,
                     descendants: runtime.descendants,

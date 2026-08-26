@@ -5,16 +5,14 @@ struct RuntimeHostView: View {
     @ObservedObject var manager: ConversationRuntimeManager
 
     var body: some View {
-        // Every loaded conversation stays mounted in this ZStack. A ZStack
-        // takes the size of its largest child and centers all of them, so a
-        // single child that asks for more room than the pane has makes the
-        // whole stack — tab strip included — overflow the detail column
-        // symmetrically: clipped on the left under the sidebar, running past
-        // the right window edge. Each child is pinned to the available space
-        // so no conversation can size the stack, and the stack is clipped as
-        // a backstop. This is why the misalignment showed up after opening
-        // several chats: more children, more chances one of them inflates it.
-        ZStack {
+        // Every loaded conversation stays mounted here, so a single child
+        // that asks for more room than the pane has must not be able to size
+        // the stack: that measurement would travel up to the detail column
+        // and overflow the window, clipping the left of the pane under the
+        // sidebar and running the right past the window edge. `PinnedStack`
+        // reports exactly the offered space no matter what its children
+        // return — `.frame(maxWidth: .infinity)` does not.
+        PinnedStack {
             ForEach(manager.runtimes) { runtime in
                 RuntimeContainer(
                     runtime: runtime,

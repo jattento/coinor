@@ -61,9 +61,15 @@ struct AppShellView: View {
                 )
             }
 
-            detailContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+            // `PinnedStack` is the outermost backstop for the sidebar: it
+            // reports exactly the width the split hands it, so nothing inside
+            // the detail column can widen the row and push the sidebar out of
+            // the window.
+            PinnedStack {
+                detailContent
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
         .frame(minWidth: 840, minHeight: 520)
         .modifier(

@@ -118,6 +118,31 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))
     }
 
+    /// The sidebar and the terminal region must tile the window exactly.
+    ///
+    /// When a view inside the detail column reported a width larger than the
+    /// column — a Browser Mirror screenshot scaled to fill did exactly that —
+    /// the whole row grew past the window and the hosting view centred the
+    /// overflow, so the sidebar ended up left of the window's own leading
+    /// edge and the terminal ran past its trailing one.
+    func testSidebarAndTerminalRegionTileTheWindowExactly() {
+        let app = launchApp()
+        let sidebar = element(Identifier.sidebar, in: app)
+        let terminal = element(Identifier.terminalRegion, in: app)
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 15))
+        XCTAssertTrue(terminal.waitForExistence(timeout: 15))
+
+        let window = app.windows.firstMatch.frame
+        let sidebarFrame = sidebar.frame
+        let terminalFrame = terminal.frame
+        let tolerance: CGFloat = 1
+
+        XCTAssertEqual(sidebarFrame.minX, window.minX, accuracy: tolerance)
+        XCTAssertLessThanOrEqual(sidebarFrame.maxX, terminalFrame.minX + tolerance)
+        XCTAssertEqual(terminalFrame.maxX, window.maxX, accuracy: tolerance)
+        XCTAssertLessThanOrEqual(terminalFrame.width, window.width)
+    }
+
     func testHealthyStartupClearsDiagnosticsAfterLeaderConnects() {
         let app = launchApp()
         XCTAssertTrue(element(Identifier.terminalRegion, in: app).waitForExistence(timeout: 15))

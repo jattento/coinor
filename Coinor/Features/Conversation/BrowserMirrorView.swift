@@ -11,34 +11,49 @@ struct BrowserMirrorView: View {
     @State private var isActivatingEgoLite = false
 
     var body: some View {
-        ZStack {
-            Color(nsColor: .textBackgroundColor)
-            if let image = tab.image {
-                // Fills the tab and crops rather than letterboxing: the
-                // captured screenshot's aspect ratio (ego lite's own window
-                // size) rarely matches this tab's, and a visible black
-                // letterbox band reads as "broken" even though it is only
-                // ever a display artifact — the agent never sees this view,
-                // it reads the real page through ego-browser's own tools.
-                // Top-aligned so a crop trims the bottom of the page, never
-                // its header/title.
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .clipped()
-                    .accessibilityIdentifier("browser-mirror.image.\(tab.id)")
-            } else {
-                VStack(spacing: 8) {
-                    ProgressView()
-                    Text(placeholderText)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
+        // Fills the tab and crops rather than letterboxing: the captured
+        // screenshot's aspect ratio (ego lite's own window size) rarely
+        // matches this tab's, and a visible black letterbox band reads as
+        // "broken" even though it is only ever a display artifact — the agent
+        // never sees this view, it reads the real page through ego-browser's
+        // own tools. Top-aligned so a crop trims the bottom of the page,
+        // never its header/title.
+        //
+        // The screenshot is an overlay on the background colour, not a
+        // sibling in a `ZStack`, because `.aspectRatio(contentMode: .fill)`
+        // *reports* the size it needs to cover the offered space — for a
+        // landscape capture in a taller pane that is `height × aspect`, far
+        // wider than the pane. An overlay never changes the size its parent
+        // reports, while a `ZStack` sibling does: that measurement travelled
+        // up through the tab stack, the conversation pane and the detail
+        // column until the window's content was wider than the window, and
+        // the hosting view centred the overflow — pushing the sidebar off
+        // the left edge and the terminal past the right one. Neither
+        // `.frame(maxWidth: .infinity)` nor `.clipped()` stops that;
+        // a flexible frame reports whatever its child returns when the child
+        // returns more than was proposed, and clipping only trims drawing.
+        Color(nsColor: .textBackgroundColor)
+            .overlay(alignment: .top) {
+                if let image = tab.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .accessibilityIdentifier(
+                            "browser-mirror.image.\(tab.id)"
+                        )
+                } else {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text(placeholderText)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-        }
+            .clipped()
         .overlay(alignment: .bottom) { statusBar }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser-mirror.\(tab.id)")

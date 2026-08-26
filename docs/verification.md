@@ -55,6 +55,60 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.17 Verification
+
+Version `0.6.17` build `55` stops a Browser Mirror tab's live screenshot
+from resizing the window's contents. See `docs/releases/0.6.17.md`.
+
+0.6.16 made the split itself correct; this release fixes a view *inside*
+the detail column reporting a size larger than the column. Measured on the
+live broken window through the accessibility API:
+
+```
+WINDOW                        x=-1700  w=1688
+  AppShellActivityStackPanel  x=-1942  w=278    (242pt left of the window)
+  AppShellTerminalRegion      x=-1663  w=1893   (484pt wider than its column)
+```
+
+`278 + 1 + 1893 = 2172` in a 1688-wide window, so the hosting view centred
+the overflow and shifted everything by `-242`. Closing the Activity Stack
+panel while still broken grew the column to `1949` because the pane gained
+37 points of *height*: `1893 / 1262 = 1949 / 1299 = 1.5`, the 3:2 aspect of
+an `ego lite` screenshot. The culprit is `BrowserMirrorView`'s
+`.aspectRatio(contentMode: .fill)`, which reports `height × 1.5` in a pane
+taller than 3:2. `.frame(maxWidth: .infinity)` does not contain that — a
+flexible frame reports whatever its child returns when the child returns
+more than proposed — and `.clipped()` only trims drawing.
+
+Fix: the screenshot is drawn as an overlay on the tab's background colour
+rather than as a `ZStack` sibling, so its measurement cannot leave the tab;
+and a new `PinnedStack` layout, which proposes and reports exactly the
+offered size, replaces the `ZStack`s in `RuntimeHostView` and
+`ConversationTabbedView` and wraps the detail column in `AppShellView`.
+
+Automated verification:
+
+- `scripts/dev/run-tests.sh`: 569 tests in 45 suites, run on the tree rebased
+  onto the IDE/Git tab split already on `main`. New
+  `BrowserMirrorLayoutTests` measure the real views with
+  `NSHostingController.sizeThatFits(in:)` — a Browser Mirror tab holding a
+  1500×1000 frame offered a 400×600 pane reports exactly 400×600, as does a
+  `PinnedStack` around an aspect-fill image — and all three passed. Only the
+  documented load-sensitive 5-second wall-clock flakes
+  (`oversizedOutputIsTruncatedThroughTheGitRunner`,
+  `executableVersionProbeRunsTheAbsoluteBinaryAndRecordsItsOutput`) failed
+  under full-suite load; both passed in isolation on the re-run and
+  `git diff` against their files is empty.
+- `CoinorUITests` passed in full, including the new
+  `testSidebarAndTerminalRegionTileTheWindowExactly`, which asserts the
+  sidebar starts at the window's leading edge and the terminal region ends
+  at its trailing edge.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.17 (55)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` and the security gate passed.
+
 ## Conan Code 0.6.16 Verification
 
 Version `0.6.16` build `54` replaces `NavigationSplitView` with an explicit
