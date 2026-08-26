@@ -12,13 +12,8 @@ struct AppShellView: View {
     @Environment(\.openURL) private var openURL
     @State private var destination: AppShellDestination = .conversation
     @State private var showsSettings = false
-    /// Pinned open. Left to `.automatic`, SwiftUI is free to resolve the
-    /// split into a prominent-detail presentation where the sidebar floats
-    /// over a detail column that spans the whole window from x=0. That is
-    /// exactly what the "terminal is misaligned" reports were: the detail
-    /// pane (tab strip included) sitting under a translucent sidebar,
-    /// clipped on the left and overflowing the right window edge.
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @AppStorage("appShell.sidebarWidth") private var sidebarWidth: Double = 278
+    @AppStorage("appShell.sidebarVisible") private var isSidebarVisible = true
     @StateObject private var automationCenter: AutomationCenterModel
 
     init(
@@ -35,21 +30,60 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            // Both sidebars stay mounted, and only their visibility changes.
-            // Swapping which view occupies this column (an `if/else` here)
-            // changes the column's view identity, and NavigationSplitView
-            // can recompute the split from that in a state where the detail
-            // column takes the whole window width at x=0 and slides under
-            // the sidebar — the tab strip and terminal then render behind
-            // it, clipped on the left and overflowing on the right.
-            AppShellSidebarHost(
+        // An explicit split, not `NavigationSplitView`.
+        //
+        // Measured on a live window in the broken state, with the
+        // accessibility API: the split placed its detail hosting view at the
+        // window's own origin with the window's full width (x=-3407 w=1688)
+        // while the sidebar occupied x=-3399 w=264, and the detail's content
+        // then measured 1954 — the window width plus the sidebar width. The
+        // detail pane was therefore sitting *under* the sidebar and running
+        // past the right window edge, which is exactly what every report
+        // showed. Neither pinned `columnVisibility` nor
+        // `.navigationSplitViewStyle(.balanced)` prevented it.
+        //
+        // Laying the two columns out here makes the geometry explicit: the
+        // sidebar gets exactly `sidebarWidth`, the detail gets the rest, and
+        // neither can be placed on top of the other.
+        HStack(spacing: 0) {
+            if isSidebarVisible {
+                AppShellSidebarHost(
+                    coordinator: coordinator,
+                    destination: $destination,
+                    activityStack: activityStack
+                )
+                .frame(width: CGFloat(sidebarWidth))
+                .clipped()
+
+                SidebarResizeDivider(
+                    width: $sidebarWidth,
+                    range: Self.sidebarWidthRange
+                )
+            }
+
+            detailContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+        }
+        .frame(minWidth: 840, minHeight: 520)
+        .modifier(
+            AppShellChrome(
+                model: model,
                 coordinator: coordinator,
-                destination: $destination,
-                activityStack: activityStack
+                activityStack: activityStack,
+                automationCenter: automationCenter,
+                isSidebarVisible: $isSidebarVisible,
+                showsSettings: $showsSettings,
+                openURL: openURL
             )
-            .navigationSplitViewColumnWidth(min: 230, ideal: 278, max: 400)
-        } detail: {
+        )
+    }
+
+    private static let sidebarWidthRange: ClosedRange<Double> = 230...400
+
+    @ViewBuilder
+    private var detailContent: some View {
+        Group {
             switch destination {
             case .conversation:
                 VStack(spacing: 0) {
@@ -91,17 +125,88 @@ struct AppShellView: View {
                         )
                     }
                 }
-                .frame(minWidth: 560, minHeight: 380)
             case .automations:
                 AutomationsView(model: automationCenter)
-                    .frame(minWidth: 560, minHeight: 380)
             }
         }
-        // `.balanced` keeps the sidebar beside the detail at every window
-        // size. `.automatic` may instead overlay it on top of a full-width
-        // detail, which is the misalignment this fixes.
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 840, minHeight: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The draggable boundary between the sidebar and the detail pane.
+///
+/// Replaces `NavigationSplitView`'s own splitter now that the shell lays its
+/// two columns out directly.
+private struct SidebarResizeDivider: View {
+    @Binding var width: Double
+    let range: ClosedRange<Double>
+    @State private var widthAtDragStart: Double?
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .overlay {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 10)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                    .gesture(
+                        DragGesture(coordinateSpace: .global)
+                            .onChanged { value in
+                                let start = widthAtDragStart ?? width
+                                widthAtDragStart = start
+                                width = min(
+                                    max(
+                                        start + value.translation.width,
+                                        range.lowerBound
+                                    ),
+                                    range.upperBound
+                                )
+                            }
+                            .onEnded { _ in widthAtDragStart = nil }
+                    )
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Window-level chrome for the shell: startup tasks, toolbar, sheets,
+/// the warning banner, and the shortcut monitor. Split out so the shell's
+/// own layout stays a plain two-column `HStack`.
+@MainActor
+private struct AppShellChrome: ViewModifier {
+    @ObservedObject var model: AppShellModel
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject var activityStack: ActivityStackModel
+    @ObservedObject var automationCenter: AutomationCenterModel
+    @Binding var isSidebarVisible: Bool
+    @Binding var showsSettings: Bool
+    let openURL: OpenURLAction
+
+    func body(content: Content) -> some View {
+        content
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    isSidebarVisible.toggle()
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                }
+                .help(isSidebarVisible ? "Hide Sidebar" : "Show Sidebar")
+                .accessibilityLabel(
+                    isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+                )
+                .keyboardShortcut("s", modifiers: [.command, .control])
+            }
+        }
         .task {
             async let diagnostics: Void = model.runStartupChecks()
             await coordinator.start()

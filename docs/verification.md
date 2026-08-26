@@ -55,6 +55,55 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.16 Verification
+
+Version `0.6.16` build `54` replaces `NavigationSplitView` with an explicit
+two-column layout, fixing the recurring pane misalignment. See
+`docs/releases/0.6.16.md`.
+
+Unlike earlier attempts, this one is based on measurement rather than
+inference. Dumping the live broken window through the accessibility API
+showed the split placing its detail hosting view at the window origin with
+the window's full width (`x=-3407 w=1688`) while the sidebar occupied
+`x=-3399 w=264`, with the detail's content measuring `1954` — the window
+width plus the sidebar width. The pane was therefore under the sidebar and
+past the right window edge; the terminal only looked responsible because
+it is the largest thing inside that pane, while the plain SwiftUI tab strip
+was displaced identically.
+
+Fix: `AppShellView` lays out an `HStack` giving the sidebar its stored
+width (clamped 230...400, persisted, resizable via `SidebarResizeDivider`)
+and the detail pane the remainder, both clipped; a toolbar button (⌃⌘S)
+replaces the automatic sidebar toggle; window chrome moved into an
+`AppShellChrome` modifier.
+
+Measured after the fix, following the reported repro:
+
+```
+WINDOW                   x=-1700  w=1688
+  AppShellSidebar        x=-1700  w=278
+  AppShellTerminalRegion x=-1421  w=1409      (278 + 1 + 1409 = 1688)
+```
+
+Automated verification:
+
+- `scripts/dev/run-tests.sh`: 563 tests in 45 suites; only the documented
+  load-sensitive 5-second wall-clock flakes
+  (`oversizedOutputIsTruncatedThroughTheGitRunner`,
+  `executableVersionProbeRunsTheAbsoluteBinaryAndRecordsItsOutput`) failed
+  under full-suite load, both pass in isolation, and `git diff` against
+  their files is empty.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.16 (54)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- `git diff --check` and the security gate passed.
+
+Manual verification: the reported flow (enter two chats, send a message in
+each), then eight rounds interleaving chat switches with Activity Stack
+toggles, a resize to 900pt, five more chat switches, and back to full
+width. Geometry re-measured afterwards and still exact.
+
 ## Conan Code 0.6.15 Verification
 
 Version `0.6.15` build `53` fixes the conversation pane overflowing the
