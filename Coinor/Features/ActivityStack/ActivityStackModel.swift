@@ -25,6 +25,10 @@ final class ActivityStackModel: ObservableObject {
     var workingCount: Int { working.count }
     @Published private(set) var focusedID: String?
 
+    /// Whether `focusedID` was explicitly chosen while not a queue member
+    /// (a working agent the user tapped to check in on). See `selectFocus`.
+    private var isWatchingNonQueueItem = false
+
     private var previousActivity: [String: RuntimeActivity] = [:]
     private var pendingReason: [String: ActivityQueueReason] = [:]
     private var suppressions: [String: ActivityStackSuppression] = [:]
@@ -33,9 +37,13 @@ final class ActivityStackModel: ObservableObject {
 
     private var tickTask: Task<Void, Never>?
 
-    /// How often the focused wait time re-renders and a snooze timer is
-    /// re-checked while the panel is open. Only runs while presented.
-    private static let tickInterval: Duration = .seconds(20)
+    /// How often the focused wait time re-renders, a snooze timer is
+    /// re-checked, and (as a backstop) the queue is recomputed while the
+    /// panel is open. Only runs while presented, and kept short: it is the
+    /// safety net that catches the panel up if it ever misses a live update,
+    /// so a stuck-looking queue self-heals within a few seconds instead of
+    /// needing the next unrelated coordinator change to nudge it.
+    private static let tickInterval: Duration = .seconds(5)
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -56,6 +64,13 @@ final class ActivityStackModel: ObservableObject {
 
     func close() {
         isPresented = false
+        // Dropping focus here (rather than leaving it pinned to whatever was
+        // last shown) is what makes every `present()` deterministic: the
+        // very next open always lands on the true current head of the
+        // queue instead of silently resuming a stale selection that may no
+        // longer be first once new items arrived while the panel was shut.
+        focusedID = nil
+        isWatchingNonQueueItem = false
         stopTicking()
     }
 
@@ -107,13 +122,24 @@ final class ActivityStackModel: ObservableObject {
     /// member (the "Close" action shown once nothing else is waiting).
     func closeFocused() {
         focusedID = nil
+        isWatchingNonQueueItem = false
         reconcileFocus()
     }
 
-    /// Focuses a conversation directly. Used for an explicit rail tap:
-    /// browsing ahead is always allowed, independent of automatic advancing.
+    /// Focuses a conversation directly. Used for an explicit rail tap or a
+    /// tap on a "working" row: browsing ahead is always allowed, independent
+    /// of automatic advancing.
+    ///
+    /// Picking a conversation that is not currently a queue member (a
+    /// working agent the user wants to check in on) marks it so
+    /// `reconcileFocus` leaves it alone even while other items are waiting —
+    /// otherwise the periodic tick would silently drag the panel back to the
+    /// queue's head a few seconds after the user chose to watch something
+    /// else. A queue member never needs this: it already keeps focus on its
+    /// own via `reconcileFocus`'s membership check.
     func selectFocus(_ id: String) {
         focusedID = id
+        isWatchingNonQueueItem = !queue.contains(where: { $0.id == id })
         coordinator.selectConversation(id)
     }
 
@@ -233,6 +259,16 @@ final class ActivityStackModel: ObservableObject {
         away = result.away
         working = result.working
 
+        // "Send to end" only holds "for this pass", per its own docstring:
+        // once an item actually leaves the queue (answered, muted, snoozed,
+        // dismissed…) its push position is stale. Dropping it here means a
+        // conversation that later raises a brand-new, unrelated instance
+        // reappears at its natural priority instead of staying pinned to
+        // the back of the line forever because of something pushed away
+        // long ago.
+        let queueIDs = Set(queue.map(\.id))
+        pushedOrder = pushedOrder.filter { queueIDs.contains($0.key) }
+
         if isPresented {
             reconcileFocus()
         }
@@ -246,10 +282,19 @@ final class ActivityStackModel: ObservableObject {
     /// left the queue: a run of clarifying questions would otherwise bounce
     /// the panel to an empty state and back on every answer. It only moves
     /// on once another conversation is actually waiting, or the user acts
-    /// explicitly (a rail tap, or "Close" once nothing else is left).
+    /// explicitly (a rail tap, a working-row tap, or "Close" once nothing
+    /// else is left). Runs on every recompute — including the presented
+    /// tick — so a queue that changed while nothing else happened to notify
+    /// `AppCoordinator` still self-corrects within one tick instead of
+    /// waiting indefinitely for an unrelated update.
     private func reconcileFocus() {
-        if let focusedID, queue.contains(where: { $0.id == focusedID }) {
-            return
+        if let focusedID {
+            if queue.contains(where: { $0.id == focusedID }) {
+                return
+            }
+            if isWatchingNonQueueItem {
+                return
+            }
         }
         guard let next = queue.first else { return }
         selectFocus(next.id)

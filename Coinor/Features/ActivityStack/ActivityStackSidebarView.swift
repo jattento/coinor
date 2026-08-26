@@ -92,7 +92,12 @@ struct ActivityStackSidebarView: View {
             )
 
             ForEach(model.working) { item in
-                ActivityStackWorkingRow(item: item)
+                ActivityStackWorkingRow(
+                    item: item,
+                    isFocused: item.id == model.focusedID
+                ) {
+                    model.selectFocus(item.id)
+                }
             }
         }
     }
@@ -169,38 +174,60 @@ private struct ActivityStackSidebarRow: View {
 
 // MARK: - Working row
 
+/// Tapping one focuses it in the Activity Stack's own focus pane using the
+/// same "watching" state a resolved queue item falls back to: it is not a
+/// queue member (nothing is blocking on the user yet), so the pane shows it
+/// with no reason badge and only a "Close" action, letting the user check in
+/// on a working agent without leaving the panel.
 @MainActor
 private struct ActivityStackWorkingRow: View {
     let item: ActivityStackWorkingItem
+    let isFocused: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 7) {
-            ProgressView()
-                .controlSize(.mini)
-                .frame(width: 13)
-                .padding(.top, 2)
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 7) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 13)
+                    .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(SidebarStyle.conversationFont)
-                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(item.project)
-                    if let since = item.since {
-                        Text("·")
-                        Text(ActivityStackWaitFormatter.string(since: since))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(SidebarStyle.conversationFont)
+                        .foregroundStyle(
+                            isFocused
+                                ? Color(nsColor: .labelColor)
+                                : Color(nsColor: .secondaryLabelColor)
+                        )
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(item.project)
+                        if let since = item.since {
+                            Text("·")
+                            Text(ActivityStackWaitFormatter.string(since: since))
+                        }
                     }
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, SidebarStyle.rowPadding)
+            .padding(.vertical, 5)
+            .background(
+                SidebarRowBackground(isSelected: isFocused, isHovered: isHovered)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, SidebarStyle.rowPadding)
-        .padding(.vertical, 5)
+        .buttonStyle(.plain)
         .padding(.horizontal, SidebarStyle.rowInset)
+        .onHover { isHovered = $0 }
+        .accessibilityIdentifier(AppShellIdentifier.activityStackWorkingRow(item.id))
     }
 }
 

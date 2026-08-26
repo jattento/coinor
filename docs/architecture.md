@@ -153,11 +153,28 @@ the next item only happens when the currently focused item leaves the queue
 otherwise the model stays "sticky" on the same `focusedID` even though it no
 longer has a queue entry, so a rapid back-and-forth (an agent asking several
 clarifying questions) never bounces the panel to an empty state and back.
-`ActivityStackModel.focusedDisplay` supplies the header data for both cases,
-falling back to `AppCoordinator.summaries` for title/project when the
-focused conversation is not currently a queue member. Queue membership,
-mutes, snoozes, and pushed order are session-only state inside
-`ActivityStackModel`; none of it is persisted.
+The sidebar's "N agents working" rows are tappable too, via the same
+`selectFocus`, so the user can check in on a working agent without waiting
+for it to raise attention; picking one marks it as an explicit watch
+(`ActivityStackModel.isWatchingNonQueueItem`) so `reconcileFocus` leaves it
+alone even while queue items are waiting, instead of the periodic tick
+silently dragging focus back to the queue's head. `reconcileFocus` runs on
+every recompute, including the presented tick, so a queue that changed
+without an `AppCoordinator.objectWillChange` notification (or one that
+raced with a subsequent recompute) still self-corrects within one tick
+instead of staying stuck on a stale focus. `close()` always drops
+`focusedID`, so every `present()` deterministically lands on the true
+current head instead of resuming a focus that may no longer be first once
+new items arrived while the panel was shut. `ActivityStackModel.focusedDisplay`
+supplies the header data for both the queued and watching cases, falling
+back to `AppCoordinator.summaries` for title/project when the focused
+conversation is not currently a queue member. Queue membership, mutes,
+snoozes, and pushed order are session-only state inside `ActivityStackModel`;
+none of it is persisted. Pushing an item to the end of the queue only holds
+for that item's current instance: once it leaves the queue (answered, muted,
+snoozed, dismissed), its pushed position is dropped, so a later, unrelated
+instance of attention reappears at its natural priority instead of staying
+pinned to the back of the line forever.
 
 ### Automations
 

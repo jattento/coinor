@@ -41,6 +41,10 @@ enum AppShellIdentifier {
         "AppShellActivityStackRestore.\(sessionID)"
     }
 
+    static func activityStackWorkingRow(_ sessionID: String) -> String {
+        "AppShellActivityStackWorkingRow.\(sessionID)"
+    }
+
     static func startupCheckRow(_ kind: StartupCheck.Kind) -> String {
         "AppShellStartupCheck.\(kind.rawValue)"
     }

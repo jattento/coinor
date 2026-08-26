@@ -55,6 +55,54 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.10 Verification
+
+Version `0.6.10` build `48` fixes three Activity Stack focus/ordering bugs
+reported from real use and adds a fourth interaction. See
+`docs/releases/0.6.10.md`.
+
+- Opening the panel no longer resumes a stale `focusedID` from a previous
+  open: `close()` now drops focus, so `present()` deterministically lands
+  on the queue's true current head.
+- "Send to end" (`⌘S`) no longer permanently pins a conversation to the
+  back of the queue: its pushed position is dropped the moment the item
+  leaves the queue, so a later, unrelated instance of attention reappears
+  at its natural priority.
+- The presented-panel backstop tick dropped from 20s to 5s so a queue that
+  changed without a timely `AppCoordinator` notification self-corrects
+  faster.
+- The sidebar's "N agent(s) working" rows are now clickable, focusing that
+  conversation in the panel's own "watching" state (the same state a
+  resolved queue item falls back to) without being dragged back to the
+  queue's head while the user is deliberately checking in on it
+  (`ActivityStackModel.isWatchingNonQueueItem`).
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain.
+- `scripts/dev/run-tests.sh` ran the full suite; the same pre-existing,
+  load-sensitive subprocess wall-clock timing flakes documented for earlier
+  releases missed their bound only under heavy background load (a
+  different subset each run) and passed individually in isolation on every
+  run; `git diff` against every file behind those tests is empty.
+- `ActivityStackEngineTests` (unchanged pure ordering/suppression logic)
+  and `SidebarReorderTests` (constructs a real `ActivityStackModel`) still
+  passed.
+- The arm64 Release build succeeded; `scripts/release/verify-app.sh`
+  reported version `0.6.10 (48)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent.
+  `scripts/release/security-scan.sh` reported no leaks.
+
+Manual verification: these are focus/timing/ordering fixes in
+`ActivityStackModel`'s reconciliation logic and a new tap handler in
+`ActivityStackSidebarView`; no user-facing layout changed, and the same
+Debug-build interactive session used for 0.6.9 continued to exercise
+opening/closing the panel and dismiss/push-to-end/mute across further
+sessions without reproducing the reported staleness during this session.
+Full confirmation of the fix under the original real-world trigger
+(multiple simultaneous queued conversations over an extended session)
+depends on continued use by the user.
+
 ## Conan Code 0.6.8 Verification
 
 Version `0.6.8` build `46` hardens the embedded terminal against the same
