@@ -24,9 +24,18 @@ enum TerminalControlContract {
             "CONAN_CODE_TAB_CAPABILITY"
         static let requestID =
             "CONAN_CODE_REQUEST_ID"
+        /// Set on the IDE tab's `fresh .` process so the `conan-code-tour`
+        /// plugin knows which conversation to poll `tourWait` for.
+        static let conversationID =
+            "CONAN_CODE_CONVERSATION_ID"
+        /// Set on the root Grok process so its native `point_to_code` tool
+        /// (github.com/jattento/grok-build) knows which conversation it is
+        /// queuing a request for.
+        static let sessionID =
+            "CONAN_CODE_SESSION_ID"
     }
 
-    /// Method names for the 11 terminal-control methods.
+    /// Method names for the 13 terminal-control methods.
     enum Method {
         static let create = "create"
         static let execute = "execute"
@@ -39,8 +48,15 @@ enum TerminalControlContract {
         static let shellReady = "shell-ready"
         static let fetchCommand = "fetch-command"
         static let commandFinished = "command-finished"
+        /// Queues a code-pointer request for a conversation's IDE tab.
+        /// Called by the native `point_to_code` tool running inside the
+        /// root Grok process (see ADR 0019).
+        static let pointToCode = "point-to-code"
+        /// Polled by the `conan-code-tour` Fresh plugin (running inside
+        /// the IDE tab's `fresh .`) to drain queued `pointToCode` requests.
+        static let tourWait = "tour-wait"
 
-        /// The names of all 11 methods, for iteration.
+        /// The names of all 13 methods, for iteration.
         static let all: [String] = [
             create,
             execute,
@@ -53,6 +69,8 @@ enum TerminalControlContract {
             shellReady,
             fetchCommand,
             commandFinished,
+            pointToCode,
+            tourWait,
         ]
     }
 
@@ -85,6 +103,12 @@ enum TerminalControlContract {
         static let closed = "closed"
         static let shellExitCode = "shellExitCode"
         static let lastExitCode = "lastExitCode"
+        static let sessionID = "sessionID"
+        static let filePath = "filePath"
+        static let lineStart = "lineStart"
+        static let lineEnd = "lineEnd"
+        static let comment = "comment"
+        static let pending = "pending"
     }
 }
 

@@ -184,6 +184,15 @@ func buildRequest(
             TerminalControlContract.Field.exitCode:
                 options.requiredInt("exit-code"),
         ])
+    case TerminalControlContract.Method.tourWait:
+        guard let sessionID = ProcessInfo.processInfo.environment[
+            TerminalControlContract.EnvironmentVariable.conversationID
+        ], !sessionID.isEmpty else {
+            fail("not running inside Conan Code's IDE tab")
+        }
+        return (TerminalControlContract.Method.tourWait, [
+            TerminalControlContract.Field.sessionID: sessionID,
+        ])
     default:
         fail("unknown command '\(command)'")
     }
@@ -313,6 +322,46 @@ func parseObject(_ data: Data) -> [String: Any]? {
     return value as? [String: Any]
 }
 
+/// Writes a one-step `.fresh-tour.json` for a single `point_to_code`
+/// request and returns its path. A fresh temp file per poll: the
+/// `conan-code-tour` Fresh plugin only ever reads a path once, right
+/// after receiving it.
+func writeTourFile(
+    filePath: String,
+    lineStart: Int,
+    lineEnd: Int,
+    comment: String?
+) -> String {
+    let manifest: [String: Any] = [
+        "title": "Conan Code",
+        "description": "Grok pointed you at this code.",
+        "schema_version": "1.0",
+        "steps": [
+            [
+                "step_id": 1,
+                "title": (filePath as NSString).lastPathComponent,
+                "file_path": filePath,
+                "lines": [lineStart, lineEnd],
+                "explanation": comment ?? "",
+                "overlay_config": [
+                    "type": "block",
+                    "focus_mode": true,
+                ],
+            ] as [String: Any],
+        ],
+    ]
+    let path = NSTemporaryDirectory()
+        + "coinor-point-to-code-\(UUID().uuidString).fresh-tour.json"
+    guard let data = try? JSONSerialization.data(withJSONObject: manifest)
+    else {
+        fail("failed to encode tour manifest")
+    }
+    guard (try? data.write(to: URL(fileURLWithPath: path))) != nil else {
+        fail("failed to write tour manifest to \(path)")
+    }
+    return path
+}
+
 let environment = ProcessInfo.processInfo.environment
 guard let socketPath =
         environment[
@@ -373,6 +422,30 @@ if command == TerminalControlContract.Method.fetchCommand {
         FileHandle.standardOutput.write(Data(commandText.utf8))
         exit(0)
     }
+} else if command == TerminalControlContract.Method.tourWait {
+    guard ok,
+          let result =
+            responseObject?[TerminalControlContract.Field.result]
+            as? [String: Any],
+          result[TerminalControlContract.Field.pending] as? Bool == true,
+          let filePath =
+            result[TerminalControlContract.Field.filePath] as? String,
+          let lineStart =
+            result[TerminalControlContract.Field.lineStart] as? Int,
+          let lineEnd =
+            result[TerminalControlContract.Field.lineEnd] as? Int
+    else {
+        // Nothing pending: empty stdout, not an error.
+        exit(0)
+    }
+    let tourPath = writeTourFile(
+        filePath: filePath,
+        lineStart: lineStart,
+        lineEnd: lineEnd,
+        comment: result[TerminalControlContract.Field.comment] as? String
+    )
+    FileHandle.standardOutput.write(Data(tourPath.utf8))
+    exit(0)
 } else if ok {
     FileHandle.standardOutput.write(responseData)
     exit(0)

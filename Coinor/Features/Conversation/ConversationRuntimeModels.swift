@@ -298,6 +298,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         commandID: String,
         workingDirectory: String,
         command: String,
+        environment: [String: String] = [:],
         remote: RemoteExecution? = nil
     ) {
         self.sessionID = commandID
@@ -306,7 +307,7 @@ struct TerminalLaunchRequest: Equatable, Identifiable, Sendable {
         self.leaderSocket = ""
         self.mode = .command(command)
         self.additionalArguments = []
-        self.environment = [:]
+        self.environment = environment
         self.initialInput = nil
         self.surfaceContext = .split
         self.remote = remote

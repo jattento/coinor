@@ -243,6 +243,32 @@ The protocol is one newline-delimited JSON request and response per Unix
 connection. The listener verifies the peer UID, keeps the socket at mode 0600,
 and performs Ghostty operations on `MainActor`.
 
+### Point-to-code tours
+
+The same terminal-control socket also queues one-step "point to code"
+requests (ADR 0019). A native `point_to_code` tool in the user's
+`jattento/grok-build` fork, listed to the model only when
+`CONAN_CODE_CONTROL_SOCKET`, `CONAN_CODE_CONTROL_TOKEN`, and
+`CONAN_CODE_SESSION_ID` are present on the root Grok process, opens a raw
+connection to the socket and hand-encodes the `point-to-code` request
+directly, since the two repositories share no compiled contract.
+`ConversationRuntimeManager` injects those three variables into the root
+process, and separately injects `CONAN_CODE_CONTROL_SOCKET`,
+`CONAN_CODE_CONTROL_TOKEN`, `CONAN_CODE_CONVERSATION_ID`, and
+`CONAN_CODE_CONTROL_CLIENT` (the bundled `coinorctl` path) into the IDE tab's
+`fresh .` process. Both are local-only and are never sent for remote-host
+conversations.
+
+`AppCoordinator.handleTerminalControl` queues the request (file path, line
+range, optional comment) on the owning `ConversationRuntime`, and a second
+method, `tour-wait`, drains it. The `conan-code-tour` Fresh plugin, installed
+by `FreshPluginInstaller` into `~/.config/fresh/plugins/` the same way
+`GrokSkillInstaller` installs skills, polls `tour-wait` every two seconds via
+`coinorctl` from inside the IDE tab, writes a one-step `.fresh-tour.json`
+manifest, and opens it through Fresh's own bundled `code-tour` plugin API.
+This is phase 1 of a larger code-tours feature; multi-step tours and
+user-left comments Grok can read back are not yet built.
+
 ### Conversation runtime manager
 
 `ConversationRuntimeManager` owns every conversation activated during the
@@ -723,6 +749,9 @@ Grok integration targets the user's custom local fork.
     bodies) on `run_terminal_command` tool-call events; the third-party
     `ego-browser` CLI and `ego lite` app are outside Coinor's control and may
     be absent, outdated, or change their invocation shape.
+12. `point_to_code`'s wire shape is hand-coded independently in the user's
+    `jattento/grok-build` fork rather than shared as compiled code, so the
+    two repositories can drift out of sync (ADR 0019).
 
 The implementation plan gates full product work behind prototypes for the
 highest integration and lifecycle risks above.

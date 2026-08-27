@@ -1,0 +1,34 @@
+// conan-code-tour.ts — installed by Conan Code. Do not edit by hand; Conan
+// Code overwrites this file on every launch to match the running app.
+//
+// Polls Conan Code's private control socket (via `coinorctl tour-wait`) for
+// `point_to_code` requests queued by the native Grok tool of the same name
+// (see ADR 0019), and opens each one as a one-step guided tour using
+// Fresh's own bundled `code-tour` plugin.
+const editor = getEditor();
+let polling = false;
+
+registerHandler("conan_code_tour_poll", async function () {
+  if (polling) {
+    return;
+  }
+  polling = true;
+  try {
+    const client = editor.getEnv("CONAN_CODE_CONTROL_CLIENT");
+    if (!client) {
+      return;
+    }
+    const result = await editor.spawnProcess(client, ["tour-wait"]);
+    const tourPath = result && result.stdout ? result.stdout.trim() : "";
+    if (!tourPath) {
+      return;
+    }
+    await editor.getPluginApi("code-tour").openTour(tourPath);
+  } catch (e) {
+    // A flaky poll must not stop the loop; the next tick tries again.
+  } finally {
+    polling = false;
+  }
+});
+
+editor.setInterval(2000, "conan_code_tour_poll");

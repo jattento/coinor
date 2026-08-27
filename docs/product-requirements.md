@@ -350,6 +350,20 @@ keep working normally either way.
 This is a local-only feature, the same carve-out as managed terminal tabs:
 remote-host conversations never show a Browser Mirror tab.
 
+## Point to code
+
+Grok can point the user at a specific range of code in the IDE tab, with an
+explanatory comment, instead of only describing the location in prose. The
+agent decides when this is useful; the user does not request it explicitly
+and Conan Code offers no UI control of its own for it.
+
+This is local-only, the same carve-out as managed terminal tabs and the
+Browser Mirror preview: a remote agent has no way to reach it, and it
+requires the IDE tab already running `fresh .`.
+
+This is the first phase of a larger code-tours feature. Multi-step tours and
+comments the user leaves for Grok to read back are not yet available.
+
 ## Terminal configuration
 
 Every terminal pane loads the user's standard Ghostty configuration, including

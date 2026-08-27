@@ -19,6 +19,11 @@ struct TerminalControlRequest: Equatable, Sendable {
     let cursor: String?
     let maxBytes: Int?
     let exitCode: Int?
+    let sessionID: String?
+    let filePath: String?
+    let lineStart: Int?
+    let lineEnd: Int?
+    let comment: String?
 
     init(data: Data) throws {
         let value = try GrokJSONValue.decode(data)
@@ -83,6 +88,21 @@ struct TerminalControlRequest: Equatable, Sendable {
         exitCode =
             object[TerminalControlContract.Field.exitCode]?
             .intValue
+        sessionID =
+            object[TerminalControlContract.Field.sessionID]?
+            .stringValue
+        filePath =
+            object[TerminalControlContract.Field.filePath]?
+            .stringValue
+        lineStart =
+            object[TerminalControlContract.Field.lineStart]?
+            .intValue
+        lineEnd =
+            object[TerminalControlContract.Field.lineEnd]?
+            .intValue
+        comment =
+            object[TerminalControlContract.Field.comment]?
+            .stringValue
     }
 }
 

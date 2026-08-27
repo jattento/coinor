@@ -16,6 +16,16 @@ struct ConversationTerminalTab: Equatable, Identifiable, Sendable {
     let kind: Kind
 }
 
+/// One `point_to_code` request queued for a conversation's IDE tab, produced
+/// by the native Grok tool (see ADR 0019) and drained by the `conan-code-tour`
+/// Fresh plugin polling `TerminalControlContract.Method.tourWait`.
+struct PointToCodeRequest: Equatable, Sendable {
+    let filePath: String
+    let lineStart: Int
+    let lineEnd: Int
+    let comment: String?
+}
+
 struct ConversationTabRenameRequest: Equatable, Identifiable, Sendable {
     let id = UUID()
     let tabID: String
@@ -49,6 +59,11 @@ final class ConversationRuntime: ObservableObject, Identifiable {
     private var shellBaseWorkingDirectory: String?
     @Published private var selectedManagedTabID: String?
     @Published private var selectedBrowserMirrorTabID: String?
+    private var pendingPointToCodeRequests: [PointToCodeRequest] = []
+    /// Set on the IDE tab's `fresh .` and Git tab's `lazygit` processes so
+    /// their `conan-code-tour` Fresh plugin can reach this conversation's
+    /// control socket (see ADR 0019). Empty for remote conversations.
+    private let ideEnvironment: [String: String]
     let execution: ConversationExecution
 
     init(
@@ -57,14 +72,36 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         execution: ConversationExecution,
         ideWorkingDirectory: String?,
         shellBaseWorkingDirectory: String?,
-        tabMetadata: ConversationTabMetadata
+        tabMetadata: ConversationTabMetadata,
+        controlSocket: String? = nil,
+        controlToken: String? = nil,
+        controlClientPath: String? = nil
     ) {
         let resolvedIDEWorkingDirectory = ideWorkingDirectory ?? ""
+        var ideEnvironment: [String: String] = [:]
+        if execution.remote == nil,
+           let controlSocket, let controlToken {
+            ideEnvironment[
+                TerminalControlContract.EnvironmentVariable.controlSocket
+            ] = controlSocket
+            ideEnvironment[
+                TerminalControlContract.EnvironmentVariable.controlToken
+            ] = controlToken
+            ideEnvironment[
+                TerminalControlContract.EnvironmentVariable.conversationID
+            ] = id
+            if let controlClientPath {
+                ideEnvironment[
+                    TerminalControlContract.EnvironmentVariable.controlClient
+                ] = controlClientPath
+            }
+        }
         let ideFresh = TerminalSession(
             launch: TerminalLaunchRequest(
                 commandID: "\(id).ide.fresh",
                 workingDirectory: resolvedIDEWorkingDirectory,
                 command: "fresh .",
+                environment: ideEnvironment,
                 remote: execution.remote
             ),
             runtime: root.runtime
@@ -74,6 +111,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 commandID: "\(id).git.lazygit",
                 workingDirectory: resolvedIDEWorkingDirectory,
                 command: "lazygit",
+                environment: ideEnvironment,
                 remote: execution.remote
             ),
             runtime: root.runtime
@@ -85,6 +123,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
         self.gitLazygit = gitLazygit
         self.ideWorkingDirectory = ideWorkingDirectory
         self.shellBaseWorkingDirectory = shellBaseWorkingDirectory
+        self.ideEnvironment = ideEnvironment
         self.tabMetadata = tabMetadata.normalized()
         self.lastFocusedMainPaneID = root.id
         bindMainSession(root)
@@ -171,6 +210,20 @@ final class ConversationRuntime: ObservableObject, Identifiable {
 
     func activatePersistedShellTabs() {
         shellTabs = tabMetadata.shellTabs.map(makeShellSession)
+    }
+
+    /// Queues a `point_to_code` request for the `conan-code-tour` Fresh
+    /// plugin to pick up on its next poll. FIFO; a burst of tool calls
+    /// drains in the order they were made.
+    func queuePointToCode(_ request: PointToCodeRequest) {
+        pendingPointToCodeRequests.append(request)
+    }
+
+    /// Pops the oldest queued `point_to_code` request, if any. Called once
+    /// per `tourWait` poll from the Fresh plugin.
+    func drainPointToCode() -> PointToCodeRequest? {
+        guard !pendingPointToCodeRequests.isEmpty else { return nil }
+        return pendingPointToCodeRequests.removeFirst()
     }
 
     func resolveShellBaseWorkingDirectory(_ directory: String) {
@@ -630,6 +683,7 @@ final class ConversationRuntime: ObservableObject, Identifiable {
                 commandID: "\(id).\(label)",
                 workingDirectory: workingDirectory,
                 command: command,
+                environment: ideEnvironment,
                 remote: execution.remote
             ),
             runtime: root.runtime
@@ -863,7 +917,10 @@ final class ConversationRuntimeManager: ObservableObject {
             .rootLaunchDirectory,
         ideDirectorySource: ConversationShellDirectorySource? = nil,
         tabMetadata: ConversationTabMetadata = .initial,
-        execution: ConversationExecution? = nil
+        execution: ConversationExecution? = nil,
+        controlSocket: String? = nil,
+        controlToken: String? = nil,
+        controlClientPath: String? = nil
     ) -> ConversationRuntime {
         if let existing = runtime(sessionID: sessionID) {
             selectedSessionID = sessionID
@@ -871,6 +928,23 @@ final class ConversationRuntimeManager: ObservableObject {
         }
 
         let resolvedExecution = execution ?? localExecution
+        // Local conversations only: gives the root Grok process the same
+        // private control-socket credentials managed tabs already use, so
+        // its native `point_to_code` tool (see ADR 0019) can reach this
+        // conversation's IDE tab. Never sent to a remote host.
+        var environment: [String: String] = [:]
+        if resolvedExecution.remote == nil,
+           let controlSocket, let controlToken {
+            environment[
+                TerminalControlContract.EnvironmentVariable.controlSocket
+            ] = controlSocket
+            environment[
+                TerminalControlContract.EnvironmentVariable.controlToken
+            ] = controlToken
+            environment[
+                TerminalControlContract.EnvironmentVariable.sessionID
+            ] = sessionID
+        }
         let launch = TerminalLaunchRequest(
             sessionID: sessionID,
             workingDirectory: workingDirectory,
@@ -878,6 +952,7 @@ final class ConversationRuntimeManager: ObservableObject {
             leaderSocket: resolvedExecution.leaderSocket,
             mode: mode,
             additionalArguments: additionalArguments,
+            environment: environment,
             remote: resolvedExecution.remote
         )
         let rootSession = TerminalSession(
@@ -908,7 +983,10 @@ final class ConversationRuntimeManager: ObservableObject {
             execution: resolvedExecution,
             ideWorkingDirectory: ideWorkingDirectory,
             shellBaseWorkingDirectory: shellBaseWorkingDirectory,
-            tabMetadata: tabMetadata
+            tabMetadata: tabMetadata,
+            controlSocket: controlSocket,
+            controlToken: controlToken,
+            controlClientPath: controlClientPath
         )
         runtime.onTabMetadataChange = { [weak self, weak runtime] tabs in
             guard let runtime else { return }

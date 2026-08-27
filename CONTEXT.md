@@ -83,6 +83,13 @@ produces; it is never created or controlled through an agent-facing protocol
 of its own, and it never appears for remote-host conversations.
 _Avoid_: Shell tab, managed terminal tab, browser tab
 
+**Code Tour**:
+A one-step highlighted range of code and an explanatory comment that Grok
+opens in the existing IDE tab through the `conan-code-tour` Fresh plugin.
+Conan Code queues the request from Grok's native tool call; it renders no
+view of its own.
+_Avoid_: Point to code, walkthrough, guided tour
+
 **Subagent Pane**:
 A live, interactive pane backed by a child Grok session. It appears alongside
 its parent conversation while the subagent is available without becoming a

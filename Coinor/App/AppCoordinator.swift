@@ -166,6 +166,7 @@ final class AppCoordinator: ObservableObject {
             reloadSSHConfigAliases()
 
             try GrokSkillInstaller().install()
+            try FreshPluginInstaller().install()
             guard let clientURL = Bundle.main.url(
                 forResource: "coinorctl",
                 withExtension: nil
@@ -443,7 +444,10 @@ final class AppCoordinator: ObservableObject {
                 ConversationShellDirectorySource.explicit($0)
             } ?? .unavailable,
             tabMetadata: metadata.conversationTabs(sessionID),
-            execution: execution(forSession: sessionID)
+            execution: execution(forSession: sessionID),
+            controlSocket: terminalControlConfiguration?.socket.path,
+            controlToken: terminalControlConfiguration?.token,
+            controlClientPath: terminalControlConfiguration?.clientPath
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         runtimeManager.select(sessionID: sessionID)
@@ -1175,7 +1179,10 @@ final class AppCoordinator: ObservableObject {
                 $0.hasPrefix("--worktree=")
             } ? .unavailable : .rootLaunchDirectory,
             tabMetadata: metadata.conversationTabs(sessionID),
-            execution: execution(forProject: projectID)
+            execution: execution(forProject: projectID),
+            controlSocket: terminalControlConfiguration?.socket.path,
+            controlToken: terminalControlConfiguration?.token,
+            controlClientPath: terminalControlConfiguration?.clientPath
         )
         hookCoordinator?.activateRoot(sessionID: sessionID)
         selectedSessionID = sessionID
@@ -3183,6 +3190,64 @@ final class AppCoordinator: ObservableObject {
                     exitCode: exitCode
                 )
                 return .success(tab.statusPayload)
+
+            case TerminalControlContract.Method.pointToCode:
+                guard let sessionID = request.sessionID,
+                      let filePath = request.filePath,
+                      let lineStart = request.lineStart,
+                      let lineEnd = request.lineEnd else {
+                    throw TerminalControlError.invalidRequest(
+                        "sessionID, filePath, lineStart, and lineEnd are required"
+                    )
+                }
+                guard let runtime = runtimeManager.runtime(
+                    sessionID: sessionID
+                ) else {
+                    throw TerminalControlError.sessionUnavailable
+                }
+                runtime.queuePointToCode(
+                    PointToCodeRequest(
+                        filePath: filePath,
+                        lineStart: lineStart,
+                        lineEnd: lineEnd,
+                        comment: request.comment
+                    )
+                )
+                return .success()
+
+            case TerminalControlContract.Method.tourWait:
+                guard let sessionID = request.sessionID else {
+                    throw TerminalControlError.invalidRequest(
+                        "sessionID is required"
+                    )
+                }
+                guard let runtime = runtimeManager.runtime(
+                    sessionID: sessionID
+                ) else {
+                    throw TerminalControlError.sessionUnavailable
+                }
+                guard let pending = runtime.drainPointToCode() else {
+                    return .success(
+                        .object([
+                            TerminalControlContract.Field.pending:
+                                .bool(false),
+                        ])
+                    )
+                }
+                var result: [String: GrokJSONValue] = [
+                    TerminalControlContract.Field.pending: .bool(true),
+                    TerminalControlContract.Field.filePath:
+                        .string(pending.filePath),
+                    TerminalControlContract.Field.lineStart:
+                        .int(pending.lineStart),
+                    TerminalControlContract.Field.lineEnd:
+                        .int(pending.lineEnd),
+                ]
+                if let comment = pending.comment {
+                    result[TerminalControlContract.Field.comment] =
+                        .string(comment)
+                }
+                return .success(.object(result))
 
             default:
                 throw TerminalControlError.unsupportedMethod(

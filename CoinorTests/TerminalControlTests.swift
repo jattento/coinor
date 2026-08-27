@@ -31,6 +31,55 @@ func terminalControlRequestDecodesAllCommandFields() throws {
 }
 
 @Test
+func terminalControlRequestDecodesPointToCodeFields() throws {
+    let request = try TerminalControlRequest(
+        data: Data(
+            #"""
+            {
+              "version": 1,
+              "method": "point-to-code",
+              "token": "secret",
+              "sessionID": "session-1",
+              "filePath": "src/main.swift",
+              "lineStart": 10,
+              "lineEnd": 20,
+              "comment": "Entry point"
+            }
+            """#.utf8
+        )
+    )
+
+    #expect(
+        request.method == TerminalControlContract.Method.pointToCode
+    )
+    #expect(request.sessionID == "session-1")
+    #expect(request.filePath == "src/main.swift")
+    #expect(request.lineStart == 10)
+    #expect(request.lineEnd == 20)
+    #expect(request.comment == "Entry point")
+}
+
+@Test
+func terminalControlRequestDecodesTourWaitWithOnlyASessionID() throws {
+    let request = try TerminalControlRequest(
+        data: Data(
+            #"""
+            {
+              "version": 1,
+              "method": "tour-wait",
+              "token": "secret",
+              "sessionID": "session-1"
+            }
+            """#.utf8
+        )
+    )
+
+    #expect(request.method == TerminalControlContract.Method.tourWait)
+    #expect(request.sessionID == "session-1")
+    #expect(request.filePath == nil)
+}
+
+@Test
 func terminalControlResponseUsesStableSuccessAndErrorShapes() throws {
     let success = try GrokJSONValue.decode(
         Data(
