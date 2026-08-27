@@ -1,10 +1,12 @@
 {
   "releases": [
     {
-      "tag": "Unreleased",
-      "publishedAt": "2026-08-23T01:08:06Z",
+      "tag": "v1.0.6-overlay.1",
+      "publishedAt": "2026-08-27T01:23:23Z",
       "forkSummary": [
-        "overlay: fix missing is_family_switch after upstream sync"
+        "`grok-v1.0.6-overlay.1-macos-arm64-bin` \u2014 the direct executable.",
+        "`grok-v1.0.6-overlay.1-macos-arm64.tar.gz` \u2014 the executable plus `LICENSE` and `THIRD-PARTY-NOTICES`.",
+        "`SHA256SUMS` \u2014 checksums for both of the above."
       ],
       "upstreamSummary": [
         "Pass reasoning effort via `_meta.reasoningEffort` on session/new and session/load",

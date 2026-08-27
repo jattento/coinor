@@ -55,6 +55,58 @@ loaded and newly-resumed conversations, dismiss/push-to-end/snooze/mute and
 their sidebar "Out of the queue" section, the sticky-focus behavior across a
 run of clarifying questions, and the empty-queue waiting screen.
 
+## Conan Code 0.6.18 Verification
+
+Version `0.6.18` build `56` adds point-to-code: a native `point_to_code`
+tool, listed to the model only inside Conan Code, that opens the IDE tab at
+a specific file and line range with a comment. See `docs/releases/0.6.18.md`
+and ADR 0019.
+
+Automated verification:
+
+- `scripts/dev/preflight.sh` passed on the pinned toolchain (macOS 26.6.1,
+  Xcode 26.6 (17F113), macOS SDK 26.5, Swift 6.3.3).
+- `scripts/dev/run-tests.sh`'s Debug build-for-testing and the UI suite
+  (`CoinorUITests`, 8 tests, 2 skipped, 0 failures) both passed cleanly. The
+  unit suite (`CoinorTests`, 571 tests) repeatedly hit only the same
+  pre-existing, load-sensitive subprocess wall-clock timing flakes
+  documented for earlier releases
+  (`executableVersionProbeKillsACommandThatWouldOtherwiseHang`,
+  `GrokSubprocessTransportShutdownTests.shutdownWaitsUntilTheChildProcessHasExited`,
+  and once also `captureScreenshotTimesOutOnAHangingProcess`) under this
+  machine's sustained background load from the same session's other work;
+  all three passed individually in isolation with wide margin (0.07–0.22s
+  against 200ms–2s bounds), and `git diff` against every file behind them
+  (`GrokSubprocessTransportShutdownTests.swift`, `GrokExecutableVersionTests.swift`,
+  `EgoBrowserScreenshotClientTests.swift`, and the `SubprocessOutputCapture`/
+  `CaptureSession`/`GitProcessRunner` implementation they exercise) is empty.
+- New `terminalControlRequestDecodesPointToCodeFields` and
+  `terminalControlRequestDecodesTourWaitWithOnlyASessionID` passed.
+- `Vendor/Ghostty`'s static library hash again differed from the committed
+  manifest on this rebuild (the same recurring non-reproducible-build quirk
+  hit in 0.6.7 and 0.6.9): tag, commit, header, and resources hashes were
+  unchanged, `scripts/ghostty/verify.sh` confirmed the artifact was
+  internally consistent, and `Coinor/Resources/GhosttyArtifactManifest.txt`
+  was resynced to this machine's `Vendor/Ghostty/manifest.txt` before
+  rebuilding.
+- The arm64 Release build succeeded. `scripts/release/verify-app.sh`
+  reported version `0.6.18 (56)`, arm64, macOS 13.0 minimum, deep-strict
+  ad-hoc signature, App Sandbox disabled, `get-task-allow` absent, and
+  Ghostty commit `332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28`.
+- Security gate (`git diff --check`, `scripts/release/security-scan.sh`)
+  over the repository and the application bundle reported no leaks.
+
+Manual verification: exercised live against a Debug build with an isolated
+support directory and a throwaway project, not the installed application.
+Without `CONAN_CODE_CONTROL_SOCKET`/`_CONTROL_TOKEN`/`_SESSION_ID` on the
+root Grok process, a real model call reported no tool with "point" in its
+id; with them set, a real prompt caused Grok to call `point_to_code`, and
+the IDE tab opened the named file with the requested lines highlighted and
+the comment visible in a step navigator, matching the mockup this feature
+was built from. A second `point_to_code` call while a tour was already open
+did not replace it until the first was finished with `q`; the next poll
+then opened the new one correctly. See ADR 0019 for the full account.
+
 ## Conan Code 0.6.17 Verification
 
 Version `0.6.17` build `55` stops a Browser Mirror tab's live screenshot
